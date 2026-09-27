@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  build:
+    # arm64 runner：与本地/目标设备同架构（DSHA 已验证此形态可行）
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug --console=plain --stacktrace
+
+      - name: 断言 jniLibs 引擎产物
+        run: |
+          ls -la app/src/main/jniLibs/arm64-v8a/
+          test -x app/src/main/jniLibs/arm64-v8a/libproot.so
+          test -x app/src/main/jniLibs/arm64-v8a/libproot-loader.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: drydock-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
