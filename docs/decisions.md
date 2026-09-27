@@ -64,6 +64,14 @@ proot（ptrace 假 chroot）跑 arm64 发行版，二进制原生执行，CLI/ag
 ### D14 分发渠道
 F-Droid / 官网直装 / 国内应用市场优先，Google Play 后置（targetSdk 与 exec 政策的历史摩擦）。
 
+### D15 语言与工具链（2026-09-27，原型步骤 1 定稿）
+宿主 App = Kotlin + Jetpack Compose（Material 3 深色优先）；WebView 薄层 = TypeScript；proot = C（NDK r29 交叉编译，不修改上游）；环境内脚本与 hooks 适配器 = bash + JSON；构建 = Gradle 8.14.3（Kotlin DSL + 版本目录）+ GitHub Actions arm64 runner。
+理由：管家 API（前台服务/Keystore/SAF/通知）在 Kotlin 是一等公民；原型与产品同一套语言，纯逻辑直接长进产品；不上第四门语言（除非 proot-rs 成熟再议 Rust）。
+
+### D16 引擎打包与运行时接线（2026-09-27，原型步骤 1 落地）
+proot Termux fork 锁 tag v5.1.107.95，NDK 交叉编译（talloc 2.4.3 / libandroid-shmem v0.7 静态链接，`-landroid`/`-llog`），构建脚本 `scripts/build-proot.sh` 可复现。产物命名 `libproot.so` / `libproot-loader.so` 进 jniLibs，`useLegacyPackaging` 保证以真实可执行文件落地 nativeLibraryDir（targetSdk 29+ W^X 下唯一可 exec 位置）。loader 路径运行时经 `PROOT_LOADER` 环境变量注入——nativeLibraryDir 每次安装随机化，编译期无法烧入；Termux fork 原生支持该变量（src/execve/enter.c）。proot 主二进制按 16KB page size 链接（LOAD 段 align 0x4000，readelf 断言进 CI）。
+被否：编译期烧 loader 路径（安装随机化）；运行时把 loader 复制到 filesDir 再 exec（W^X 禁止，SELinux untrusted_app 不可执行 app_data_file）。
+
 ## 明确不做清单
 
 | 不做的事 | 理由 |

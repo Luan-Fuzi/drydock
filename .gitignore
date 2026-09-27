@@ -1,5 +1,16 @@
 # 构想草稿与临时文件，不入库
 draft/
 
+# Gradle / Android 构建产物
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+
+# 交叉编译的第三方源码与产物（由 scripts/build-proot.sh 按 pin 重新获取）
+third_party/
+
 # macOS
 .DS_Store
