@@ -2,6 +2,8 @@
 
 2026-09-27 配齐并逐项验证。后续动工直接用，环境变化时更新本文件。
 
+**Git 远端**：`github.com/Luan-Fuzi/drydock`（私有，2026-09-27 建立）；CI 在 x86_64 runner 跑（AGP 8.13 的 AAPT2 maven 工件无 linux-arm64 变体，见 ci.yml 注释）。
+
 ## 组件清单
 
 | 组件 | 位置 | 状态 |
