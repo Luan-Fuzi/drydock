@@ -72,6 +72,10 @@ F-Droid / 官网直装 / 国内应用市场优先，Google Play 后置（targetS
 proot Termux fork 锁 tag v5.1.107.95，NDK 交叉编译（talloc 2.4.3 / libandroid-shmem v0.7 静态链接，`-landroid`/`-llog`），构建脚本 `scripts/build-proot.sh` 可复现。产物命名 `libproot.so` / `libproot-loader.so` 进 jniLibs，`useLegacyPackaging` 保证以真实可执行文件落地 nativeLibraryDir（targetSdk 29+ W^X 下唯一可 exec 位置）。loader 路径运行时经 `PROOT_LOADER` 环境变量注入——nativeLibraryDir 每次安装随机化，编译期无法烧入；Termux fork 原生支持该变量（src/execve/enter.c）。proot 主二进制按 16KB page size 链接（LOAD 段 align 0x4000，readelf 断言进 CI）。
 被否：编译期烧 loader 路径（安装随机化）；运行时把 loader 复制到 filesDir 再 exec（W^X 禁止，SELinux untrusted_app 不可执行 app_data_file）。
 
+### D17 rootfs 部署形态（2026-09-27，原型步骤 2 落地）
+ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsManifest`）；解压为两段式——toybox tar 铺底盘（容忍硬链接失败），再用 rootfs 内 GNU tar 在 `proot -0 --link2symlink` 里补硬链接条目。原因：targetSdk 29+ 的 SELinux 禁止 app 在数据目录 link()（Termux 靠 targetSdk 28 逃过），link2symlink 把硬链接模拟成符号链接+底盘文件，且这正是 apt/dpkg 之后的运行形态；注意正确旗标是 `--link2symlink`（短旗标为小写 `-l`，大写 `-L` 无效且不报错）。apt 换 TUNA ubuntu-ports（deb822），DNS 写 223.5.5.5/8.8.8.8。
+被否：纯 toybox tar（硬链接丢失，perl/uncompress 残缺）；提取后手工 copy 补链（与 apt 未来产生的硬链接形态不一致）。
+
 ## 明确不做清单
 
 | 不做的事 | 理由 |
