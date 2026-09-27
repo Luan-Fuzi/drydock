@@ -7,8 +7,10 @@ on:
 
 jobs:
   build:
-    # arm64 runner：与本地/目标设备同架构（DSHA 已验证此形态可行）
-    runs-on: ubuntu-24.04-arm
+    # x86_64：AGP 8.13 的 maven AAPT2 工件只有 x86_64 Linux 变体；
+    # APK 组装与架构无关（arm64 引擎 .so 已入库）。将来 CI 需执行 arm64
+    # 二进制（AV 冒烟/基准）时再单开 ubuntu-24.04-arm job。
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
