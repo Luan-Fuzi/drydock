@@ -1,0 +1,5 @@
+# 构想草稿与临时文件，不入库
+draft/
+
+# macOS
+.DS_Store
