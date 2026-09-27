@@ -49,6 +49,17 @@ Gradle（Kotlin DSL）建 `app/`：Kotlin + Jetpack Compose、minSdk 29、仅 ar
 接真机（dev-environment 待办项）：开发者模式 + USB 调试，`adb devices` 确认；装原型真用一周；同机跑基准电池（proot vs proroot，每用例 ≥ 5 次取中位数）。
 **判据**：S1 锁屏 30 分钟任务存活（全部样本）、S2 系统杀进程后 tmux 接回、S3 发热降频人工评估。产出 Q1/Q7 结论，触发 continue / pivot 决策（转向预案见 open-questions.md）。
 
+## 验收方式（协作约定）
+
+默认用无视觉能力的模型开发，验收以命令行为主：
+
+- **宿主侧**：`adb shell` / `run-as`（查私有目录 rootfs）/ `logcat` 过滤服务与 proot 事件；AV1 用计时脚本。
+- **WebView 侧**：debug 构建开 `setWebContentsDebuggingEnabled`，`adb forward` 把 WebView DevTools socket 转到 Mac，走 CDP 在页面内执行 JS，直接读 xterm.js buffer 做断言，顺带拿 console 报错。
+- **ttyd 侧**：`adb forward` 后用 WebSocket 客户端验 token 鉴权（错 token 必须拒连）与输出帧；环境内 `tmux capture-pane` 作显示内容对照组。
+- **输出契约**：每条 AV 剧本产出 verdict JSON（pass/fail + 证据路径），人与 CI 消费同一份。
+- **截图的角色**：`adb exec-out screencap` 存 `draft/` 仅作证据；观感判断（渲染 / IME / 布局）集中分批做，届时提醒切换有视觉能力的模型，一次切换覆盖一批问题。
+- **已知盲区**：`adb input text` 不走真实 IME 组合流程（拼音候选、预编辑串），AV2 的"中文不乱码"最终需要人在设备上敲一次或由视觉模型判读。
+
 ## 风险与止损
 
 - proot NDK 自编译卡壳超过 2 天：原型期降级为直接使用 Termux 打包的 proot 二进制验证链路（不公开发布则许可无碍），自编译移回产品期。
