@@ -1,8 +1,6 @@
 package dev.drydock.prototype
 
-import android.content.ContentValues
 import android.content.Context
-import android.provider.MediaStore
 import android.util.Log
 import java.io.File
 import java.net.URL
@@ -155,7 +153,7 @@ object AgentManager {
         }
         val landed = if (report.exists()) {
             try {
-                landToDownloads(context, report).toString()
+                Landing.toDownloads(context, report).toString()
             } catch (e: Exception) {
                 Log.e(TAG, "落袋失败", e)
                 "落袋失败: $e"
@@ -181,29 +179,5 @@ object AgentManager {
             echo I1_SWEEP_DONE
         """.trimIndent()
         return RootfsManager.runInEnv(context, cmd, extraEnv = agentEnv(context)).output
-    }
-
-    /** 复制环境内产物到 MediaStore Downloads/Drydock（API 29+ 自有插入免权限）。 */
-    private fun landToDownloads(context: Context, src: File): android.net.Uri {
-        val name = src.name
-        val mime = when (src.extension.lowercase()) {
-            "md", "txt" -> "text/markdown"
-            "json" -> "application/json"
-            else -> "application/octet-stream"
-        }
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, name)
-            put(MediaStore.Downloads.MIME_TYPE, mime)
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/Drydock")
-            put(MediaStore.Downloads.IS_PENDING, 1)
-        }
-        val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: error("MediaStore insert 返回 null")
-        resolver.openOutputStream(uri)!!.use { it.write(src.readBytes()) }
-        values.clear()
-        values.put(MediaStore.Downloads.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
-        return uri
     }
 }

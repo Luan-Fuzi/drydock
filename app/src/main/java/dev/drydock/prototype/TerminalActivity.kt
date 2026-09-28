@@ -28,9 +28,12 @@ class TerminalActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val session = TerminalManager.current() ?: EnvService.readSession(this)
+        val name = intent.getStringExtra("session") ?: TerminalManager.MAIN
+        val session = TerminalManager.readSessions(this)
+            .firstOrNull { it.name == name }
+            ?: TerminalManager.readSessions(this).firstOrNull()
         if (session == null) {
-            Log.e("DrydockAv2", "终端会话未启动")
+            Log.e("DrydockAv2", "终端会话未启动（$name）")
             finish()
             return
         }
