@@ -83,6 +83,13 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 2. **AMS 对死亡 App 按进程组清剿**（主进程 kill -9 后连 ppid=1 的孤儿也被回收）——环境进程必须挂在 **`:env` 前台服务进程**下才能在宿主 UI 崩溃/重启时存活；该服务（EnvService）已随步骤 3 提前落地，UI 经 `terminal-session.json` 发现端口与 token。
 被否：宿主主进程直接持有环境进程（一死全灭）；WebView 页面 JS 凭据注入（webkit 层 auth 缓存不进 Chromium ws，改 hook fetch 补 /token 凭据）。
 
+### D19 终端显示层用户定制：原型期不做，方向存档（2026-09-28）
+用户侧的终端外观定制（字体/字号/主题）原型期不做；产品期方向已实测定调，避免阶段 2 重新调研：
+1. **颜色主题走 OSC 转义序列，纯 shell 配置即生效**——xterm.js 原生支持 OSC 10/11（前景/背景）与 OSC 4（调色板），实测 shell 内一条 printf 即时换色（证据 `draft/av2-osc-theme.png`）。与 kitty/iTerm2/Alacritty 主题脚本生态同机制，社区主题可直接搬；官方 rootfs 预装几套主题命令（shell 函数发 OSC）即可。
+2. **字体/字号走 App 设置页**（SharedPreferences → spawn 时拼 ttyd `-t` 参数，或经 overlay 注入 `term.options` 即时生效）；可选补约定配置文件 `~/.config/drydock/terminal.json`（宿主桥读取），设置页与文件写同一处，极客与普通人共用单一事实源。
+3. **前置重构**：insets 垫色现为原生层硬编码 `TERM_BG`（TerminalActivity），OSC 换色后出现色差缝隙——定制落地前须把垫色移到页面 CSS 侧或经桥同步主题色。
+边界：字体不走 shell 侧（OSC 50 为 kitty/st 私有，xterm.js 不认；Terminal.app/iTerm2 改字体同样要 GUI，属行业常态）。
+
 ## 明确不做清单
 
 | 不做的事 | 理由 |
