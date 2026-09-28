@@ -161,6 +161,65 @@ fun PrototypeScreen() {
                 MonoBox(r.output.ifBlank { "(无输出)" })
             }
         }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+
+        // ---------- 步骤 3：终端链路（AV2） ----------
+        Text("步骤 3 · 终端链路（AV2）", style = MaterialTheme.typography.titleMedium)
+
+        var layerState by remember { mutableStateOf("") }
+        var layerReady by remember { mutableStateOf(false) }
+        var layerRunning by remember { mutableStateOf(false) }
+
+        Text(
+            layerState.ifBlank { "终端层（ttyd + dtach）未安装" },
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+        )
+        Button(
+            enabled = !layerRunning && deployed,
+            onClick = {
+                layerRunning = true
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        TerminalManager.ensureTerminalLayer(context.applicationContext)
+                    }
+                    layerReady = r.exitCode == 0 && r.output.contains("LAYER_RC=0")
+                    layerState = if (layerReady) {
+                        "✓ 终端层就绪"
+                    } else {
+                        "✗ exit=${r.exitCode}：${r.output.takeLast(300)}"
+                    }
+                    layerRunning = false
+                }
+            },
+        ) { Text(if (layerRunning) "安装中（apt install ttyd dtach）…" else "安装终端层（ttyd + dtach）") }
+
+        if (layerReady) {
+            Button(onClick = {
+                scope.launch {
+                    // 会话由 :env 前台服务承载（主进程死不连累），UI 经状态文件发现
+                    context.startForegroundService(
+                        android.content.Intent(context, EnvService::class.java),
+                    )
+                    var found = false
+                    repeat(25) {
+                        if (it > 0) kotlinx.coroutines.delay(1000)
+                        if (EnvService.readSession(context) != null) {
+                            found = true
+                            return@repeat
+                        }
+                    }
+                    if (!found) {
+                        layerState = "✗ 会话启动失败（看 logcat DrydockEnv/DrydockTerminal）"
+                    } else {
+                        context.startActivity(
+                            android.content.Intent(context, TerminalActivity::class.java),
+                        )
+                    }
+                }
+            }) { Text("打开终端") }
+        }
     }
 }
 

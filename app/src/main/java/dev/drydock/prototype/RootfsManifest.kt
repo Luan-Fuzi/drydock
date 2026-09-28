@@ -16,7 +16,10 @@ object RootfsManifest {
         "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/",
     )
 
-    /** apt 走 TUNA ubuntu-ports（arm64 架构的源在 ports 而非主站）。 */
-    const val APT_MIRROR = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
+    /**
+     * apt 用 http：apt 的完整性由 GPG 签名链保证（Ubuntu 官方镜像同为此立场），
+     * 且规避企业网/代理对 https 的 MITM 导致证书验证失败。arm64 的源在 ports。
+     */
+    const val APT_MIRROR = "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
     const val APT_SUITE = "noble"
 }
