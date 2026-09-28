@@ -1,14 +1,21 @@
 package dev.drydock.prototype
 
 import android.annotation.SuppressLint
+import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowInsets
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import java.io.File
+
+/** 容器 padding 区背景，取 ttyd 页面终端底色（视觉批次校准值）。 */
+private const val TERM_BG = 0xFF2B2B2B.toInt()
 
 /**
  * 终端页：WebView 直连 127.0.0.1 上由宿主 spawn 的 ttyd（同源页面，凭据经
@@ -68,7 +75,34 @@ class TerminalActivity : ComponentActivity() {
         }
         webView.addJavascriptInterface(Av2Bridge(), "Drydock")
 
-        setContentView(webView)
+        // targetSdk 35+ 强制 edge-to-edge，window 不再避让系统栏，adjustResize 也随之失效；
+        // 状态栏/cutout/软键盘 insets 一律以容器 padding 落地，IME 弹出时 WebView 收缩、
+        // xterm.js 随尺寸 refit。padding 区背景与 ttyd 终端底色一致（TERM_BG）。
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(TERM_BG)
+            setOnApplyWindowInsetsListener { v, insets ->
+                val pad = if (Build.VERSION.SDK_INT >= 30) {
+                    insets.getInsets(
+                        WindowInsets.Type.systemBars() or
+                            WindowInsets.Type.displayCutout() or
+                            WindowInsets.Type.ime()
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    insets.systemWindowInsets
+                }
+                v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
+                WindowInsets.CONSUMED
+            }
+        }
+        root.addView(
+            webView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        setContentView(root)
         webView.loadUrl("http://127.0.0.1:${session.port}/")
         Log.i("DrydockAv2", "loadUrl http://127.0.0.1:${session.port}/ token=${session.token.take(4)}…")
     }
