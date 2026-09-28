@@ -2,7 +2,7 @@
 
 > 跑在安卓手机上的 coding agent 宿主（host）：免 root 的本地 Linux 环境 + agent 任务调度 + 密钥保管 + 文件桥。TUI 为主屏，GUI 为投影。
 
-- **状态**：原型开发中（2026-09-28）。六步计划步骤 1–3 判据全绿并合并 main（tag：`step-1` / `av1` / `av2`）；当前进度见 [docs/prototype-plan.md](docs/prototype-plan.md) 各步骤标记，证据摘要见各 git tag message 与本地 `draft/` 的 verdict JSON。
+- **状态**：原型开发中（2026-09-28）。六步计划步骤 1–4 判据全绿并合并 main（tag：`step-1` / `av1` / `av2` / `av3`）；当前进度见 [docs/prototype-plan.md](docs/prototype-plan.md) 各步骤标记，证据摘要见各 git tag message 与本地 `draft/` 的 verdict JSON。
 - **性质**：非商业项目（明确不以赚钱为目标），学习/作品/自用导向。
 - **名字**：暂定 Drydock，可中途更换。重名检查见 [docs/name-check.md](docs/name-check.md)。
 
