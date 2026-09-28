@@ -90,6 +90,14 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 3. **前置重构**：insets 垫色现为原生层硬编码 `TERM_BG`（TerminalActivity），OSC 换色后出现色差缝隙——定制落地前须把垫色移到页面 CSS 侧或经桥同步主题色。
 边界：字体不走 shell 侧（OSC 50 为 kitty/st 私有，xterm.js 不认；Terminal.app/iTerm2 改字体同样要 GUI，属行业常态）。
 
+### D20 agent 层落地铁律（2026-09-28，原型步骤 4 实测）
+四条实测事实，均已被代码吸收：
+1. **link2symlink 的 .l2s 链接必须自绑定宿主路径**：`--link2symlink` 把 link() 落成符号链接，目标为宿主绝对路径（realpath 规范化的 `/data/data` 拼写），仅在创建它的 proot 会话内可解析，**换会话即断链**——claude.exe exec ENOENT 实证；D17 pass2 补的 perl/gunzip/dpkg-status 同样中招（此前未踩中）。修复：所有 proot spawn 把 rootfs 宿主路径按 canonical 拼写自绑定进环境（`RootfsManager.l2sSelfBind`，Termux proot-distro 同款手法）。
+2. **proot `-0` 下 Claude Code 恒为 root**：官方检查拒绝 root/sudo 使用 `--dangerously-skip-permissions`；headless（`-p`）用 `--permission-mode acceptEdits` 代替（自动批准工作区内文件写入，AV3 只需 Write）。交互场景本就走批准流（D9）。
+3. **ubuntu-base 不装 ca-certificates**：Node 自带 CA store，npm 走 npmmirror 实测无碍；而环境内 apt 装 ca-certificates 会因缺 debconf 在 postinst 半配置卡死（`exec /usr/share/debconf/frontend not found`）毒化 dpkg，修复需补装 debconf 再 `dpkg --configure -a`。
+4. **Claude Code 2.x 为原生二进制分发**：npm 包的 bin/claude.exe（~240MB）与平台包硬链接——正是 npm 的 bin 硬链接触发铁律 1；D8 的下载式安装与 D11 版本固化按此事实执行（pin 2.1.283，Node v22.20.0 官方 tarball sha256 双源交叉核对）。
+被否：proot `-i` 假换 uid 绕 root 检查（acceptEdits 已够，不动 spawn 形态）；环境内装 debconf 预防 ca-certificates 问题（不需要的东西不进环境）。
+
 ## 明确不做清单
 
 | 不做的事 | 理由 |
