@@ -76,6 +76,13 @@ proot Termux fork 锁 tag v5.1.107.95，NDK 交叉编译（talloc 2.4.3 / liband
 ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsManifest`）；解压为两段式——toybox tar 铺底盘（容忍硬链接失败），再用 rootfs 内 GNU tar 在 `proot -0 --link2symlink` 里补硬链接条目。原因：targetSdk 29+ 的 SELinux 禁止 app 在数据目录 link()（Termux 靠 targetSdk 28 逃过），link2symlink 把硬链接模拟成符号链接+底盘文件，且这正是 apt/dpkg 之后的运行形态；注意正确旗标是 `--link2symlink`（短旗标为小写 `-l`，大写 `-L` 无效且不报错）。apt 换 TUNA ubuntu-ports（deb822），DNS 写 223.5.5.5/8.8.8.8。
 被否：纯 toybox tar（硬链接丢失，perl/uncompress 残缺）；提取后手工 copy 补链（与 apt 未来产生的硬链接形态不一致）。
 
+### D18 终端链路与进程承载（2026-09-28，原型步骤 3 落地）
+会话持久化用 **dtach**（宿主持有的 proot+dtach 进程，`-n` 分离建会话），ttyd 只 attach；终端页经 WebView 直连同源 ttyd 页（`-t rendererType=dom`），宿主注入 overlay（虚拟键条+观测桥），认证链 = 随机端口 + ttyd `-c` basic auth（护 HTTP 与 /token）+ AuthToken 应用层校验（护 ws）。
+两条实测铁律：
+1. **tmux server 的双 fork daemonize 在 proot ptrace 追踪下卡死**（进程停在 ptrace-stop，client 报 no server running）——dtach 单进程无此问题；tmux 复用待真机周或换机制再议（进 open-questions）。
+2. **AMS 对死亡 App 按进程组清剿**（主进程 kill -9 后连 ppid=1 的孤儿也被回收）——环境进程必须挂在 **`:env` 前台服务进程**下才能在宿主 UI 崩溃/重启时存活；该服务（EnvService）已随步骤 3 提前落地，UI 经 `terminal-session.json` 发现端口与 token。
+被否：宿主主进程直接持有环境进程（一死全灭）；WebView 页面 JS 凭据注入（webkit 层 auth 缓存不进 Chromium ws，改 hook fetch 补 /token 凭据）。
+
 ## 明确不做清单
 
 | 不做的事 | 理由 |
