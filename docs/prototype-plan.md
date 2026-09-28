@@ -41,7 +41,7 @@ Gradle（Kotlin DSL）建 `app/`：Kotlin + Jetpack Compose、minSdk 29、仅 ar
 
 ### 步骤 5：仪器（预计 2–3 天）
 
-前台服务 + WakeLock + 每会话一个 tmux window；时间线记录器按 engineering-plan 事件清单（锁屏/解锁、WakeLock、服务重启、proot 退出码、tmux 心跳 60s、CPU 温度频率 5min、充电状态）写本地 ring buffer，调试菜单一键导出；L1 最小通知（PTY 静默/退出启发式 → 系统通知）；hyperfine 基准电池脚本（npm install / tar / stat 风暴 / make -j，JSON 落盘）。
+前台服务的**承载部分已随步骤 3 落地**（EnvService/:env 进程，见 D18——AMS 按进程组清剿实测后前移）；本步剩余：WakeLock + 每会话一个 tmux window 的多会话管理（会话机制现为 dtach）；时间线记录器按 engineering-plan 事件清单（锁屏/解锁、WakeLock、服务重启、proot 退出码、tmux 心跳 60s、CPU 温度频率 5min、充电状态）写本地 ring buffer，调试菜单一键导出；L1 最小通知（PTY 静默/退出启发式 → 系统通知）；hyperfine 基准电池脚本（npm install / tar / stat 风暴 / make -j，JSON 落盘）。
 **判据**：AVD 上完整记录一轮锁屏/解锁/杀进程/恢复并导出报告；基准电池一条命令出 JSON。注意：AVD 上的存活数据与基准数据只用于验证仪器本身，不作 Q1/Q7 结论。
 
 ### 步骤 6：真机验证周（1 周）
