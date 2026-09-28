@@ -66,6 +66,7 @@ object TerminalManager {
                     "-0", "--link2symlink",
                     "-r", rootfs.absolutePath,
                     "-b", "/dev", "-b", "/proc", "-b", "/sys",
+                    "-b", RootfsManager.l2sSelfBind(context),
                     "-w", "/root",
                     "/usr/bin/dtach", "-n", "/root/main.sock",
                     "/bin/bash", "-l",
@@ -80,6 +81,9 @@ object TerminalManager {
                     put("HOME", "/root")
                     put("TERM", "xterm-256color")
                     put("LANG", "C.UTF-8")
+                    // I1：GLM 端点与密钥只经进程环境进终端会话（终端内 claude 直接可用）；
+                    // key 在会话建立后变更的，需重建会话才生效
+                    AgentManager.agentEnv(context).forEach { (k, v) -> put(k, v) }
                 }
             }.start()
             val deadline = System.currentTimeMillis() + 15_000
@@ -110,6 +114,7 @@ object TerminalManager {
             "-0", "--link2symlink",
             "-r", RootfsManager.rootfsDir(context).absolutePath,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
+            "-b", RootfsManager.l2sSelfBind(context),
             "-w", "/root",
             "/usr/bin/ttyd",
             "-i", "127.0.0.1",
