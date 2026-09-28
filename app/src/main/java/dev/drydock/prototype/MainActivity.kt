@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -27,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +42,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 验收自动化注入口：仅 debuggable 构建存在（release 无此路径），key 直达
+        // Keystore 不落盘；无视觉环境下经 am start --es 注入后走 UI 断言。
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            intent?.getStringExtra("drydock_api_key")?.takeIf { it.isNotBlank() }?.let {
+                SecretStore.save(this, AgentManager.KEY_NAME, it)
+                android.util.Log.i(
+                    "DrydockMain",
+                    "debug 注入 API key：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
+                )
+            }
+        }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -219,6 +234,126 @@ fun PrototypeScreen() {
                     }
                 }
             }) { Text("打开终端") }
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+
+        // ---------- 步骤 4：agent 链路（AV3） ----------
+        Text("步骤 4 · agent 链路（AV3）", style = MaterialTheme.typography.titleMedium)
+
+        var apiKeyInput by remember { mutableStateOf("") }
+        var keySavedAt by remember { mutableStateOf(0L) }
+        val keyMask = remember(keySavedAt) { SecretStore.mask(context, AgentManager.KEY_NAME) }
+        var keyMsg by remember { mutableStateOf("") }
+
+        Text(
+            "端点预设 GLM（Anthropic 兼容）\n${AgentManager.GLM_BASE_URL}",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+        )
+        Text(
+            if (keyMask != null) "API key：已保管（$keyMask，Keystore 加密）" else "API key：未设置",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+        )
+        OutlinedTextField(
+            value = apiKeyInput,
+            onValueChange = { apiKeyInput = it },
+            label = { Text("GLM API key") },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            enabled = apiKeyInput.isNotBlank(),
+            onClick = {
+                SecretStore.save(context, AgentManager.KEY_NAME, apiKeyInput)
+                keySavedAt = System.currentTimeMillis()
+                apiKeyInput = ""
+                keyMsg = "已入 Keystore；重开终端会话后终端内 claude 生效"
+            },
+        ) { Text("保存密钥（只进 Keystore）") }
+        if (keyMsg.isNotBlank()) {
+            Text(keyMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        }
+
+        var agentState by remember { mutableStateOf("") }
+        var agentInstalling by remember { mutableStateOf(false) }
+        Button(
+            enabled = deployed && !agentInstalling,
+            onClick = {
+                agentInstalling = true
+                agentState = "安装中…"
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        AgentManager.ensureAgentLayer(context.applicationContext) { agentState = it }
+                    }
+                    agentState = if (r.output.contains("AGENT_RC=0")) {
+                        "✓ agent 层就绪（Node ${AgentManager.NODE_VERSION} + Claude Code ${AgentManager.CLAUDE_CODE_VERSION}）"
+                    } else {
+                        "✗ exit=${r.exitCode}：${r.output.takeLast(400)}"
+                    }
+                    agentInstalling = false
+                }
+            },
+        ) { Text(if (agentInstalling) "安装 agent 层中…" else "安装 agent 层（Node + Claude Code）") }
+        if (agentState.isNotBlank()) {
+            Text(agentState, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        }
+
+        var av3Running by remember { mutableStateOf(false) }
+        var av3Result by remember { mutableStateOf<AgentManager.Av3Result?>(null) }
+        Button(
+            enabled = deployed && !av3Running && agentState.startsWith("✓") && keyMask != null,
+            onClick = {
+                av3Running = true
+                av3Result = null
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        AgentManager.runAv3(context.applicationContext)
+                    }
+                    av3Result = r
+                    av3Running = false
+                }
+            },
+        ) { Text(if (av3Running) "AV3 运行中（真实对话，最长 5 分钟）…" else "运行 AV3：真实对话 + 产物落袋") }
+
+        av3Result?.let { r ->
+            val pass = AgentManager.av3Passed(r)
+            Text(
+                if (pass) "✓ AV3 通过（产物已落 Downloads/Drydock）" else "✗ AV3 未通过（exit=${r.exitCode}）",
+                color = if (pass) Color(0xFF4ADE80) else MaterialTheme.colorScheme.error,
+            )
+            r.resultText?.let { MonoBox("claude result：\n$it") }
+            r.producedFile?.let { MonoBox("环境内产物：$it\n落袋：${r.landedUri}") }
+            MonoBox(r.output.takeLast(600))
+        }
+
+        var i1Running by remember { mutableStateOf(false) }
+        var i1Out by remember { mutableStateOf("") }
+        Button(
+            enabled = deployed && !i1Running && keyMask != null,
+            onClick = {
+                i1Running = true
+                scope.launch {
+                    val out = withContext(Dispatchers.IO) {
+                        AgentManager.i1Sweep(context.applicationContext)
+                    }
+                    i1Out = out
+                    i1Running = false
+                }
+            },
+        ) { Text(if (i1Running) "扫描中…" else "I1 自检：密钥未落环境文件") }
+        if (i1Out.isNotBlank()) {
+            val clean = i1Out.contains("I1_SWEEP_DONE") &&
+                Regex(":([0-9]+)").findAll(i1Out).all { it.groupValues[1] == "0" } &&
+                !i1Out.contains("hits: [1-9]")
+            Text(
+                if (clean) "✓ I1 通过（注入后环境内文件零命中）" else "✗ I1 异常",
+                color = if (clean) Color(0xFF4ADE80) else MaterialTheme.colorScheme.error,
+            )
+            MonoBox(i1Out.takeLast(500))
         }
     }
 }

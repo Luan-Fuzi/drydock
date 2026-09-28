@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""CDP trusted 键入：Input.dispatchKeyEvent 模拟真实键盘（xterm 只信 isTrusted 事件）。
-用法: uv run --with websockets scripts/cdp-type.py "文本[\\n 结尾表示回车]"
+"""CDP 键入终端。文本走 Input.insertText（与 IME 提交同一条 textarea input
+事件数据路径，中文原样 UTF-8 全链路）；回车走 Input.dispatchKeyEvent。
+不逐字符派发 keydown：VK=ord(ch) 会撞功能键码（如 t=116 是 F5、-=45 是
+Insert），xterm 按功能键发转义序列搅乱 bash 行编辑（AV2 后经验证）。
+用法: uv run --with websockets scripts/cdp-type.py "文本[字面 \\n 两字符表示回车]"
 """
 import asyncio
 import json
@@ -10,37 +13,45 @@ import urllib.request
 import websockets
 
 
-async def send_key(ws, i, **params):
-    await ws.send(json.dumps({"id": i, "method": "Input.dispatchKeyEvent", "params": params}))
+async def rpc(ws, i, method, params):
+    await ws.send(json.dumps({"id": i, "method": method, "params": params}))
     while True:
         msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
         if msg.get("id") == i:
-            return
+            return msg
+
+
+async def press_enter(ws, i):
+    i += 1
+    await rpc(ws, i, "Input.dispatchKeyEvent", {
+        "type": "keyDown", "key": "Enter", "code": "Enter",
+        "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+    i += 1
+    await rpc(ws, i, "Input.dispatchKeyEvent", {
+        "type": "keyUp", "key": "Enter", "code": "Enter",
+        "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+    return i
 
 
 async def main():
-    text = sys.argv[1].encode().decode("unicode_escape")
+    # 按字面 "\n"（反斜杠+n 两字符）切分；不做 unicode_escape，保中文原样
+    lines = sys.argv[1].split("\\n")
     pages = json.load(urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5))
     page = next((p for p in pages if "127.0.0.1" in p.get("url", "")), pages[0])
     async with websockets.connect(page["webSocketDebuggerUrl"], max_size=2**22) as ws:
         i = 0
-        for ch in text:
-            await asyncio.sleep(0.12)  # 快注会让 bash 行编辑错乱/丢字，按近人速键入
-            if ch == "\n":
+        n = 0
+        for seg in lines:
+            if seg:
                 i += 1
-                await send_key(ws, i, type="keyDown", key="Enter", code="Enter",
-                               windowsVirtualKeyCode=13, nativeVirtualKeyCode=13)
-                i += 1
-                await send_key(ws, i, type="keyUp", key="Enter", code="Enter",
-                               windowsVirtualKeyCode=13, nativeVirtualKeyCode=13)
-            else:
-                i += 1
-                await send_key(ws, i, type="keyDown", key=ch,
-                               text=ch, unmodifiedText=ch,
-                               windowsVirtualKeyCode=ord(ch))
-                i += 1
-                await send_key(ws, i, type="keyUp", key=ch, windowsVirtualKeyCode=ord(ch))
-        print(f"typed {len(text)} chars")
+                await rpc(ws, i, "Input.insertText", {"text": seg})
+                n += len(seg)
+                await asyncio.sleep(0.15)  # 给 xterm input 事件处理留时间
+            if seg is not lines[-1]:
+                i = await press_enter(ws, i)
+                n += 1
+                await asyncio.sleep(0.15)
+        print(f"typed {n} chars (insertText mode)")
 
 
 asyncio.run(main())

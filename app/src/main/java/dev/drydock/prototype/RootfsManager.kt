@@ -31,6 +31,18 @@ object RootfsManager {
 
     fun rootfsDir(context: Context): File = File(context.filesDir, "ubuntu-rootfs")
 
+    /**
+     * link2symlink 自绑定（步骤 4 实测教训）：--link2symlink 把 link() 落成 .l2s 符号
+     * 链接，目标是宿主绝对路径（realpath 规范化后的 /data/data 拼写）。不自绑定进
+     * 环境的话，链接只在创建它的那个 proot 会话内有效，换会话即断（claude.exe exec
+     * ENOENT 实证；D17 pass2 补的 perl/gunzip/dpkg-status 同样中招）。Termux
+     * proot-distro 的同款手法：把 rootfs 宿主路径原样绑定进环境内。
+     */
+    internal fun l2sSelfBind(context: Context): String {
+        val canon = rootfsDir(context).canonicalFile.absolutePath
+        return "$canon:$canon"
+    }
+
     fun isDeployed(context: Context): Boolean =
         File(rootfsDir(context), "bin/bash").exists() &&
             File(rootfsDir(context), ".drydock-manifest").exists()
@@ -119,6 +131,7 @@ object RootfsManager {
                 "-r", rootfs.absolutePath,
                 "-b", "/dev", "-b", "/proc",
                 "-b", "${tarball.absolutePath}:/rootfs.tar.gz",
+                "-b", l2sSelfBind(context),
                 "-w", "/",
                 "/usr/bin/tar", "-xzf", "/rootfs.tar.gz", "-C", "/", "--no-same-owner",
             ) + memberArgs
@@ -158,16 +171,26 @@ object RootfsManager {
         Log.i(TAG, "rootfs 就绪：${RootfsManifest.UBUNTU_VERSION}")
     }
 
-    /** 在已部署环境内执行命令（proot -0 -L，绑定 dev/proc/sys）。 */
-    fun runInEnv(context: Context, command: String): ExecResult {
+    /** 在已部署环境内执行命令（proot -0 -L，绑定 dev/proc/sys）。
+     *  extraBinds：额外 "宿主路径:环境内路径" 绑定；extraEnv：注入宿主侧环境变量
+     *  （I1 的密钥即经此进环境，只存在于进程 environment，不落环境内文件）。 */
+    fun runInEnv(
+        context: Context,
+        command: String,
+        extraEnv: Map<String, String> = emptyMap(),
+        extraBinds: List<String> = emptyList(),
+    ): ExecResult {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val proot = File(nativeDir, "libproot.so")
         val loader = File(nativeDir, "libproot-loader.so")
-        val argv = listOf(
+        val baseArgv = listOf(
             proot.absolutePath,
             "-0", "--link2symlink",
             "-r", rootfsDir(context).absolutePath,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
+            "-b", l2sSelfBind(context),
+        ) + extraBinds.flatMap { listOf("-b", it) }
+        val argv = baseArgv + listOf(
             "-w", "/root",
             "/bin/bash", "-c", command,
         )
@@ -180,6 +203,7 @@ object RootfsManager {
                 put("HOME", "/root")
                 put("TERM", "xterm-256color")
                 put("LANG", "C.UTF-8")
+                extraEnv.forEach { (k, v) -> put(k, v) }
             }
         }.start()
         val out = p.inputStream.bufferedReader().readText()
@@ -188,7 +212,8 @@ object RootfsManager {
         return ExecResult(code, out)
     }
 
-    private fun download(url: URL, dest: File, onProgress: (Int) -> Unit) {
+    /** 下载带进度回调（镜像多拒 Java UA，统一伪装）。AgentManager 复用。 */
+    internal fun download(url: URL, dest: File, onProgress: (Int) -> Unit) {
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 10_000
         conn.readTimeout = 60_000
@@ -223,7 +248,7 @@ object RootfsManager {
         }
     }
 
-    private fun sha256(f: File): String {
+    internal fun sha256(f: File): String {
         val md = MessageDigest.getInstance("SHA-256")
         f.inputStream().use { input ->
             val buf = ByteArray(64 * 1024)
