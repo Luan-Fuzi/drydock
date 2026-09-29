@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- debug 构建专用：验收自动化广播（release 不合并此文件） -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <receiver
+            android:name=".BenchReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.drydock.action.RUN_BENCH" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

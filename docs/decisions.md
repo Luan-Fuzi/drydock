@@ -98,6 +98,13 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 4. **Claude Code 2.x 为原生二进制分发**：npm 包的 bin/claude.exe（~240MB）与平台包硬链接——正是 npm 的 bin 硬链接触发铁律 1；D8 的下载式安装与 D11 版本固化按此事实执行（pin 2.1.283，Node v22.20.0 官方 tarball sha256 双源交叉核对）。
 被否：proot `-i` 假换 uid 绕 root 检查（acceptEdits 已够，不动 spawn 形态）；环境内装 debconf 预防 ca-certificates 问题（不需要的东西不进环境）。
 
+### D21 仪器落点（2026-09-28 落地，2026-09-29 增补）
+时间线记录器为 JSONL ring buffer（512KB 轮转保留一份 .old），ui 与 :env 两进程同 uid 追加；事件全集 = engineering-plan 清单（screen off/on、wakelock、service_start/destroy、proot_exit 含退出码、session_heartbeat 60s、cpu_sample 5min、battery、l1_alert），一键导出 = 合并 .old+当前经 MediaStore 落 Downloads/Drydock（复用 I4 落袋通道）。三条实测口径：
+1. **心跳的"静默"指标用 holder 的 /proc/io rchar**（dtach 只从 PTY 读，rchar 增量即 PTY 输出量代理）；连续 5 分钟无增长 → L1 通知，每静默期只报一次。holder 经 :env 重启被 SIGKILL 时其监控线程同死，proot_exit 记不到——该场景由 service_start 新 pid + session_recreated 表达，只有 holder 单独死亡才有退出码。
+2. **多会话 = 每会话一对 holder+ttyd**（dtach 无 server 复用，名字进注册表 terminal-sessions.json，:env 启动时全量重建死会话=空 shell）；UI 会话名经 Intent extra 传给终端页。
+3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
+另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
+
 ## 明确不做清单
 
 | 不做的事 | 理由 |

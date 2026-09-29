@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -36,12 +37,21 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        Timeline.log(applicationContext, "ui_start")
+        // L1 通知需要运行时授权（API 33+）；拒绝不阻塞原型功能，AVD 验收也可 pm grant
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4705)
+        }
         // 验收自动化注入口：仅 debuggable 构建存在（release 无此路径），key 直达
         // Keystore 不落盘；无视觉环境下经 am start --es 注入后走 UI 断言。
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
@@ -81,6 +91,8 @@ fun PrototypeScreen() {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
+            // edge-to-edge 下必须避让导航栏，否则列表末尾的按钮被手势条压住点不到
+            .navigationBarsPadding()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -213,14 +225,14 @@ fun PrototypeScreen() {
         if (layerReady) {
             Button(onClick = {
                 scope.launch {
-                    // 会话由 :env 前台服务承载（主进程死不连累），UI 经状态文件发现
+                    // 会话由 :env 前台服务承载（主进程死不连累），UI 经注册表发现
                     context.startForegroundService(
                         android.content.Intent(context, EnvService::class.java),
                     )
                     var found = false
                     repeat(25) {
                         if (it > 0) kotlinx.coroutines.delay(1000)
-                        if (EnvService.readSession(context) != null) {
+                        if (TerminalManager.readSessions(context).any { s -> s.name == TerminalManager.MAIN }) {
                             found = true
                             return@repeat
                         }
@@ -228,12 +240,52 @@ fun PrototypeScreen() {
                     if (!found) {
                         layerState = "✗ 会话启动失败（看 logcat DrydockEnv/DrydockTerminal）"
                     } else {
-                        context.startActivity(
-                            android.content.Intent(context, TerminalActivity::class.java),
-                        )
+                        try {
+                            android.util.Log.i("DrydockUI", "startActivity TerminalActivity…")
+                            context.startActivity(
+                                android.content.Intent(context, TerminalActivity::class.java),
+                            )
+                            android.util.Log.i("DrydockUI", "startActivity 已调用")
+                        } catch (e: Exception) {
+                            android.util.Log.e("DrydockUI", "startActivity 异常", e)
+                        }
                     }
                 }
             }) { Text("打开终端") }
+
+            var newSessRunning by remember { mutableStateOf(false) }
+            Button(
+                enabled = !newSessRunning,
+                onClick = {
+                    newSessRunning = true
+                    val name = TerminalManager.newSessionName(context)
+                    scope.launch {
+                        context.startForegroundService(
+                            android.content.Intent(context, EnvService::class.java).apply {
+                                putExtra("new_session", name)
+                            },
+                        )
+                        var found = false
+                        repeat(25) {
+                            if (it > 0) kotlinx.coroutines.delay(1000)
+                            if (TerminalManager.readSessions(context).any { s -> s.name == name }) {
+                                found = true
+                                return@repeat
+                            }
+                        }
+                        if (found) {
+                            context.startActivity(
+                                android.content.Intent(context, TerminalActivity::class.java).apply {
+                                    putExtra("session", name)
+                                },
+                            )
+                        } else {
+                            layerState = "✗ 新会话 $name 启动失败"
+                        }
+                        newSessRunning = false
+                    }
+                },
+            ) { Text(if (newSessRunning) "创建中…" else "新建会话") }
         }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
@@ -354,6 +406,63 @@ fun PrototypeScreen() {
                 color = if (clean) Color(0xFF4ADE80) else MaterialTheme.colorScheme.error,
             )
             MonoBox(i1Out.takeLast(500))
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+
+        // ---------- 步骤 5：仪器（存活遥测 + 基准电池） ----------
+        Text("步骤 5 · 仪器（存活遥测 + 基准电池）", style = MaterialTheme.typography.titleMedium)
+
+        var timelineState by remember { mutableStateOf("") }
+        var refreshTick by remember { mutableStateOf(0) }
+        val probeState = remember(refreshTick) {
+            val n = TerminalManager.readSessions(context).size
+            "${n} 会话 · 时间线 ${Timeline.sizeBytes(context) / 1024}KB · ${Timeline.readAll(context).count { l -> l.contains("\"session_heartbeat\"") }} 心跳"
+        }
+        Text(probeState, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        Button(onClick = { refreshTick++ }) { Text("刷新仪器状态") }
+
+        Button(
+            enabled = timelineState.isBlank() || !timelineState.startsWith("导出中"),
+            onClick = {
+                timelineState = "导出中…"
+                scope.launch {
+                    val uri = withContext(Dispatchers.IO) {
+                        try {
+                            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss").format(java.util.Date())
+                            val out = File(context.cacheDir, "timeline-$stamp.jsonl")
+                            out.writeText(Timeline.readAll(context).joinToString("\n", postfix = "\n"))
+                            Landing.toDownloads(context, out).toString()
+                        } catch (e: Exception) {
+                            "导出失败: $e"
+                        }
+                    }
+                    timelineState = if (uri.startsWith("content://")) "✓ 已落 Downloads/Drydock" else uri
+                }
+            },
+        ) { Text("导出时间线报告") }
+        if (timelineState.isNotBlank()) {
+            Text(timelineState, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        }
+
+        var benchRunning by remember { mutableStateOf(false) }
+        var benchMsg by remember { mutableStateOf("") }
+        Button(
+            enabled = deployed && !benchRunning,
+            onClick = {
+                benchRunning = true
+                benchMsg = "准备中…"
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        Bench.run(context.applicationContext, onLog = { benchMsg = it })
+                    }
+                    benchMsg = (if (r.ok) "✓ " else "✗ ") + (r.landedUri ?: r.log)
+                    benchRunning = false
+                }
+            },
+        ) { Text(if (benchRunning) "基准电池运行中…" else "运行基准电池（hyperfine）") }
+        if (benchMsg.isNotBlank()) {
+            Text(benchMsg.take(300), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
     }
 }
