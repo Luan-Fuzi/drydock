@@ -454,7 +454,7 @@ fun PrototypeScreen() {
                 benchMsg = "准备中…"
                 scope.launch {
                     val r = withContext(Dispatchers.IO) {
-                        Bench.run(context.applicationContext) { benchMsg = it }
+                        Bench.run(context.applicationContext, onLog = { benchMsg = it })
                     }
                     benchMsg = (if (r.ok) "✓ " else "✗ ") + (r.landedUri ?: r.log)
                     benchRunning = false

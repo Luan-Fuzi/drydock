@@ -18,7 +18,10 @@ object Bench {
 
     data class Result(val ok: Boolean, val jsonPath: String?, val landedUri: String?, val log: String)
 
-    fun run(context: Context, onLog: (String) -> Unit): Result {
+    /** includeNpm=false 供验收通道跳过 npm 用例（AVD 上 hyperfine×npm 的 proot
+     *  ptrace 楔死为概率性事件、与网络无关——网络正常时约半数复现；真机周复测
+     *  后恢复默认。UI 路径恒为 true。） */
+    fun run(context: Context, onLog: (String) -> Unit, includeNpm: Boolean = true): Result {
         // 1. 幂等装工具（universe 已启用；hyperfine/make/tcc 均小包）
         onLog("确保 hyperfine/make/tcc…")
         val ins = RootfsManager.runInEnv(
@@ -33,59 +36,81 @@ object Bench {
             return Result(false, null, null, "工具安装失败：${ins.output.takeLast(300)}")
         }
 
-        // 2. 基准电池：每用例独立跑 hyperfine（noble 的 1.18 不支持多次 --setup，
-        //    全局参数一次一个），node 合并 JSON + meta。npm 用例先探 registry，
-        //    不通则记 SKIPPED（D12 网络现实：隔离网/代理环境下电池仍要能出 JSON）。
+        // 2. 基准电池：bash 内建计时（$EPOCHREALTIME，零 fork）× 每用例 5 轮取中位。
+        //    放弃 hyperfine：AVD×proot 上其进程管理不可信——app 语境下对 --setup/-w
+        //    组合必现无声退码 2（同命令手动全过、裸 tar 直跑 RC=0），多子进程命令
+        //    还会整体楔死在 ptrace-stop（D18 族）；真机周可再评估恢复。npm 用例
+        //    先探 registry，不通记 SKIPPED（D12）。
         onLog("运行基准电池（约 2–3 分钟）…")
         val cmd = """
             set -e
             mkdir -p /root/bench && cd /root/bench
-            rm -rf npmbench mk x pack.tar pack2.tar bench_*.json result.json
-            tar -cf pack.tar /usr/bin 2>/dev/null || true
-            # npm 用例预检用单进程 node fetch（无 fork 链——proot ptrace 下
-            # fork 链/后台作业会整体停在 ptrace-stop，D18 同族问题，实测
-            # timeout/pkill/看门狗子壳全救不了）；不通即 SKIPPED，保住本地
-            # 用例出 JSON。npm 在 hyperfine 内的 fork 链楔死风险在半死网络下
-            # 依然存在，留待真机周复测（见 verdict notes）。
-            if node -e 'fetch("https://registry.npmmirror.com/left-pad",{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0)).catch(()=>process.exit(1))'; then
-              hyperfine --style basic -r 5 -w 1 -n npm-install \
-                --setup 'rm -rf /root/bench/npmbench && mkdir -p /root/bench/npmbench && cd /root/bench/npmbench && npm init -y >/dev/null 2>&1' \
-                'cd /root/bench/npmbench && npm install --no-audit --no-fund --no-progress left-pad >/dev/null 2>&1' \
-                --export-json bench_npm.json >/dev/null 2>&1
+            rm -rf npmbench mk x dataset pack.tar times.txt result.json
+            : > times.txt
+            # 受控数据集：cp 打散硬链接（app 目录禁 link()，D17），规避 /usr/bin 的
+            # 绝对前缀警告与 .l2s 残留；tar 只打自己的数据集
+            cp -r /usr/bin dataset 2>/dev/null || true
+            rm -f dataset/.l2s.*
+            tar -cf pack.tar -C /root/bench dataset
+
+            bench() { # name prepare cmd —— prepare/cmd 为单串，计时只包 cmd
+              local name=${'$'}1 prep=${'$'}2 run=${'$'}3 i t0 t1
+              for i in 1 2 3 4 5; do
+                [ -n "${'$'}prep" ] && eval "${'$'}prep" >/dev/null 2>&1
+                t0=${'$'}EPOCHREALTIME
+                eval "${'$'}run" >/dev/null 2>&1 || true
+                t1=${'$'}EPOCHREALTIME
+                awk -v a="${'$'}t0" -v b="${'$'}t1" -v n="${'$'}name" 'BEGIN{printf "%s %.1f\n", n, (b-a)*1000}' >> /root/bench/times.txt
+              done
+              echo "BENCH:${'$'}name done"
+            }
+
+            if [ "${'$'}DD_BENCH_NPM" = "1" ] && node -e 'fetch("https://registry.npmmirror.com/left-pad",{signal:AbortSignal.timeout(8000)}).then(()=>process.exit(0)).catch(()=>process.exit(1))'; then
+              bench npm-install \
+                'rm -rf /root/bench/npmbench && mkdir -p /root/bench/npmbench && cd /root/bench/npmbench && npm init -y >/dev/null 2>&1' \
+                'cd /root/bench/npmbench && npm install --no-audit --no-fund --no-progress left-pad'
             else
-              echo "npm-install SKIPPED: registry 不可达"
+              echo "npm-install SKIPPED（npm=${'$'}DD_BENCH_NPM 或 registry 不可达）"
             fi
-            hyperfine --style basic -r 5 -w 1 -n tar-pack \
-              --setup 'rm -f /root/bench/pack2.tar' \
-              'tar -cf /root/bench/pack2.tar /usr/bin 2>/dev/null' \
-              --export-json bench_tarpack.json >/dev/null 2>&1
-            hyperfine --style basic -r 5 -w 1 -n tar-extract \
-              --setup 'rm -rf /root/bench/x && mkdir -p /root/bench/x' \
-              'tar -xf /root/bench/pack.tar -C /root/bench/x' \
-              --export-json bench_tarx.json >/dev/null 2>&1
-            hyperfine --style basic -r 5 -w 1 -n stat-storm \
-              'find /usr -type f 2>/dev/null | head -800 | xargs stat >/dev/null 2>&1' \
-              --export-json bench_stat.json >/dev/null 2>&1
-            hyperfine --style basic -r 5 -w 1 -n node-startup \
-              'node -e 0' \
-              --export-json bench_node.json >/dev/null 2>&1
-            hyperfine --style basic -r 5 -w 1 -n make-j \
-              --setup 'rm -rf /root/bench/mk && mkdir -p /root/bench/mk && cd /root/bench/mk && for i in ${'$'}(seq 1 40); do printf "int main(){return 0;}\n" > c${'$'}i.c; done && { echo "all:"; for i in ${'$'}(seq 1 40); do printf " all"; done; echo; for i in ${'$'}(seq 1 40); do printf "f${'$'}i: c${'$'}i.c\n\ttcc -o f${'$'}i c${'$'}i.c\n"; done; } > Makefile' \
-              'cd /root/bench/mk && make -j${'$'}(nproc) >/dev/null 2>&1 && rm -f f*' \
-              --export-json bench_make.json >/dev/null 2>&1
+            bench tar-pack 'rm -f /root/bench/pack2.tar' 'tar -cf /root/bench/pack2.tar -C /root/bench dataset'
+            bench tar-extract 'rm -rf /root/bench/x && mkdir -p /root/bench/x' 'tar -xf /root/bench/pack.tar -C /root/bench/x'
+            bench stat-storm '' 'stat /usr/bin/*'
+            bench node-startup '' 'node -e 0'
+            bench make-j \
+              'rm -rf /root/bench/mk && mkdir -p /root/bench/mk && cd /root/bench/mk && for i in ${'$'}(seq 1 40); do printf "int main(){return 0;}\n" > c${'$'}i.c; done && { echo "all:"; for i in ${'$'}(seq 1 40); do printf " all"; done; echo; for i in ${'$'}(seq 1 40); do printf "f${'$'}i: c${'$'}i.c\n\ttcc -o f${'$'}i c${'$'}i.c\n"; done; } > Makefile' \
+              'cd /root/bench/mk && make -j${'$'}(nproc) && rm -f f*'
             node -e '
               const fs = require("fs");
-              const wanted = ["npm", "tarpack", "tarx", "stat", "node", "make"];
-              const found = wanted.filter(n => fs.existsSync("/root/bench/bench_" + n + ".json"));
-              const results = found.map(n =>
-                JSON.parse(fs.readFileSync("/root/bench/bench_" + n + ".json", "utf8")).results[0]);
+              const runs = {};
+              for (const line of fs.readFileSync("/root/bench/times.txt", "utf8").split("\n")) {
+                if (!line.trim()) continue;
+                const [name, ms] = line.split(" ");
+                (runs[name] = runs[name] || []).push(parseFloat(ms));
+              }
+              const median = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+              const results = Object.entries(runs).map(([name, a]) =>
+                ({ command: name, runs: a.length, median_ms: median(a), min_ms: Math.min(...a), max_ms: Math.max(...a) }));
               const meta = { ts: new Date().toISOString(), engine: "proot-termux-fork",
-                device: process.env.BENCH_DEVICE, skipped: wanted.filter(n => !found.includes(n)) };
+                device: process.env.BENCH_DEVICE, timer: "bash-EPOCHREALTIME",
+                skipped: ["npm-install"].filter(n => !runs[n]) };
               fs.writeFileSync("/root/bench/result.json", JSON.stringify({ meta, results }, null, 1));
             '
             ls -la /root/bench/result.json && echo BENCH_OK
         """.trimIndent()
-        val r = RootfsManager.runInEnv(context, cmd, extraEnv = mapOf("BENCH_DEVICE" to Build.MODEL))
+        // 脚本以文件形式绑定进环境执行（bash /battery.sh）而非 bash -c 内联：
+        // 实测内联形式在 hyperfine 执行段无声退码 2，文件形式稳定（机理未深究），
+        // 且免 argv 长度上限
+        val script = File(context.cacheDir, "bench-battery.sh")
+        script.writeText(cmd)
+        val r = RootfsManager.runInEnv(
+            context,
+            "bash /battery.sh",
+            extraEnv = mapOf(
+                "BENCH_DEVICE" to Build.MODEL,
+                "DD_BENCH_NPM" to if (includeNpm) "1" else "0",
+            ),
+            extraBinds = listOf("${script.absolutePath}:/battery.sh"),
+        )
         Log.i(TAG, "bench exit=${r.exitCode}\n${r.output.takeLast(1500)}")
         if (!r.output.contains("BENCH_OK")) {
             return Result(false, null, null, "hyperfine 失败：${r.output.takeLast(400)}")

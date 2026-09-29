@@ -12,9 +12,10 @@ import android.util.Log
  */
 class BenchReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        Log.i("DrydockBench", "broadcast 触发基准电池")
+        val skipNpm = intent.getBooleanExtra("skip_npm", false)
+        Log.i("DrydockBench", "broadcast 触发基准电池（skip_npm=$skipNpm）")
         Thread {
-            val r = Bench.run(context.applicationContext) { Log.i("DrydockBench", it) }
+            val r = Bench.run(context.applicationContext, { Log.i("DrydockBench", it) }, includeNpm = !skipNpm)
             Log.i(
                 "DrydockBench",
                 "RESULT ok=${r.ok} landed=${r.landedUri} log=${r.log.takeLast(300)}",
