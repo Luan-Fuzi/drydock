@@ -142,12 +142,22 @@ def wait_text(text, timeout_s, poll=3):
     return False
 
 
+def swipe_up():
+    """页内向下滚动一屏（Compose 列表按钮常被挤到可视区外，uiautomator 只见可视节点）。"""
+    shell("input", "swipe", "540", "1600", "540", "500", "300")
+
+
 def tap_text(text, timeout_s=180):
-    """等出现并点击（先 dump 核对，符合真机纪律的输入限界）。"""
-    if not wait_text(text, timeout_s):
-        return False
-    r = run([sys.executable, repo("uitap.py"), text], timeout=120)
-    return r.returncode == 0
+    """等出现并点击；首屏找不到先向下滚动两轮再找（先 dump 核对，真机纪律输入限界）。"""
+    for scroll_round in range(3):
+        if wait_text(text, timeout_s if scroll_round == 0 else 15):
+            for _ in range(3):  # dump 抖动重试
+                r = run([sys.executable, repo("uitap.py"), text], timeout=120)
+                if r.returncode == 0:
+                    return True
+                time.sleep(3)
+        swipe_up()
+    return False
 
 
 # ---------- 会话注入与取证 ----------

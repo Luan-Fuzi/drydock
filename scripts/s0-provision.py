@@ -56,20 +56,26 @@ def main():
         sys.exit("自检未通过")
 
     step("部署 rootfs（AV1 真机计时，最长 15 分钟）")
-    if not sc.tap_text("下载并部署 rootfs", 30):
-        sys.exit("找不到「下载并部署 rootfs」按钮")
-    t0 = time.time()
-    xml = ""
-    while time.time() - t0 < 900:
-        xml = sc.ui_dump()
-        if xml and ("✓ 部署完成" in xml or "✗" in xml):
-            break
-        time.sleep(5)
-    m = re.search(r"部署完成（(\d+) 秒）", xml or "")
-    report["rootfs_deploy_s"] = int(m.group(1)) if m else None
-    if not m:
-        sys.exit(f"部署未完成（900s 超时或失败），UI 片段：{(xml or '')[:200]}")
-    print(f"部署耗时 {report['rootfs_deploy_s']} 秒")
+    xml = sc.ui_dump()
+    resumed = bool(xml) and ("已部署" in xml or "部署完成" in xml)
+    if resumed:
+        print("rootfs 已部署（续跑），跳过部署步骤")
+        report["rootfs_deploy_s"] = "skipped-resume"
+    else:
+        if not sc.tap_text("下载并部署 rootfs", 30):
+            sys.exit("找不到「下载并部署 rootfs」按钮")
+        t0 = time.time()
+        xml = ""
+        while time.time() - t0 < 900:
+            xml = sc.ui_dump()
+            if xml and ("✓ 部署完成" in xml or "✗" in xml):
+                break
+            time.sleep(5)
+        m = re.search(r"部署完成（(\d+) 秒）", xml or "")
+        report["rootfs_deploy_s"] = int(m.group(1)) if m else None
+        if not m:
+            sys.exit(f"部署未完成（900s 超时或失败），UI 片段：{(xml or '')[:200]}")
+        print(f"部署耗时 {report['rootfs_deploy_s']} 秒")
 
     step("AV1 环境自检")
     if not sc.tap_text("进入环境自检（AV1）", 30):
