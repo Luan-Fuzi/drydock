@@ -30,8 +30,8 @@ def child_env():
     return {**os.environ, "ANDROID_SERIAL": resolved_serial()}
 
 
-def run(cmd, timeout=60):
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+def run(cmd, timeout=60, env=None):
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
 
 
 def shell(*args, timeout=30):

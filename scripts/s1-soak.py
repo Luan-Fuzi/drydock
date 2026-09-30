@@ -128,13 +128,16 @@ def main():
 
     serial = sc.resolved_serial()
     print(f"""
->> 即将开始 {minutes} 分钟浸泡：
->>   1. 拔掉 USB 线即自动开始计时（正式 S1 数据必须电池供电）；
->>   2. 拔线后如果屏幕又亮了，手动按一下电源键熄屏；
->>   3. 手机放一边别动，其余交给脚本。""")
-    t0 = wait_unplug(serial)
+>> 布防完成，两种走法自动切换：
+>>   A. 拔掉 USB 线 → 立即开始计时（正式 S1，电池供电）；
+>>   B. 45 分钟内没拔 → 自动转插线稳定性长跑（数据照采，不作 S1 判据）。
+>> 拔线后如果屏幕又亮了，手动按一下电源键熄屏。""")
+    t0 = wait_unplug(serial, timeout_s=2700)
+    mode = "unplugged-s1"
     if t0 is None:
-        sys.exit("30 分钟内未检测到拔线，放弃本次采样")
+        mode = "plugged-stability"
+        print("   未检测到拔线 → 插线稳定性模式（不作 S1 判据）", flush=True)
+        t0 = time.time()
     t0_ms = int(t0 * 1000)
 
     for i in range(minutes, 0, -1):
@@ -160,11 +163,14 @@ def main():
     print(f"负载心跳：{json.dumps(hb, ensure_ascii=False)}")
     print(f"时间线窗口：{json.dumps(tl, ensure_ascii=False)}")
     expected_beats = int((t1 - t0) / BEAT_INTERVAL)
-    passed = (hb["beats_in_window"] >= expected_beats * 0.7 and not hb["gaps_over_90s"]
-              and tl["heartbeat_count"] >= 1 and tl["heartbeat_gaps_over_180s"] == 0
-              and tl["screen_off"] and not tl["charging_observed"])
+    strict = mode == "unplugged-s1"
+    survived = (hb["beats_in_window"] >= expected_beats * 0.7 and not hb["gaps_over_90s"]
+                and tl["heartbeat_count"] >= 1 and tl["heartbeat_gaps_over_180s"] == 0
+                and tl["screen_off"])
+    passed = survived and (not tl["charging_observed"] if strict else True)
     verdict = {
         "av": f"S1 锁屏 {minutes} 分钟任务存活",
+        "s1_mode": mode + ("" if strict else "（充电态，不作 S1 判据）"),
         "date": time.strftime("%Y-%m-%d"),
         "device": sc.device_identity(),
         "battery_at_end": bat,
@@ -173,12 +179,14 @@ def main():
         "workload": hb,
         "timeline": tl,
         "charging_during_soak": tl["charging_observed"],
+        "survived": survived,
         "passed": passed,
         "evidence": ["draft/s1-heartbeat.log", "draft/s1-timeline.jsonl"],
     }
     out = os.path.join(sc.DRAFT, "s1-soak-verdict.json")
     json.dump(verdict, open(out, "w"), ensure_ascii=False, indent=2)
-    print(f"\nS1 {'✓ 通过' if passed else '✗ 未通过'}，报告：{out}")
+    label = "S1 判据" if strict else "稳定性长跑（非 S1 判据）"
+    print(f"\n{label} {'✓ 任务存活' if survived else '✗ 任务死亡'}，报告：{out}")
     sys.exit(0 if passed else 1)
 
 

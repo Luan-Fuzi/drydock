@@ -11,15 +11,19 @@ ADB_CMD="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
 PKG=dev.drydock.prototype
 
 # 真机纪律（AGENTS.md）：多设备在线且未显式指定 serial 时拒绝执行
+# （macOS 自带 bash 3.2，不能用 mapfile）
 SERIAL="${ANDROID_SERIAL:-}"
-mapfile -t DEVS < <("$ADB_CMD" devices | awk 'NR>1 && $2=="device"{print $1}')
+DEVS="$("$ADB_CMD" devices | awk 'NR>1 && $2=="device"{print $1}')"
+NDEVS=$(printf '%s\n' "$DEVS" | grep -c .)
 if [[ -n "$SERIAL" ]]; then
-  [[ " ${DEVS[*]:-} " == *" $SERIAL "* ]] || { echo "ANDROID_SERIAL=$SERIAL 不在线：${DEVS[*]:-无}" >&2; exit 1; }
-  ADB=("$ADB_CMD" -s "$SERIAL")
-elif (( ${#DEVS[@]} == 0 )); then
+  case " $DEVS " in
+    *" $SERIAL "*) ADB=("$ADB_CMD" -s "$SERIAL") ;;
+    *) echo "ANDROID_SERIAL=$SERIAL 不在线：${DEVS:-无}" >&2; exit 1 ;;
+  esac
+elif (( NDEVS == 0 )); then
   echo "无 adb 设备在线（检查 USB 调试 / RSA 授权）" >&2; exit 1
-elif (( ${#DEVS[@]} > 1 )); then
-  echo "多设备在线（${DEVS[*]}）：须 ANDROID_SERIAL=<serial> 显式指定目标（真机纪律）" >&2; exit 1
+elif (( NDEVS > 1 )); then
+  echo "多设备在线（$(echo $DEVS | tr '\n' ' ')）：须 ANDROID_SERIAL=<serial> 显式指定目标（真机纪律）" >&2; exit 1
 else
   ADB=("$ADB_CMD")
 fi
