@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """按文本找 UI 元素并点击：scripts/uitap.py <关键字> [--dump-only]
-依赖 uiautomator dump（模拟器/调试设备）。退出码 0=已点击，2=未找到。"""
+依赖 uiautomator dump（模拟器/调试设备）。退出码 0=已点击，2=未找到。
+多设备在线时须 ANDROID_SERIAL=<serial> 指定目标（真机纪律，经 scripts/adbdev.py）。"""
+import os
 import re
 import subprocess
 import sys
 import time
 
-ADB = "/Users/scliang/Library/Android/sdk/platform-tools/adb"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from adbdev import adb_prefix
+
+# dump 落 /data/local/tmp（真机纪律：不写 /sdcard）
+DUMP = "/data/local/tmp/uitap-ui.xml"
 
 
 def sh(*args, **kw):
@@ -14,8 +20,8 @@ def sh(*args, **kw):
 
 
 def dump():
-    sh(f"{ADB}", "shell", "uiautomator", "dump", "/sdcard/ui.xml")
-    return sh(f"{ADB}", "shell", "cat", "/sdcard/ui.xml").stdout
+    sh(*adb_prefix(), "shell", "uiautomator", "dump", DUMP)
+    return sh(*adb_prefix(), "shell", "cat", DUMP).stdout
 
 
 def main():
@@ -27,7 +33,7 @@ def main():
             x = (int(m.group(2)) + int(m.group(4))) // 2
             y = (int(m.group(3)) + int(m.group(5))) // 2
             print(f"tap '{m.group(1)}' @ {x},{y}")
-            sh(f"{ADB}", "shell", "input", "tap", str(x), str(y))
+            sh(*adb_prefix(), "shell", "input", "tap", str(x), str(y))
             sys.exit(0)
     print(f"not found: {key}", file=sys.stderr)
     # 打印可见文本帮助诊断
