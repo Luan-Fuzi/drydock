@@ -22,7 +22,7 @@
 - **绝不**：root / 解 Bootloader / 刷机 / fastboot / recovery；`settings put`、`pm uninstall`、`pm clear`、`wipe`、factory reset；写或删 `/sdcard` 与任何非 drydock 数据；动其他接入设备（哪怕只是"看一眼"的写操作）。
 - **单设备瞄准**：多设备在线时所有 adb 命令必须显式 `-s <serial>` 或设 `ANDROID_SERIAL`；发命令前 `adb devices -l` 核对目标。与 AVD 同时在线时尤甚。
 - **系统设置归用户**：开发者选项、USB 调试、锁屏方式等只由用户本人在手机上操作；测试确实需要改（如临时改锁屏为无密码）时，说明理由和还原方法，由用户自己动手、自己还原。
-- **输入模拟限界**：`input tap/text/keyevent` 只作用于 drydock 页面操作与电源键熄屏/唤醒（S1 采样需要），不向其他 app 输入；不确定焦点时先 uiautomator dump 核对。
+- **输入模拟限界**：`input tap/text/keyevent` 只作用于 drydock 页面操作与电源键熄屏/唤醒、HOME 切后台（S1/S2 采样需要），不向其他 app 输入；HOME/熄屏前核对前台与屏幕状态，不确定时先 uiautomator dump 核对。
 - **正式采样不插线**：S1/S3 的有效性数据必须在电池供电下采（充电改变 Doze 与温控行为）；插线阶段只做装机、部署与冒烟。
 
 ## 协作约定（2026-09-27）
