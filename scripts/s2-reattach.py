@@ -134,9 +134,9 @@ def main():
     tier2["session_recreated_event"] = "session_recreated" in timeline
     if post2:
         sc.forward(post2["port"])
-        sc.ws(post2["port"], post2["token"], "send", "echo S2_REATTACH_OK\r", timeout=30)
-        r = sc.ws(post2["port"], post2["token"], "watch", "6", timeout=20)
-        out = (r or {}).get("received_tail", "")
+        r1 = sc.ws(post2["port"], post2["token"], "send", "echo S2_REATTACH_OK\r", timeout=30) or {}
+        r2 = sc.ws(post2["port"], post2["token"], "watch", "6", timeout=20) or {}
+        out = r1.get("received_tail", "") + r2.get("received_tail", "")
         tier2["new_shell_ok"] = "S2_REATTACH_OK" in out
     print(f"tier2：{json.dumps(tier2, ensure_ascii=False)}")
 
