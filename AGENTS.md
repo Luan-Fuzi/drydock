@@ -14,6 +14,17 @@
 - **不入库**：构建产物（APK）、rootfs、node_modules；证据文件（截图、遥测导出、基准原始 JSON）默认进 `draft/`，结论提炼进 docs/。新增生成物类型时同步补 `.gitignore`。
 - 大改动可从 dev 拉短命分支，合回即删。
 
+## 真机纪律（2026-10-01，步骤 6 真机周生效）
+
+接入的设备都是用户花钱买的私人设备，**"不搞坏设备"优先级高于任何判据采样**；模拟器"炸了重开"的宽容度在真机上不存在。
+
+- **只读默认**：adb 侧默认只做读操作（shell 查询、logcat、dumpsys、screencap、pull、uiautomator dump）。写操作走白名单：安装/更新我们自己的包（`pm install -r`）、`pm grant` 它的运行时权限、push 临时脚本到 `/data/local/tmp`、经 `run-as` 读写 app 自己的私有目录、app 自己经 MediaStore 落 Downloads/Drydock。
+- **绝不**：root / 解 Bootloader / 刷机 / fastboot / recovery；`settings put`、`pm uninstall`、`pm clear`、`wipe`、factory reset；写或删 `/sdcard` 与任何非 drydock 数据；动其他接入设备（哪怕只是"看一眼"的写操作）。
+- **单设备瞄准**：多设备在线时所有 adb 命令必须显式 `-s <serial>` 或设 `ANDROID_SERIAL`；发命令前 `adb devices -l` 核对目标。与 AVD 同时在线时尤甚。
+- **系统设置归用户**：开发者选项、USB 调试、锁屏方式等只由用户本人在手机上操作；测试确实需要改（如临时改锁屏为无密码）时，说明理由和还原方法，由用户自己动手、自己还原。
+- **输入模拟限界**：`input tap/text/keyevent` 只作用于 drydock 页面操作与电源键熄屏/唤醒（S1 采样需要），不向其他 app 输入；不确定焦点时先 uiautomator dump 核对。
+- **正式采样不插线**：S1/S3 的有效性数据必须在电池供电下采（充电改变 Doze 与温控行为）；插线阶段只做装机、部署与冒烟。
+
 ## 协作约定（2026-09-27）
 
 - 用户默认用**无视觉能力**的模型做开发；验收以命令行为主（adb / CDP / 脚本退出码），协议见 `docs/prototype-plan.md` 的"验收方式"。
