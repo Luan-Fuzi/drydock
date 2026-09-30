@@ -24,8 +24,10 @@ HEARTBEAT = "/root/s1-heartbeat.log"
 BEAT_INTERVAL = 30  # 秒
 
 
-def wait_replug(serial, timeout_s=600):
-    print(f"\n>> 计时结束。请重新插上 USB 线（{timeout_s // 60} 分钟内），插好后不用按回车…", flush=True)
+def wait_replug(serial, timeout_s=None):
+    if timeout_s is None:
+        timeout_s = int(os.environ.get("S1_REPLUG_S", "600"))
+    print(f"\n>> 计时结束。请重新插上 USB 线（{timeout_s // 60} 分钟内），插好即自动取证…", flush=True)
     t0 = time.time()
     while time.time() - t0 < timeout_s:
         if serial in online_devices():
@@ -33,6 +35,18 @@ def wait_replug(serial, timeout_s=600):
             return True
         time.sleep(5)
     return False
+
+
+def wait_unplug(serial, timeout_s=1800):
+    """拔线自动开始计时：serial 从 adb 消失即 t0，全程无需人在 Mac 前。"""
+    print(f"\n>> 准备就绪，等待拔线（{timeout_s // 60} 分钟内拔掉 USB 线即自动开始计时）…", flush=True)
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        if serial not in online_devices():
+            print(f"   检测到拔线 @ {time.strftime('%H:%M:%S')}", flush=True)
+            return time.time()
+        time.sleep(2)
+    return None
 
 
 def analyze_heartbeat(lines, t0, t1):
@@ -114,12 +128,13 @@ def main():
 
     serial = sc.resolved_serial()
     print(f"""
->> 即将开始 {minutes} 分钟浸泡。请：
->>   1. 拔掉 USB 线（正式 S1 数据必须电池供电）；
+>> 即将开始 {minutes} 分钟浸泡：
+>>   1. 拔掉 USB 线即自动开始计时（正式 S1 数据必须电池供电）；
 >>   2. 拔线后如果屏幕又亮了，手动按一下电源键熄屏；
->>   3. 手机放一边别动，Mac 侧自动计时。""")
-    input(">> 拔好线后按回车开始计时…")
-    t0 = time.time()
+>>   3. 手机放一边别动，其余交给脚本。""")
+    t0 = wait_unplug(serial)
+    if t0 is None:
+        sys.exit("30 分钟内未检测到拔线，放弃本次采样")
     t0_ms = int(t0 * 1000)
 
     for i in range(minutes, 0, -1):
