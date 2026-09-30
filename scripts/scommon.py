@@ -187,3 +187,60 @@ def env_read(script_body, timeout=120):
         f.write(script_body)
     r = run(["bash", repo("env-run.sh"), tmp], timeout=timeout, env=child_env())
     return r.stdout
+
+
+# ---------- CDP 输入通道（ttyd 直连 ws 的输入帧实测不达，走 WebView xterm 为实证路径） ----------
+
+def cdp_forward():
+    """主进程 WebView DevTools → 本机 9222。"""
+    pid = None
+    for line in shell("ps", "-A").splitlines():
+        if line.rstrip().endswith(PKG):
+            pid = line.split()[1]
+            break
+    if not pid:
+        return False
+    r = subprocess.run(adb_prefix() + ["forward", "tcp:9222",
+                                       f"localabstract:webview_devtools_remote_{pid}"],
+                       capture_output=True, text=True, timeout=15)
+    return r.returncode == 0
+
+
+def cdp_type(text):
+    """经 CDP 向 xterm 打字；行尾用字面 \\n（cdp-type.py 约定）表示回车。"""
+    r = run(["uv", "run", "--with", "websockets", repo("cdp-type.py"), text], timeout=90)
+    return r.returncode == 0
+
+
+def start_workload(minutes, heartbeat="/root/s1-heartbeat.log", runner="/root/s1-run.sh"):
+    """环境内落 runner 脚本 → CDP 启动（前台占用会话 shell，贴近真实任务形态）→ 验证心跳。"""
+    script = (
+        "#!/bin/bash\n"
+        "# S1/S2 心跳负载：文件一拍 + PTY 一拍（防 L1 静默误报、保持 holder rchar 增长）\n"
+        f"end=$(( $(date +%s) + {int(minutes) + 10} * 60 ))\n"
+        "while [ $(date +%s) -lt $end ]; do\n"
+        "  b=$(date +%s)\n"
+        f"  echo \"$b\" >> {heartbeat}\n"
+        "  echo \"S1BEAT $b\" > /dev/tty 2>/dev/null\n"
+        "  sleep 30\ndone\n"
+        f"echo \"S1DONE $(date +%s)\" >> {heartbeat}\n"
+    )
+    write_cmd = f"cat > {runner} <<'EOS'\n{script}EOS\nchmod +x {runner}; echo WROTE\n"
+    out = env_read(write_cmd, timeout=90)
+    if "WROTE" not in out:
+        return False
+    if not cdp_forward():
+        print("cdp forward 失败（主进程在吗？）")
+        return False
+    if not cdp_type(f"bash {runner}\\n"):
+        return False
+    deadline = time.time() + 45
+    while time.time() < deadline:
+        n = env_read(f"wc -l < {heartbeat} 2>/dev/null || echo 0\n", timeout=60).strip()
+        try:
+            if int(n.splitlines()[-1]) >= 1:
+                return True
+        except (IndexError, ValueError):
+            pass
+        time.sleep(5)
+    return False

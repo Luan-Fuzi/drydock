@@ -102,22 +102,25 @@ def main():
     print(f"设备：{json.dumps(sc.device_identity(), ensure_ascii=False)}")
     print(f"main 会话 port={port}")
 
-    print("\n== 注入心跳负载（会话内 nohup，%ds 一拍，tee 同时出 PTY 防 L1 误报静默）" % BEAT_INTERVAL)
-    sc.forward(port)
-    end_epoch = int(time.time()) + minutes * 60 + 600
-    # 输出显式指回 /dev/tty：tee 的拍子必须到达 PTY（holder rchar 增长、L1 不误报、
-    # ws attach 可见）；不能用 nohup 重定向（会把 tee 一起吞进 nohup.out 或 /dev/null）
-    cmd = (f"sh -c 'while [ $(date +%s) -lt {end_epoch} ]; do "
-           f"date +%s | tee -a {HEARTBEAT}; sleep {BEAT_INTERVAL}; done' "
-           f">/dev/tty 2>&1 &\r")
-    r = sc.ws(port, token, "send", cmd, timeout=30)
-    if not r or not r.get("sent"):
-        sys.exit("负载注入失败（ws 通道，看 av2-ws 输出）")
-    time.sleep(5)
-    out = sc.env_read(f"wc -l < {HEARTBEAT}; tail -1 {HEARTBEAT}\n").strip().splitlines()
-    print(f"环境内确认：{out}")
-    if not out or not out[0].strip().isdigit():
-        sys.exit("心跳文件未出现")
+    print("\n== 心跳负载（%ds 一拍，文件+PTY 双写）" % BEAT_INTERVAL)
+
+    def hb_count():
+        out = sc.env_read(f"wc -l < {HEARTBEAT} 2>/dev/null || echo 0\n").strip()
+        try:
+            return int(out.splitlines()[-1])
+        except (IndexError, ValueError):
+            return 0
+
+    started = False
+    if os.environ.get("S1_REUSE") == "1":
+        n1 = hb_count()
+        time.sleep(35)
+        started = hb_count() > n1
+        print(f"复用已运行负载：{n1} → {hb_count()} 拍{'，仍在增长' if started else '，已停，重新注入'}")
+    if not started:
+        if not sc.start_workload(minutes + 10):
+            sys.exit("负载注入失败（CDP 通道）")
+        print("负载已启动（CDP 注入）")
 
     print("\n== 熄屏")
     was_awake = sc.screen_awake()
@@ -127,17 +130,22 @@ def main():
     print(f"熄屏前 Awake={was_awake}，熄屏后 Awake={sc.screen_awake()}（应 False）")
 
     serial = sc.resolved_serial()
-    print(f"""
+    if os.environ.get("S1_DIRECT") == "1":
+        mode = "plugged-stability"
+        print("\n>> S1_DIRECT=1 → 直接插线稳定性模式（不作 S1 判据）")
+        t0 = time.time()
+    else:
+        print(f"""
 >> 布防完成，两种走法自动切换：
 >>   A. 拔掉 USB 线 → 立即开始计时（正式 S1，电池供电）；
 >>   B. 45 分钟内没拔 → 自动转插线稳定性长跑（数据照采，不作 S1 判据）。
 >> 拔线后如果屏幕又亮了，手动按一下电源键熄屏。""")
-    t0 = wait_unplug(serial, timeout_s=2700)
-    mode = "unplugged-s1"
-    if t0 is None:
-        mode = "plugged-stability"
-        print("   未检测到拔线 → 插线稳定性模式（不作 S1 判据）", flush=True)
-        t0 = time.time()
+        t0 = wait_unplug(serial, timeout_s=2700)
+        mode = "unplugged-s1"
+        if t0 is None:
+            mode = "plugged-stability"
+            print("   未检测到拔线 → 插线稳定性模式（不作 S1 判据）", flush=True)
+            t0 = time.time()
     t0_ms = int(t0 * 1000)
 
     for i in range(minutes, 0, -1):
