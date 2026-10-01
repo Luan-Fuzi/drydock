@@ -28,8 +28,8 @@ def main():
     report = {"started": time.strftime("%Y-%m-%d %H:%M:%S"), "device": sc.device_identity()}
     print(f"设备：{json.dumps(report['device'], ensure_ascii=False)}")
 
-    print("\n== 注入 key（debug --es 通道，只进 Keystore）")
-    sc.shell("am", "start", "-n", sc.MAIN_ACTIVITY, "--es", "drydock_api_key", key)
+    print("\n== 注入 key（debug --es 通道，只进 Keystore；-S 保证 onCreate 重建拿到 extras）")
+    sc.shell("am", "start", "-S", "-n", sc.MAIN_ACTIVITY, "--es", "drydock_api_key", key)
     if not sc.wait_text("已保管", 60):
         sys.exit("key 未入 Keystore（看手机是否停在 Drydock 页）")
 

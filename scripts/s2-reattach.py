@@ -32,15 +32,9 @@ def hb_lines():
 
 
 def inject(sess, minutes=40):
-    sc.forward(sess["port"])
-    end_epoch = int(time.time()) + minutes * 60
-    # 输出显式指回 /dev/tty（tee 必须到 PTY，见 s1-soak.py 同款注释）
-    cmd = (f"sh -c 'while [ $(date +%s) -lt {end_epoch} ]; do "
-           f"date +%s | tee -a {HEARTBEAT}; sleep {BEAT_INTERVAL}; done' "
-           f">/dev/tty 2>&1 &\r")
-    r = sc.ws(sess["port"], sess["token"], "send", cmd, timeout=30)
-    if not r or not r.get("sent"):
-        sys.exit("负载注入失败")
+    # 注入走 CDP→xterm 通道（ttyd 直连 ws 输入帧不达，见 night-log）
+    if not sc.start_workload(minutes, heartbeat=HEARTBEAT, runner="/root/s2-run.sh"):
+        sys.exit("负载注入失败（CDP 通道）")
     deadline = time.time() + 60
     while time.time() < deadline:
         if hb_lines() >= 2:
@@ -105,8 +99,10 @@ def main():
     tier1["task_alive"] = n_after > n_before
     print(f"负载拍数 {n_before} → {n_after}（30s，应增长）")
 
-    print("-- tier1 接回：冷启 UI → 安装终端层 → 打开终端")
-    post = bring_up_terminal()
+    print("-- tier1 接回（:env 未死无需重建：验证注册表不变 + ws 输出可见）")
+    sc.shell("am", "start", "-n", sc.MAIN_ACTIVITY)
+    time.sleep(3)
+    post = sc.main_session()
     tier1["reattach_ui"] = bool(post)
     if post:
         tier1["same_session"] = (post["port"] == pre["port"] and post["token"] == pre["token"])

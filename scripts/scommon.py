@@ -221,7 +221,7 @@ def start_workload(minutes, heartbeat="/root/s1-heartbeat.log", runner="/root/s1
         "while [ $(date +%s) -lt $end ]; do\n"
         "  b=$(date +%s)\n"
         f"  echo \"$b\" >> {heartbeat}\n"
-        "  echo \"S1BEAT $b\" > /dev/tty 2>/dev/null\n"
+        "  echo \"BEAT $b\" > /dev/tty 2>/dev/null\n"
         "  sleep 30\ndone\n"
         f"echo \"S1DONE $(date +%s)\" >> {heartbeat}\n"
     )
