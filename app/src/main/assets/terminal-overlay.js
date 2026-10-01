@@ -4,6 +4,24 @@
   if (window.__drydockOverlay) return;
   window.__drydockOverlay = true;
 
+  // ---------- 字体修正（D24 实测）----------
+  // ttyd 默认字体链（Consolas/Liberation/Menlo/Courier）在 Android 全不存在，
+  // 落到通用 monospace 后缺 U+23F5(⏵) 等字形变豆腐块；换安卓实际有的等宽链。
+  function fixFont() {
+    try {
+      if (typeof term !== 'undefined' && term.options) {
+        term.options.fontFamily =
+          '"Noto Sans Mono","Roboto Mono","Droid Sans Mono",monospace';
+        return true;
+      }
+    } catch (e) { /* term 未就绪则稍后重试 */ }
+    return false;
+  }
+  if (!fixFont()) {
+    var fontTimer = setInterval(function () { if (fixFont()) clearInterval(fontTimer); }, 500);
+    setTimeout(function () { clearInterval(fontTimer); }, 15000);
+  }
+
   // ---------- 凭据补丁 ----------
   // WebView 的 basic auth 凭据缓存不进页面 JS 发起的 fetch/ws，
   // 而 ttyd 1.7 的 /token（一次性 AuthToken 的来源）受 basic auth 保护。
