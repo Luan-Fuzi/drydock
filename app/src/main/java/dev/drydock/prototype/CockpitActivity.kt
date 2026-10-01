@@ -51,6 +51,7 @@ class CockpitActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         Timeline.log(applicationContext, "cockpit_start")
         // 验收自动化注入口：仅 debug 构建（同 drydock_api_key 模式），--es 直发一轮
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {

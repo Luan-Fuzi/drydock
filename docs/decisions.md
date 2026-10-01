@@ -105,6 +105,11 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
 
+### D24 产品形态定调：终端原生为主屏，不自建对话渲染（2026-10-01，用户拍板 + 真机实证）
+**主屏 = 手机终端里直接跑 `claude` 交互模式，其原生 TUI（Ink/ANSI）经 PTY→ttyd→xterm.js 原样渲染，零转译、流式天然成立**；虚拟键条（方向键/Esc/Tab）保留——claude TUI 的菜单导航恰需要。真机实证（小米13）：首启引导（主题/安全提示/信任目录）经"数字直选 + ArrowDown + Enter+text\r"走通，主界面输入框、对话往返（5s 出话）、auto mode 状态条全部正常渲染（draft/claude-tui-*.png）。批准流分层：交互模式走 claude 自身权限 UI（2.1.283 默认 Auto 模式：自动风险评估+高风险拦截）；headless（驾驶舱/调度）走宿主 PreToolUse hook 网关（Q5 机制）。
+**驾驶舱重定位**：从"对话主界面"降为辅助层（发起任务、产物落袋、通知；headless 场景的批准卡片），不再复刻对话渲染——避免与 agent 官方 UI 的版本追赶（同"明确不做：聊天气泡复刻"的理由延伸）。
+配套实测：①CDP 合成回车必须带 `text:"\r"`（不带则 TUI 不吃，insertText 通道天然有效——数字直选可用）；②HyperOS"充电时不熄屏"压不住自动锁屏（设置全对仍 10 分钟锁），产品正解 = 终端/驾驶舱页 FLAG_KEEP_SCREEN_ON（已落地）；③proot -0 无 uid 映射使 claude 跨会话消息 socket 关闭（警告非致命，观察项）；④ttyd 页 WebView 的 DevTools socket 建立晚于 Activity 启动数秒，CDP 前需重试。
+
 ### D23 工况定位：不做抗恶劣环境专项（2026-10-01，用户拍板）
 对齐主流 coding agent 产品对宿主活跃度的合理预期：目标工况 = 任务 5–30 分钟、安装时引导配置省电白名单（D22）、任务中屏幕可熄可亮。**不做**超长时/深 Doze/夜间维护窗口的专项加压（原 8h 过夜样本取消，S1 判据已以 60min 正式样本通过）；熄屏挂机能力经 D22 A/B 实测为白名单下的白送优势（60min 耗电 1%），保留但不追加强度。若产品期确需"亮屏保活"模式，实现路径为任务期 FLAG_KEEP_SCREEN_ON（app 自持，不依赖开发者选项）。被否：为通过 OEM 极端杀后台做进程级对抗（黑科技保活）——与厂商策略军备竞赛，工程量和口碑风险不成比例。
 
