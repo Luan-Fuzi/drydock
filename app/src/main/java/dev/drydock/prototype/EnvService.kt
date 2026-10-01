@@ -32,6 +32,7 @@ class EnvService : Service() {
         private const val HEARTBEAT_TICKS = 12 // 5s × 12 = 60s
         private const val CPU_TICKS = 60 // 5s × 60 = 5min
         private const val SILENT_ALERT_MIN = 5L
+        private const val FREEZE_GAP_MS = 60_000L // 5s tick 出现 >60s 断档视为曾被冻结
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -140,13 +141,23 @@ class EnvService : Service() {
             ?.let { batteryReceiver?.onReceive(this, it) }
     }
 
-    /** 仪器主循环：5s tick；每 12 tick 会话心跳（含 L1 静默判定），每 60 tick CPU 采样。 */
+    /** 仪器主循环：5s tick；每 12 tick 会话心跳（含 L1 静默判定），每 60 tick CPU 采样。
+     *  冻结感知（真机周 D1 实测教训）：线程被系统冻结时 sleep 整段停摆，恢复后
+     *  wall-clock 断档远大于 tick 周期——据此记 freeze_suspected 并通知用户。 */
     private fun startMonitor() {
         monitorRuns = true
         Thread {
             var tick = 0
+            var lastTickAt = System.currentTimeMillis()
             while (monitorRuns) {
                 try {
+                    Thread.sleep(5_000)
+                    val now = System.currentTimeMillis()
+                    val gapMs = now - lastTickAt
+                    lastTickAt = now
+                    if (gapMs > FREEZE_GAP_MS) {
+                        onFreezeSuspected(gapMs)
+                    }
                     if (tick % HEARTBEAT_TICKS == 0) {
                         val beats = TerminalManager.heartbeat(this)
                         l1Judge(beats)
@@ -156,9 +167,23 @@ class EnvService : Service() {
                     Log.w(TAG, "monitor tick 异常: $e")
                 }
                 tick++
-                Thread.sleep(5_000)
             }
         }.apply { isDaemon = true }.start()
+    }
+
+    /** 断档 >60s：进程曾被挂起（HyperOS 冻结 / 深度休眠 / 整机深睡）。 */
+    private fun onFreezeSuspected(gapMs: Long) {
+        val min = gapMs / 60_000
+        Timeline.log(this, "freeze_suspected", mapOf("gapMs" to gapMs, "gapMin" to min))
+        // 冻结期间的 rchar 静默计数跨着熄屏断档，恢复后首拍易误报"静默"——先占位抑制
+        TerminalManager.heartbeat(this).forEach { b ->
+            if (b.alive) notifiedSilent.add(b.name)
+        }
+        alert(
+            getSystemService(NotificationManager::class.java),
+            "任务曾被系统暂停约 $min 分钟",
+            "环境与仪器同时停摆（疑似省电策略冻结），现已自动恢复；若频繁出现请检查省电策略",
+        )
     }
 
     /** L1 最小通知：退出（holder 死）与静默（rchar 5 分钟无增长）启发式，每事件只报一次。 */
