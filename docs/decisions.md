@@ -105,6 +105,9 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
 
+### D23 工况定位：不做抗恶劣环境专项（2026-10-01，用户拍板）
+对齐主流 coding agent 产品对宿主活跃度的合理预期：目标工况 = 任务 5–30 分钟、安装时引导配置省电白名单（D22）、任务中屏幕可熄可亮。**不做**超长时/深 Doze/夜间维护窗口的专项加压（原 8h 过夜样本取消，S1 判据已以 60min 正式样本通过）；熄屏挂机能力经 D22 A/B 实测为白名单下的白送优势（60min 耗电 1%），保留但不追加强度。若产品期确需"亮屏保活"模式，实现路径为任务期 FLAG_KEEP_SCREEN_ON（app 自持，不依赖开发者选项）。被否：为通过 OEM 极端杀后台做进程级对抗（黑科技保活）——与厂商策略军备竞赛，工程量和口碑风险不成比例。
+
 ### D22 HyperOS 熄屏冻结与省电白名单（2026-10-01，真机周 D1 实测）
 小米13 / HyperOS 3.0.2（Android 16）上，**默认省电策略 = 熄屏即全树冻结**：会话与任务进程进 ptrace-stop（tracer=proot 本体）、:env 进程活着但定时器/广播/时间线全部停摆（仪器与被测者共生死）、合法持有的 PARTIAL_WAKE_LOCK 被系统置 DISABLED。冻结跨充电态（8h 满电不恢复），**解锁瞬间全部解冻且零数据丢失**——任务语义是"暂停"而非"死亡"。A/B 钉死：应用设置省电策略改「无限制」（+自启动）即映射进 `dumpsys deviceidle whitelist`，熄屏 10 分钟任务全程存活、WakeLock 恢复持有；正式 S1 样本（60min 电池供电、白名单态）零断档、耗电 1%。产品含义：**首次安装必须引导用户改省电策略（原型已落省电状态卡）；L1 静默告警需区分"任务静默"与"疑似系统冻结"（原型已落 freeze_suspected：monitor 5s tick 断档 >60s 判定，AVD SIGSTOP 93s 实测）**。Q3 矩阵 Xiaomi 行第一格：省电策略白名单 = 保活硬前提。
 配套实测教训：ttyd 直连 ws 客户端在该设备输入帧不达（鉴权/旁观正常）——验收注入走 CDP→xterm insertText 通道；`am start` 不重建已存任务的 MainActivity（栈顶是终端页时 --es 注入失效，须 -S）；dtach 无回滚，晚接入客户端空屏至新输出；Compose 列表按钮会滚出可视区，uiautomator 只见可视节点（驱动前先滚动）。
