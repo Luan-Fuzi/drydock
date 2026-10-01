@@ -10,6 +10,8 @@ agent 任务一跑几十分钟，手机会锁屏、降频、被杀后台、发�
 
 **真机周新增重点观测（2026-09-29，probe-ready 实测衍生）**：proot ptrace 楔死——AVD 上 hyperfine 管理的多子进程命令与 npm 以约半数概率整树停在 ptrace-stop（D18 家族，与网络无关）。真机上须验证 agent 长任务（claude 直跑形态从未复现楔死，密集 fork 形态高危）；时间线记录器已能从心跳/rchar 与 proot_exit 观测此类异常。另：基准电池在真机上重跑 npm 用例并评估恢复 hyperfine；宿主代理与时钟跳变两类干扰在真机不存在。
 
+**2026-10-01 收口（真机周 D1）**：S1 正式样本已采（60min 电池供电、白名单态、零断档、耗电 1%，`draft/s1-soak-verdict.json`）；冻结死因与白名单解法经 A/B 钉死（D22）。**原计划的 8h 过夜加压样本取消**：判据已过、机制已明，产品工况定位收缩为"任务 5–30 分钟、安装引导白名单、任务中屏幕可熄可亮"（对齐主流 agent 产品对宿主活跃度的合理预期；熄屏能力经实测为白送优势保留，不做抗恶劣工况专项）。深 Doze/夜间维护窗口若后续真用中自然出现异常，按 Q3 矩阵记录即可。
+
 ## Q2（需求验证）：目标用户真的会用吗？
 
 "想要 TUI 但装不来 Termux"和"想要 agent 但不想碰终端"两个交集人群的盘子大小是假设不是事实。
@@ -26,7 +28,7 @@ agent 任务一跑几十分钟，手机会锁屏、降频、被杀后台、发�
 
 ## Q5：hook 集成的实际深度
 
-Claude Code hooks 能否完整覆盖"批准卡片"所需的全部事件（PreToolUse 返回决策、Notification 触达时机）需要原型实测；Codex notify 与 OpenCode 的事件粒度待调查。L2 只做 Claude Code，此问题不阻塞 Q1/Q2。
+**2026-10-01 真机实测（draft/q5-hooks-result.json）**：PreToolUse/PostToolUse/Stop 全链路触发、tool_input 载荷完整（file_path+content，够批准卡片展示）；PreToolUse `exit 2 + stderr` 决策返回被模型尊重——工具调用拦截、stderr 回馈、模型明确不绕过（拒绝改用 shell 等替代路径）。**批准卡片地基成立**。遗留：Notification hook 在 headless 无权限请求场景未触发，触发时机留驾驶舱交互场景验证；结构化 permissionDecision JSON（比 exit 2 更细的 allow/deny/ask 三态）留产品期。"批准"方向的挂起等待外部决策（hook ↔ 宿主 IPC）为驾驶舱期工程项。Codex notify 与 OpenCode 的事件粒度待调查。L2 只做 Claude Code，此问题不阻塞 Q1/Q2。
 
 ## Q6：命名与品牌
 

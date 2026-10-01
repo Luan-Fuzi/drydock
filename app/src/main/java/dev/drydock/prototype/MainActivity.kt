@@ -62,6 +62,13 @@ class MainActivity : ComponentActivity() {
                     "debug 注入 API key：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
                 )
             }
+            // 验收自动化注入口：shell 无法直起非导出 Activity，经主页转投驾驶舱
+            intent?.getStringExtra("cockpit_msg")?.takeIf { it.isNotBlank() }?.let {
+                startActivity(
+                    android.content.Intent(this, CockpitActivity::class.java)
+                        .putExtra("cockpit_msg", it),
+                )
+            }
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -464,6 +471,67 @@ fun PrototypeScreen() {
         if (benchMsg.isNotBlank()) {
             Text(benchMsg.take(300), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
         }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+
+        // ---------- 真机周新增：省电状态卡（D1 实测：默认省电策略=熄屏即冻结） ----------
+        Text("步骤 6 · 省电状态（真机周）", style = MaterialTheme.typography.titleMedium)
+        val powerMgr = remember { context.getSystemService(android.os.PowerManager::class.java) }
+        var powerTick by remember { mutableStateOf(0) }
+        val batteryExempt = remember(powerTick) {
+            powerMgr?.isIgnoringBatteryOptimizations("dev.drydock.prototype") ?: false
+        }
+        val powerSave = remember(powerTick) { powerMgr?.isPowerSaveMode ?: false }
+        Text(
+            if (batteryExempt) "✓ 电池优化已豁免（锁屏任务可存活）"
+            else "✗ 未豁免电池优化——锁屏后任务可能被冻结（真机 D1 实测）",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+            color = if (batteryExempt) Color(0xFF4ADE80) else MaterialTheme.colorScheme.error,
+        )
+        Text(
+            if (powerSave) "省电模式：开（可能加剧后台限制）" else "省电模式：关",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp,
+        )
+        Button(onClick = { powerTick++ }) { Text("刷新省电状态") }
+        Button(
+            onClick = {
+                // 标准豁免申请弹窗；HyperOS 上若无效则回落应用详情页（用户手动改省电策略）
+                val direct = android.content.Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:dev.drydock.prototype"),
+                )
+                try {
+                    context.startActivity(direct)
+                } catch (_: Exception) {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.parse("package:dev.drydock.prototype"),
+                        ),
+                    )
+                }
+            },
+        ) { Text("申请电池优化豁免 / 打开应用设置") }
+        Text(
+            "HyperOS 提示：应用详情 → 省电策略选「无限制」最彻底（D1 A/B 实测生效）",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+
+        // ---------- 驾驶舱最小版（真机周后首块产品功能） ----------
+        Text("驾驶舱 · 最小版", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "输入发起任务 → 对话流 + 批准卡片（PreToolUse 网关）→ 产物落袋",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(onClick = {
+            context.startActivity(android.content.Intent(context, CockpitActivity::class.java))
+        }) { Text("打开驾驶舱") }
     }
 }
 

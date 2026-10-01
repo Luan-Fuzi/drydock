@@ -6,17 +6,19 @@
 """
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import urllib.request
 
 import websockets
 
-ADB = "/Users/scliang/Library/Android/sdk/platform-tools/adb"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from adbdev import adb_prefix
 
 
 def app_pid() -> str:
-    out = subprocess.run([ADB, "shell", "ps", "-A"], capture_output=True, text=True).stdout
+    out = subprocess.run(adb_prefix() + ["shell", "ps", "-A"], capture_output=True, text=True).stdout
     for line in out.splitlines():
         if "dev.drydock.prototype" in line and line.split()[2] in ("1",):
             pass
