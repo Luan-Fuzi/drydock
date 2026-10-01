@@ -232,7 +232,12 @@ def start_workload(minutes, heartbeat="/root/s1-heartbeat.log", runner="/root/s1
     if not cdp_forward():
         print("cdp forward 失败（主进程在吗？）")
         return False
+    # 新开的终端页首次 typing 可能不落地：先显式聚焦 xterm（S2/mini 实测）
+    fr = run(["uv", "run", "--with", "websockets", repo("cdp-eval.py"),
+              "term.focus(); document.activeElement.className"], timeout=30)
+    print(f"   xterm focus: {fr.stdout.strip()[:60]}")
     if not cdp_type(f"bash {runner}\\n"):
+        print("   cdp-type 失败")
         return False
     deadline = time.time() + 45
     while time.time() < deadline:
@@ -243,4 +248,5 @@ def start_workload(minutes, heartbeat="/root/s1-heartbeat.log", runner="/root/s1
         except (IndexError, ValueError):
             pass
         time.sleep(5)
+    print("   45s 内心跳文件未出现（typing 未达或负载未跑）")
     return False
