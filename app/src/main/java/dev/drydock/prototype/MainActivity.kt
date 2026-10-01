@@ -105,6 +105,57 @@ fun PrototypeScreen() {
     ) {
         Text("Drydock 原型", style = MaterialTheme.typography.titleLarge)
 
+        // ---------- 终端：主入口（D24 终端原生为主屏，一键自检自装起会话） ----------
+        var termBusy by remember { mutableStateOf("") }
+        Button(
+            enabled = termBusy.isBlank(),
+            onClick = {
+                scope.launch {
+                    val appCtx = context.applicationContext
+                    try {
+                        if (!RootfsManager.isDeployed(appCtx)) {
+                            termBusy = "部署 rootfs…"
+                            withContext(Dispatchers.IO) {
+                                RootfsManager.deploy(appCtx) { st ->
+                                    termBusy = "部署：${st.javaClass.simpleName}"
+                                }
+                            }
+                        }
+                        termBusy = "终端层检查…（首次需装 ttyd/dtach）"
+                        val layer = withContext(Dispatchers.IO) { TerminalManager.ensureTerminalLayer(appCtx) }
+                        if (layer.exitCode == 0 && layer.output.contains("LAYER_RC=0")) {
+                            context.getSharedPreferences("drydock", android.content.Context.MODE_PRIVATE)
+                                .edit().putBoolean("terminal_layer_ok", true).apply()
+                            termBusy = "启动会话…"
+                            context.startForegroundService(android.content.Intent(context, EnvService::class.java))
+                            var found = false
+                            repeat(25) {
+                                if (it > 0) kotlinx.coroutines.delay(1000)
+                                if (TerminalManager.readSessions(context)
+                                        .any { it.name == TerminalManager.MAIN }
+                                ) {
+                                    found = true
+                                    return@repeat
+                                }
+                            }
+                            if (found) {
+                                termBusy = ""
+                                context.startActivity(
+                                    android.content.Intent(context, TerminalActivity::class.java),
+                                )
+                            } else {
+                                termBusy = "会话启动失败（看 logcat DrydockEnv/DrydockTerminal）"
+                            }
+                        } else {
+                            termBusy = "终端层失败：${layer.output.takeLast(200)}"
+                        }
+                    } catch (e: Exception) {
+                        termBusy = "异常：$e"
+                    }
+                }
+            },
+        ) { Text(if (termBusy.isBlank()) "打开终端（claude 在这里）" else termBusy) }
+
         // ---------- 步骤 1：引擎自检 ----------
         Text("步骤 1 · proot 引擎自检", style = MaterialTheme.typography.titleMedium)
         Button(
@@ -202,7 +253,13 @@ fun PrototypeScreen() {
         Text("步骤 3 · 终端链路（AV2）", style = MaterialTheme.typography.titleMedium)
 
         var layerState by remember { mutableStateOf("") }
-        var layerReady by remember { mutableStateOf(false) }
+        // 跨启动持久（此前内存态导致"打开终端"按钮重启后消失——真机 D1 实测）
+        var layerReady by remember {
+            mutableStateOf(
+                context.getSharedPreferences("drydock", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("terminal_layer_ok", false),
+            )
+        }
         var layerRunning by remember { mutableStateOf(false) }
 
         Text(
