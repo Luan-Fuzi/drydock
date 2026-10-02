@@ -212,9 +212,10 @@ object TerminalManager {
                 put("HOME", "/root")
                 put("TERM", "xterm-256color")
                 put("LANG", "C.UTF-8")
-                // I1：GLM 端点与密钥只经进程环境进终端会话（终端内 claude 直接可用）；
-                // key 在会话建立后变更的，需重建会话才生效
-                AgentManager.agentEnv(context).forEach { (k, v) -> put(k, v) }
+                // I1 + D25 零预置：端点经 EndpointStore 配置则注入 DRYDOCK_*（配方配置文件
+                // 以插值引用，key 不落盘）；未配置时回落 AV3 仪器的 GLM 注入保持兼容；
+                // 会话建立后配置变更需重建会话才生效
+                RecipeManager.sessionEnv(context).forEach { (k, v) -> put(k, v) }
             }
         }.start()
         val deadline = System.currentTimeMillis() + 15_000

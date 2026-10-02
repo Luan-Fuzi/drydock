@@ -59,9 +59,12 @@ object AgentManager {
     fun keyReady(context: Context): Boolean =
         SecretStore.load(context, KEY_NAME) != null
 
-    /** 幂等安装 agent 层：宿主侧下 tarball（镜像回退 + sha256），环境内解包 + npm 安装。
-     *  判定用输出标记 AGENT_RC=0（同 LAYER_RC 约定）。 */
-    fun ensureAgentLayer(context: Context, onLog: (String) -> Unit): RootfsManager.ExecResult {
+    /** Node 运行时层（agent 层与配方共用）：宿主侧下 tarball（镜像回退 + sha256），
+     *  环境内解包 + npm 源配置。幂等，判定标记 NODE_RC=0。
+     *  不装 ca-certificates：Node 自带 CA store，npm 走 npmmirror 实测不需要；
+     *  而 ubuntu-base 没有 debconf，apt 装 ca-certificates 会在 postinst 半配置
+     *  卡死（exec /usr/share/debconf/frontend not found），毒化 dpkg 状态。 */
+    fun ensureNodeLayer(context: Context, onLog: (String) -> Unit = {}): RootfsManager.ExecResult {
         val tarball = File(context.cacheDir, NODE_TARBALL)
         val have = if (tarball.exists()) {
             val ok = RootfsManager.sha256(tarball) == NODE_SHA256
@@ -88,25 +91,35 @@ object AgentManager {
             if (!ok) return RootfsManager.ExecResult(1, "node 下载失败：$lastErr")
         }
         onLog("node tarball 校验通过，环境内安装…")
-
-        // 不装 ca-certificates：Node 自带 CA store，npm 走 npmmirror 实测不需要；
-        // 而 ubuntu-base 没有 debconf，apt 装 ca-certificates 会在 postinst 半配置
-        // 卡死（exec /usr/share/debconf/frontend not found），毒化 dpkg 状态。
         val nodeDir = NODE_TARBALL.removeSuffix(".tar.gz")
+        val cmd = """
+            command -v node >/dev/null 2>&1 && [ "${'$'}(node --version)" = "$NODE_VERSION" ] && { echo NODE_ALREADY; echo NODE_RC=0; exit 0; }
+            mkdir -p /opt
+            tar -xzf /node.tgz -C /opt 2>&1 | tail -2
+            ln -sf /opt/$nodeDir/bin/node /usr/local/bin/node
+            ln -sf /opt/$nodeDir/bin/npm /usr/local/bin/npm
+            ln -sf /opt/$nodeDir/bin/npx /usr/local/bin/npx
+            node --version || { echo NODE_RC=9 NODE_BROKEN; exit 0; }
+            npm config set registry $NPM_REGISTRY
+            npm config set prefix /usr/local
+            echo NODE_RC=0
+        """.trimIndent()
+        return RootfsManager.runInEnv(
+            context,
+            cmd,
+            extraBinds = listOf("${tarball.absolutePath}:/node.tgz"),
+        )
+    }
+
+    /** 幂等安装 agent 层（Claude Code）：Node 层先行。D25：此路径为原型验收仪器
+     *  （AV3）保留，产品默认引导只含开源配方。判定标记 AGENT_RC=0。 */
+    fun ensureAgentLayer(context: Context, onLog: (String) -> Unit): RootfsManager.ExecResult {
+        val node = ensureNodeLayer(context, onLog)
+        if (!node.output.contains("NODE_RC=0")) return node
         val cmd = """
             command -v claude >/dev/null 2>&1 && claude --version 2>/dev/null | grep -q $CLAUDE_CODE_VERSION \
               && node --version 2>/dev/null | grep -q $NODE_VERSION \
               && { echo AGENT_ALREADY; echo AGENT_RC=0; exit 0; }
-            mkdir -p /opt
-            NODE_OK=0
-            command -v node >/dev/null 2>&1 && [ "${'$'}(node --version)" = "$NODE_VERSION" ] && NODE_OK=1
-            if [ ${'$'}NODE_OK -eq 0 ]; then
-              tar -xzf /node.tgz -C /opt 2>&1 | tail -2
-              ln -sf /opt/$nodeDir/bin/node /usr/local/bin/node
-              ln -sf /opt/$nodeDir/bin/npm /usr/local/bin/npm
-              ln -sf /opt/$nodeDir/bin/npx /usr/local/bin/npx
-            fi
-            node --version || { echo AGENT_RC=9 NODE_BROKEN; exit 0; }
             npm config set registry $NPM_REGISTRY
             npm config set prefix /usr/local
             npm install -g --no-fund --no-audit @anthropic-ai/claude-code@$CLAUDE_CODE_VERSION 2>&1 | tail -4
@@ -116,11 +129,7 @@ object AgentManager {
             echo NODE=${'$'}(node --version) NPM_RC=${'$'}NPM_RC CLAUDE_RC=${'$'}CLAUDE_RC
             echo AGENT_RC=$(( NPM_RC == 0 && CLAUDE_RC == 0 ? 0 : 1 ))
         """.trimIndent()
-        return RootfsManager.runInEnv(
-            context,
-            cmd,
-            extraBinds = listOf("${tarball.absolutePath}:/node.tgz"),
-        )
+        return RootfsManager.runInEnv(context, cmd)
     }
 
     /** AV3：环境内真实对话产出文件 → 宿主复制到 Downloads/Drydock（I4）。 */

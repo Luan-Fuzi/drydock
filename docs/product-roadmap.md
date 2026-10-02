@@ -25,6 +25,8 @@
 
 判据：新用户从装上 APK 到终端里 agent 出第一句话，全程不需要理解 Linux 概念；向导逐步可跳（保活除外），每条跳过路径都能到达同一终点。
 
+**状态（2026-10-03）**：AVD 可验部分全过——配方安装（OpenCode 1.18.34 / pi 1.0.0，npmmirror 直连）、三协议映射配置写入、Chat Completions 双配方 headless 出第一句话（pi 另实证 Anthropic Messages）、向导三步与跳过路径、主页产品面、向导直达终端（verdict：`draft/phase1-avd-verdict.json`）。已知问题：OpenCode × Anthropic 协议组合静默无限重试（适配器内部问题，裸端点全 200），向导引导 OpenCode 用户优先 Chat Completions；Responses 协议无端点可测、留文档口径。真机项（TUI 观感/触控/IME、端到端首话）按协作约定留批次复查。
+
 ## 阶段 2：终端输入
 
 内容：虚拟键条扩展（Ctrl 组合一般化、Shift+Tab、PgUp/PgDn）；触控手势层——点按保持聚焦拉起输入法、双击或专用键发回车、长按进选区（xterm buffer 范围高亮 + 复制/粘贴浮钮）；IME 拼音组合输入真机验证（AV2 遗留项）。

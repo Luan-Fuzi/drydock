@@ -53,14 +53,69 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4705)
         }
         // 验收自动化注入口：仅 debuggable 构建存在（release 无此路径），key 直达
-        // Keystore 不落盘；无视觉环境下经 am start --es 注入后走 UI 断言。
+        // Keystore 不落盘；无视觉环境下经 am start --es 注入后走 logcat 断言。
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             intent?.getStringExtra("drydock_api_key")?.takeIf { it.isNotBlank() }?.let {
                 SecretStore.save(this, AgentManager.KEY_NAME, it)
+                SecretStore.save(this, EndpointStore.KEY_NAME, it)
                 android.util.Log.i(
                     "DrydockMain",
-                    "debug 注入 API key：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
+                    "debug 注入 API key（glm + drydock 两键名）：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
                 )
+            }
+            // 配方验收注入口："PROTOCOL|base_url|model"（D25 零预置：产品路径无任何默认值）
+            intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
+                val parts = spec.split("|")
+                runCatching { EndpointStore.Protocol.valueOf(parts[0]) }.getOrNull()?.let { p ->
+                    EndpointStore.save(this, p, parts[1], parts.getOrElse(2) { "" })
+                    android.util.Log.i("DrydockMain", "debug 注入端点：$p ${parts[1]} model=${parts.getOrElse(2) { "" }}")
+                }
+            }
+            // 配方验收驱动："opencode,pi" → 安装 + 写端点配置 + headless 冒烟，结论进 logcat DrydockRecipe
+            intent?.getStringExtra("drydock_recipe")?.takeIf { it.isNotBlank() }?.let { ids ->
+                val recipes = ids.split(",").mapNotNull { RecipeManager.byId(it.trim()) }
+                Thread {
+                    val appCtx = applicationContext
+                    if (!RootfsManager.isDeployed(appCtx)) {
+                        android.util.Log.i("DrydockRecipe", "deploy rootfs start")
+                        RootfsManager.deploy(appCtx) { st ->
+                            android.util.Log.i("DrydockRecipe", "deploy ${st.javaClass.simpleName}")
+                        }
+                        if (!RootfsManager.isDeployed(appCtx)) {
+                            android.util.Log.i("DrydockRecipe", "deploy FAILED，配方验收中止")
+                            return@Thread
+                        }
+                    }
+                    recipes.forEach { r ->
+                        android.util.Log.i("DrydockRecipe", "ensure ${r.id} start")
+                        val res = RecipeManager.ensure(appCtx, r) { }
+                        android.util.Log.i("DrydockRecipe", "ensure ${r.id} <${res.output.takeLast(400)}>")
+                        if (res.output.contains("RECIPE_RC=0")) RecipeManager.markInstalled(appCtx, r.id)
+                    }
+                    val cfg = RecipeManager.applyEndpointConfig(appCtx)
+                    android.util.Log.i("DrydockRecipe", "cfg <${cfg.output.takeLast(400)}>")
+                    if (EndpointStore.configured(appCtx)) {
+                        recipes.forEach { r ->
+                            val s = RecipeManager.smoke(appCtx, r)
+                            android.util.Log.i("DrydockRecipe", "smoke ${r.id} <${s.output.takeLast(600)}>")
+                        }
+                    }
+                }.start()
+            }
+            // 环境内命令执行通道（验收/诊断）：base64 规避多层 shell 引号；完整输出写
+            // files/exec-out.txt（logcat 单条 4KB 截断，长输出走 run-as cat 取回）
+            intent?.getStringExtra("drydock_exec64")?.takeIf { it.isNotBlank() }?.let { b64 ->
+                Thread {
+                    val cmd = String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT), Charsets.UTF_8)
+                    val r = RootfsManager.runInEnv(applicationContext, cmd)
+                    try {
+                        File(applicationContext.filesDir, "exec-out.txt").writeText(
+                            "EXEC_DONE exit=${r.exitCode}\n${r.output}",
+                        )
+                    } catch (_: Exception) {
+                    }
+                    android.util.Log.i("DrydockExec", "EXEC_DONE exit=${r.exitCode} (full output in files/exec-out.txt)")
+                }.start()
             }
         }
         setContent {
@@ -147,7 +202,28 @@ fun PrototypeScreen() {
                     }
                 }
             },
-        ) { Text(if (termBusy.isBlank()) "打开终端（claude 在这里）" else termBusy) }
+        ) { Text(if (termBusy.isBlank()) "打开终端" else termBusy) }
+
+        // ---------- 产品面（D25：终端宿主主状态与首启入口） ----------
+        var tick by remember { mutableStateOf(0) }
+        val endpointLine = remember(tick) { EndpointStore.summary(context) }
+        val recipesLine = remember(tick) { RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" } }
+        Text(
+            "环境 ${if (deployed) "✓ 就绪" else "未部署"} · 端点 $endpointLine · 配方 $recipesLine",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+        )
+        Button(onClick = {
+            tick++
+            context.startActivity(android.content.Intent(context, WizardActivity::class.java))
+        }) { Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置" else "① 先做初始设置（保活 / 端点 / agent）") }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+
+        // ---------- 开发者工具（原型判据仪器，验收用；产品路径不经过这里） ----------
+        var showDev by remember { mutableStateOf(false) }
+        Button(onClick = { showDev = !showDev }) { Text(if (showDev) "收起开发者工具" else "开发者工具（验收仪器）") }
+        if (showDev) {
 
         // ---------- 步骤 1：引擎自检 ----------
         Text("步骤 1 · proot 引擎自检", style = MaterialTheme.typography.titleMedium)
@@ -569,6 +645,7 @@ fun PrototypeScreen() {
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        }
     }
 }
 
