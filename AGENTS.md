@@ -2,7 +2,7 @@
 
 ## 项目现状
 
-纯文档阶段，原型未开工。动手前先读 `docs/open-questions.md` 与 `docs/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
+原型步骤 1–5 判据全绿并合并 main（tag `step-1`/`av1`/`av2`/`av3`/`probe-ready`）；当前为步骤 6 真机验证周（2026-10-01 起，小米13 / HyperOS 3，采 S1/S2/S3 与 Q1/Q7 结论）。动手前先读 `docs/open-questions.md` 与 `docs/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
 
 ## Git 纪律（2026-09-27）
 
