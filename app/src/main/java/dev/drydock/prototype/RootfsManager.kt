@@ -171,6 +171,17 @@ object RootfsManager {
         Log.i(TAG, "rootfs 就绪：${RootfsManifest.UBUNTU_VERSION}")
     }
 
+    /** 维护：清理包管理器缓存（阶段 4 存储优化）。apt lists 保留（下次 update 免重拉）。 */
+    fun cleanCaches(context: Context): ExecResult {
+        val cmd = """
+            du -sh /var/cache/apt /root/.npm 2>/dev/null
+            apt-get clean 2>/dev/null
+            npm cache clean --force >/dev/null 2>&1
+            echo CLEAN_RC=${'$'}?
+        """.trimIndent()
+        return runInEnv(context, cmd)
+    }
+
     /** 在已部署环境内执行命令（proot -0 -L，绑定 dev/proc/sys）。
      *  extraBinds：额外 "宿主路径:环境内路径" 绑定；extraEnv：注入宿主侧环境变量
      *  （I1 的密钥即经此进环境，只存在于进程 environment，不落环境内文件）。 */

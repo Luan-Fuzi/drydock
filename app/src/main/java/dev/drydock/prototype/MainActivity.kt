@@ -288,6 +288,21 @@ fun PrototypeScreen() {
         Button(onClick = { showDev = !showDev }) { Text(if (showDev) "收起开发者工具" else "开发者工具（验收仪器）") }
         if (showDev) {
 
+        Button(onClick = {
+            context.startActivity(android.content.Intent(context, RescueActivity::class.java))
+        }) { Text("救援通道（绕过终端层执行命令）") }
+        var cleanMsg by remember { mutableStateOf("") }
+        Button(
+            enabled = deployed && cleanMsg.isBlank(),
+            onClick = {
+                cleanMsg = "清理中…"
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) { RootfsManager.cleanCaches(context.applicationContext) }
+                    cleanMsg = if (r.output.contains("CLEAN_RC=0")) "✓ 已清理（apt 归档 + npm 缓存）" else "✗ ${r.output.takeLast(200)}"
+                }
+            },
+        ) { Text(if (cleanMsg.isBlank()) "清理包管理器缓存" else cleanMsg) }
+
         // ---------- 步骤 1：引擎自检 ----------
         Text("步骤 1 · proot 引擎自检", style = MaterialTheme.typography.titleMedium)
         Button(
