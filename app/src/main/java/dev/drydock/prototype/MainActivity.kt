@@ -62,13 +62,6 @@ class MainActivity : ComponentActivity() {
                     "debug 注入 API key：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
                 )
             }
-            // 验收自动化注入口：shell 无法直起非导出 Activity，经主页转投驾驶舱
-            intent?.getStringExtra("cockpit_msg")?.takeIf { it.isNotBlank() }?.let {
-                startActivity(
-                    android.content.Intent(this, CockpitActivity::class.java)
-                        .putExtra("cockpit_msg", it),
-                )
-            }
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -576,19 +569,6 @@ fun PrototypeScreen() {
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-
-        // ---------- 驾驶舱最小版（真机周后首块产品功能） ----------
-        Text("驾驶舱 · 最小版", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "输入发起任务 → 对话流 + 批准卡片（PreToolUse 网关）→ 产物落袋",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Button(onClick = {
-            context.startActivity(android.content.Intent(context, CockpitActivity::class.java))
-        }) { Text("打开驾驶舱") }
     }
 }
 

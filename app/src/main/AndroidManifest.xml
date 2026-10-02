@@ -28,11 +28,6 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
-        <activity
-            android:name=".CockpitActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
-
         <service
             android:name=".EnvService"
             android:process=":env"
