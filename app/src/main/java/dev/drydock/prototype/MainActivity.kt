@@ -118,6 +118,8 @@ class MainActivity : ComponentActivity() {
                 }.start()
             }
         }
+        // D25 文件互通：作为系统分享目标（文件流或文本 → workspace Inbox）
+        if (android.content.Intent.ACTION_SEND == intent?.action) handleSend(intent)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -125,6 +127,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (android.content.Intent.ACTION_SEND == intent.action) handleSend(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun handleSend(intent: android.content.Intent) {
+        val stream = intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+        val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
+        if (stream == null && text.isNullOrBlank()) return
+        Thread {
+            val f = if (stream != null) {
+                FileBridge.importUri(this, stream)
+            } else {
+                FileBridge.importText(this, text!!)
+            }
+            android.util.Log.i(
+                "DrydockFile",
+                if (f != null) "分享已导入 Inbox：${f.name}" else "分享导入失败",
+            )
+        }.start()
     }
 }
 
@@ -217,6 +243,43 @@ fun PrototypeScreen() {
             tick++
             context.startActivity(android.content.Intent(context, WizardActivity::class.java))
         }) { Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置" else "① 先做初始设置（保活 / 端点 / agent）") }
+
+        // ---------- 本地服务与文件互通（阶段 3 / D25） ----------
+        var portsTick by remember { mutableStateOf(0) }
+        var ports by remember { mutableStateOf(emptyList<PortPanel.ListenPort>()) }
+        androidx.compose.runtime.LaunchedEffect(portsTick) {
+            ports = withContext(Dispatchers.IO) { PortPanel.listening(context) }
+        }
+        Text(
+            if (ports.isEmpty()) "本地服务：无"
+            else "本地服务：" + ports.joinToString("、") { p -> "${p.port}" + if (p.isTerminal) "（终端）" else "" },
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+        )
+        ports.filter { !it.isTerminal }.take(3).forEach { p ->
+            Button(onClick = {
+                context.startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("http://127.0.0.1:${p.port}"),
+                    ),
+                )
+            }) { Text("浏览器打开 :${p.port}") }
+        }
+        Button(onClick = { portsTick++ }) { Text("刷新本地服务") }
+
+        val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    val f = withContext(Dispatchers.IO) { FileBridge.importUri(context, uri) }
+                    tick++
+                    android.util.Log.i("DrydockFile", if (f != null) "SAF 已导入 Inbox：${f.name}" else "SAF 导入失败")
+                }
+            }
+        }
+        Button(onClick = { importLauncher.launch(arrayOf("*/*")) }) { Text("导入文件到工作区（Inbox）") }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
 
