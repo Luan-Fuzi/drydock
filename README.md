@@ -31,9 +31,10 @@
 | [docs/name-check.md](docs/name-check.md) | Drydock 重名检查结果（2026-09-26） |
 | [docs/engineering-plan.md](docs/engineering-plan.md) | 工程准备：性能探针、测试策略、安全不变量、前端设计语言（2026-09-27） |
 | [docs/prototype-plan.md](docs/prototype-plan.md) | 原型实施计划：六步路线、判据、时间盒、风险止损（2026-09-27） |
+| [docs/product-roadmap.md](docs/product-roadmap.md) | 产品阶段 roadmap：功能先行、集中测试，五阶段与判据（2026-10-03） |
 | [docs/dev-environment.md](docs/dev-environment.md) | 开发环境现状：macOS 工具链、AVD 分工、注意事项（2026-09-27） |
 | `draft/` | 构想草稿与临时文件（git 忽略，见 `.gitignore`；定型后整理进 docs/） |
 
 ## 下一步
 
-见 [docs/prototype-plan.md](docs/prototype-plan.md)：六步搓出丢弃型原型（前五步全程 AVD，真机只在最后的验证周），核心是验证"锁屏挂机干活"这条链路。
+步骤 6 真机周收尾（见 [docs/prototype-plan.md](docs/prototype-plan.md)，核心是验证「锁屏挂机干活」这条链路，结论即 continue / pivot 开关）；其后按 [docs/product-roadmap.md](docs/product-roadmap.md) 推进——功能先行（首页与向导 → 输入 → 文件边界与端口），集中测试殿后。
