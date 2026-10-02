@@ -105,6 +105,11 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
 
+### D26 版本升级路径与分发渠道（2026-10-03，阶段 4 收口）
+**版本升级**：一切外部来源版本 pin 死（rootfs 走 `RootfsManifest`，D17；配方与 Node 走 `RecipeManager`/`AgentManager` 版本常量，D25），环境内自升级一律禁用。升级 = 宿主侧改清单 + 重走装机判据；产品期实现形态定为**旁路部署 + 原子切换**：新 rootfs 下载解压到旁路目录 → sha256 校验 → 目录重命名原子切换 → 保留上一版本一份供回滚，磁盘峰值约 2×rootfs。配方升级复用 npm install 语义（幂等装新 pin 版本），不引入第二套机制；终端层（ttyd/dtach）随 rootfs apt 源走。/root 下的用户文件与工作区在切换前迁移，细则随产品期实现定。
+**分发渠道**：非商业阶段 GitHub Releases 侧载，APK 只从 main tag 构建（git 纪律）；国内链路不依赖 GitHub——rootfs/Node/npm 主链路已镜像化（TUNA/npmmirror 实测直连，配方安装 OpenCode 19s / pi 12s）。**不做应用商店上架承诺**：主链路在运行时下载可执行代码，Google Play 政策对此严格限制（Termux 前车之鉴），「引导下载器」形态的合规论证成本高、收益存疑，不投入。F-Droid 纯 FOSS 构建链（proot 自编译过其 CI）留待有兴趣时评估，不阻塞判据。
+被否：环境内 apt/npm 自升级承载产品升级（版本漂移不可复现，违反版本固化）；Play 商店首发（政策与主链路冲突）。
+
 ### D25 宿主与 agent 解耦：agent 无关的终端宿主、首启引导与文件边界分层（2026-10-03，用户拍板；同日补定默认路径全开源、端点零预置）
 **宿主不绑定任何 agent**：安装 agent 不再是装机必经步骤，以「配方」形态提供——安装脚本 + 端点预设 + 密钥环境变量映射，在终端内执行、过程可见、失败可重试。默认引导只含开源配方：OpenCode、pi（均 MIT，可预置默认配置与模型环境变量，用户开箱即可选模型）；Claude Code 不进默认引导，用户自行安装则宿主不阻止（专有许可，仅下载式使用，不改二进制）；另可跳过、自行安装。默认路径全程开源工具链（proot / ttyd / xterm.js / Node / OpenCode / pi）。宿主价值收缩到 agent 无关的四件管家事务；底层为 glibc Ubuntu 用户态（D17），agent 官方 arm64 构建原生可运行——「agent 无关」在架构上近零成本的根据。
 理由：①用户可能不用 Claude Code；②按 agent 逐个适配包装层无法泛化——hooks 批准卡片是 Claude Code 专属机制（Q5），codex/opencode 事件模型各不相同；③许可姿态（2026-10-03 查证）：从 npm 官方源代为下载等价于包管理器行为，红线是随 APK 再分发、修改二进制、代用户付费或中转用量，均不触碰；预设第三方端点（GLM）属上游「不支持」而非禁止，安装选择权归还用户后该风险随之缩小。

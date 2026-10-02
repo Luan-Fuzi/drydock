@@ -49,7 +49,7 @@
 
 判据：rootfs 受损后可自救；不装 agent 的存储占用实测入册。
 
-**状态（2026-10-03）**：快项落地——救援通道 MVP（RescueActivity：绕过 ttyd/dtach 经 runInEnv 行式执行，AVD 实证 ls/df 出结果；Q8 完整形态——完整性校验、快照回滚、自动引导修复留产品期演进）；包管理器缓存清理（apt 归档 + npm 缓存，AVD 实证）。rootfs/配方版本升级路径与分发渠道结论为文档项，随后续批次收口。
+**状态（2026-10-03，本阶段可做项全部收口）**：救援通道 MVP 及受损自救最小场景实证——毒化 dpkg status（dpkg 全盲）→ 经 RescueActivity 界面修复（status-old 恢复）→ dpkg 复验健康；更深损坏形态（rootfs 结构性损坏）如实计为未验，留 Q8 产品期。存储实测入册（`draft/phase4-avd-verdict.json`）：不装 agent 的 app 数据装机即用态 438 MB，大头是 apt 索引与二进制缓存（合计约 317 MB），净底盘 121 MB；缓存清理已改打真目标（pkgcache + lists），清后实测 121 MB。版本升级路径与分发渠道结论入册 D26（旁路部署 + 原子切换；GitHub Releases 侧载，不做商店上架承诺）。
 
 ## 阶段 5：集中测试期
 
