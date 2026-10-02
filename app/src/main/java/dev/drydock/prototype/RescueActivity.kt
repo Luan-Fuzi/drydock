@@ -42,19 +42,21 @@ class RescueActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 验收自动化注入口（仅 debug extra；产品路径不受影响）
+        val initialCmd = intent?.getStringExtra("drydock_cmd")
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(modifier = Modifier.fillMaxSize()) { RescueScreen() }
+                Surface(modifier = Modifier.fillMaxSize()) { RescueScreen(initialCmd) }
             }
         }
     }
 }
 
 @Composable
-private fun RescueScreen() {
+private fun RescueScreen(initialCmd: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var cmd by remember { mutableStateOf("ls /; echo ---; df -h / | tail -1") }
+    var cmd by remember { mutableStateOf(initialCmd ?: "ls /; echo ---; df -h / | tail -1") }
     var out by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
 

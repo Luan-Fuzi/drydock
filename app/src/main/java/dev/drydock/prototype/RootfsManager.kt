@@ -171,13 +171,19 @@ object RootfsManager {
         Log.i(TAG, "rootfs 就绪：${RootfsManifest.UBUNTU_VERSION}")
     }
 
-    /** 维护：清理包管理器缓存（阶段 4 存储优化）。apt lists 保留（下次 update 免重拉）。 */
+    /** 维护：清理包管理器占用（阶段 4 存储优化，实测口径见 draft/phase4-storage-verdict.json）。
+     *  大头不是 deb 归档而是 apt 索引与二进制缓存（合计约 317MB）：lists 清掉后
+     *  下次 apt 操作需 update 重拉——终端层装完后常态不再用 apt，属划算交换。 */
     fun cleanCaches(context: Context): ExecResult {
         val cmd = """
-            du -sh /var/cache/apt /root/.npm 2>/dev/null
+            BEFORE=${'$'}(du -sk /var/lib/apt/lists /var/cache/apt 2>/dev/null | awk '{s+=${'$'}1} END{print s+0}')
             apt-get clean 2>/dev/null
+            rm -f /var/cache/apt/*.bin
+            rm -rf /var/lib/apt/lists/*
             npm cache clean --force >/dev/null 2>&1
-            echo CLEAN_RC=${'$'}?
+            AFTER=${'$'}(du -sk /var/lib/apt/lists /var/cache/apt 2>/dev/null | awk '{s+=${'$'}1} END{print s+0}')
+            echo "APT_KB_BEFORE=${'$'}BEFORE APT_KB_AFTER=${'$'}AFTER"
+            echo CLEAN_RC=0
         """.trimIndent()
         return runInEnv(context, cmd)
     }

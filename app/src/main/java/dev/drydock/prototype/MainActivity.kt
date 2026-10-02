@@ -117,6 +117,12 @@ class MainActivity : ComponentActivity() {
                     android.util.Log.i("DrydockExec", "EXEC_DONE exit=${r.exitCode} (full output in files/exec-out.txt)")
                 }.start()
             }
+            // 救援通道验收转投：shell 无法直起非导出 Activity，经主页带命令进 RescueActivity
+            intent?.getStringExtra("drydock_rescue")?.takeIf { it.isNotBlank() }?.let { rc ->
+                startActivity(
+                    android.content.Intent(this, RescueActivity::class.java).putExtra("drydock_cmd", rc),
+                )
+            }
         }
         // D25 文件互通：作为系统分享目标（文件流或文本 → workspace Inbox）
         if (android.content.Intent.ACTION_SEND == intent?.action) handleSend(intent)
@@ -298,7 +304,13 @@ fun PrototypeScreen() {
                 cleanMsg = "清理中…"
                 scope.launch {
                     val r = withContext(Dispatchers.IO) { RootfsManager.cleanCaches(context.applicationContext) }
-                    cleanMsg = if (r.output.contains("CLEAN_RC=0")) "✓ 已清理（apt 归档 + npm 缓存）" else "✗ ${r.output.takeLast(200)}"
+                    cleanMsg = if (r.output.contains("CLEAN_RC=0")) {
+                        val m = Regex("APT_KB_BEFORE=(\\d+) APT_KB_AFTER=(\\d+)").find(r.output)
+                        val freedMb = m?.let { (it.groupValues[1].toLong() - it.groupValues[2].toLong()) / 1024 } ?: 0
+                        "✓ 已清理：apt 释放约 ${freedMb} MB（下次 apt 操作需重拉索引）"
+                    } else {
+                        "✗ ${r.output.takeLast(200)}"
+                    }
                 }
             },
         ) { Text(if (cleanMsg.isBlank()) "清理包管理器缓存" else cleanMsg) }
