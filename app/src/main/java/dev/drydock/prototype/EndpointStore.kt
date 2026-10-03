@@ -51,7 +51,7 @@ object EndpointStore {
     fun contextWindow(context: Context): Long? =
         prefs(context).getString("endpoint_context", null)?.trim()?.toLongOrNull()
 
-    fun keyReady(context: Context): Boolean = SecretStore.load(context, KEY_NAME) != null
+    fun keyReady(context: Context): Boolean = KeyVault.defaultKey(context) != null
 
     /** 三要素齐（协议 + Base URL + key）才算已配置；模型可空（agent 端有各自的默认选择）。 */
     fun configured(context: Context): Boolean =

@@ -188,6 +188,31 @@ object RootfsManager {
         return runInEnv(context, cmd)
     }
 
+    /** 环境导出（D7 规划 / D27 引用）：导出**工作区与配置**（/root 全量 + drydock 的
+     *  /etc 片段），经 MediaStore 落 Downloads/Drydock。系统层（apt 包、node 运行时、
+     *  配方）由版本 pin 重放（D8），不进导出——夜批实锤：全环境 gzip 后 ~2GB、proot
+     *  下十分钟级，作为备份产品形态不可行。排除 .l2s（link2symlink 目标是宿主绝对路径，
+     *  tar 全目录撞 D21 自指环 ELOOP，导出到别处也无效）与 npm/编译缓存（可重取）。
+     *  密钥不在环境内文件（I1），导出天然无密钥。返回摘要；失败抛异常。 */
+    fun exportEnvTar(context: Context): String {
+        val cmd = """
+            tar -C / -czf /tmp/drydock-env-export.tar.gz \
+              --exclude='./root/.l2s' --exclude='./root/.npm' --exclude='./root/.cache' \
+              --exclude='./root/*.sock' --exclude='./root/AndroidDownload' \
+              ./root ./etc/profile.d ./etc/apt/sources.list.d 2>&1 | tail -3
+            echo TAR_RC=${'$'}{PIPESTATUS[0]}
+            stat -c %s /tmp/drydock-env-export.tar.gz 2>/dev/null | sed 's/^/EXPORT_BYTES=/'
+        """.trimIndent()
+        val r = runInEnv(context, cmd)
+        if (!r.output.contains("TAR_RC=0")) throw IllegalStateException("tar 失败：${r.output.takeLast(300)}")
+        val f = File(rootfsDir(context), "tmp/drydock-env-export.tar.gz")
+        if (!f.exists() || f.length() == 0L) throw IllegalStateException("导出文件缺失")
+        val bytes = f.length()
+        val uri = Landing.toDownloads(context, f)
+        f.delete()
+        return "${"%.1f".format(bytes / 1_000_000.0)} MB → $uri"
+    }
+
     /** 在已部署环境内执行命令（proot -0 -L，绑定 dev/proc/sys）。
      *  extraBinds：额外 "宿主路径:环境内路径" 绑定；extraEnv：注入宿主侧环境变量
      *  （I1 的密钥即经此进环境，只存在于进程 environment，不落环境内文件）。 */
@@ -206,7 +231,7 @@ object RootfsManager {
             "-r", rootfsDir(context).absolutePath,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
             "-b", l2sSelfBind(context),
-        ) + extraBinds.flatMap { listOf("-b", it) }
+        ) + BindStore.binds(context).flatMap { listOf("-b", it) } + extraBinds.flatMap { listOf("-b", it) }
         val argv = baseArgv + listOf(
             "-w", "/root",
             "/bin/bash", "-c", command,
@@ -297,6 +322,8 @@ object RootfsManager {
 
     // apt：24.04 默认 deb822（ubuntu.sources）。arm64 的包在 ports 仓库，安全源同站。
     // 多 URIs = apt 镜像回退序（deb822 一节多 URI，apt 按序失败转移）——国产镜像先行、官方兜底（D12）。
+    // URIs 必须单行空格分隔：多行续行经 trimIndent 会丢缩进变顶格，写出非法 stanza
+    // （2026-10-04 夜批实锤：文件 mtime 落坏点后一切 apt 报 Malformed stanza 1）。
     private fun writeAptSources(rootfs: File) {
         val suite = RootfsManifest.APT_SUITE
         val mirror = RootfsManifest.APT_MIRROR
@@ -306,13 +333,13 @@ object RootfsManager {
         sources.writeText(
             """
             Types: deb
-            URIs: ${uris.joinToString("\n           ")}
+            URIs: ${uris.joinToString(" ")}
             Suites: $suite $suite-updates $suite-backports
             Components: main universe restricted multiverse
             Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
             Types: deb
-            URIs: ${uris.joinToString("\n           ")}
+            URIs: ${uris.joinToString(" ")}
             Suites: $suite-security
             Components: main universe restricted multiverse
             Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg

@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -41,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -73,8 +76,13 @@ class HomeActivity : ComponentActivity() {
         // debug 注入口与 MainActivity 同源（无视觉环境验收经 am start --es 驱动）
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             intent?.getStringExtra("drydock_api_key")?.takeIf { it.isNotBlank() }?.let {
-                SecretStore.save(this, AgentManager.KEY_NAME, it)
-                SecretStore.save(this, EndpointStore.KEY_NAME, it)
+                SecretStore.save(this, AgentManager.KEY_NAME, it) // AV3 验收仪器
+                KeyVault.saveDefault(this, it) // 产品路径：默认密钥
+            }
+            // 夜批验收：批量注入密钥条目（label|value）
+            intent?.getStringExtra("drydock_key_add")?.takeIf { it.contains("|") }?.let { spec ->
+                val p = spec.split("|", limit = 2)
+                KeyVault.add(this, p[0], p[1])
             }
             intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
                 val p = spec.split("|")
@@ -107,6 +115,62 @@ class HomeActivity : ComponentActivity() {
                     } catch (_: Exception) {
                     }
                     android.util.Log.i("DrydockExec", "EXEC_DONE exit=${r.exitCode} (full output in files/exec-out.txt)")
+                }.start()
+            }
+            // 环境导出（夜批验收通道，产品入口在设置页「环境与备份」）
+            if (intent?.getStringExtra("drydock_export") != null) {
+                Thread {
+                    val out = try {
+                        "EXPORT_DONE " + RootfsManager.exportEnvTar(applicationContext)
+                    } catch (e: Exception) {
+                        "EXPORT_FAILED $e"
+                    }
+                    try {
+                        File(applicationContext.filesDir, "exec-out.txt").writeText(out)
+                    } catch (_: Exception) {
+                    }
+                    android.util.Log.i("DrydockExec", out.take(200))
+                }.start()
+            }
+            // provider 全回路自测（写→读→改名→列举→删除），写→读经 contentResolver 走
+            // grant 免权限路径，与 DocumentsUI 同口径；结果落 files/exec-out.txt
+            if (intent?.getStringExtra("drydock_provider_test") != null) {
+                Thread {
+                    val sb = StringBuilder()
+                    try {
+                        val resolver = contentResolver
+                        val uri = android.provider.DocumentsContract.buildDocumentUri(
+                            WorkspaceProvider.AUTHORITY, "/zz-provider-test.txt")
+                        resolver.openOutputStream(uri, "w")!!.use { it.write("PROBE_WRITE_OK\n".toByteArray()) }
+                        sb.append("write=ok\n")
+                        val txt = resolver.openInputStream(uri)!!.bufferedReader().readText()
+                        sb.append("read_ok=").append(txt.contains("PROBE_WRITE_OK")).append('\n')
+                        val renamed = android.provider.DocumentsContract.renameDocument(
+                            resolver, uri, "zz-provider-renamed.txt")
+                        sb.append("rename_uri=").append(renamed != null).append('\n')
+                        val kids = android.provider.DocumentsContract.buildChildDocumentsUri(
+                            WorkspaceProvider.AUTHORITY, "/")
+                        var listed = false
+                        resolver.query(
+                            kids, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                            null, null, null,
+                        )?.use { c ->
+                            while (c.moveToNext()) if (c.getString(0) == "zz-provider-renamed.txt") listed = true
+                        }
+                        sb.append("children_listed=").append(listed).append('\n')
+                        android.provider.DocumentsContract.deleteDocument(resolver, renamed ?: uri)
+                        val gone = !File(RootfsManager.rootfsDir(applicationContext), "root/zz-provider-renamed.txt").exists() &&
+                            !File(RootfsManager.rootfsDir(applicationContext), "root/zz-provider-test.txt").exists()
+                        sb.append("delete_gone=").append(gone).append('\n')
+                        sb.append("PROVIDER_TEST_RC=0")
+                    } catch (e: Exception) {
+                        sb.append("EXCEPTION ").append(e).append("\nPROVIDER_TEST_RC=1")
+                    }
+                    try {
+                        File(applicationContext.filesDir, "exec-out.txt").writeText(sb.toString())
+                    } catch (_: Exception) {
+                    }
+                    android.util.Log.i("DrydockExec", "provider selftest done")
                 }.start()
             }
         }
@@ -163,6 +227,14 @@ private fun SessionPane() {
     var busy by remember { mutableStateOf("") }
     val sessions = remember(tick) { TerminalManager.readSessions(context) }
 
+    // 会话列表保鲜：回主页/停留期间 5s 轮询注册表（修「回来不刷新」）
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            delay(5000)
+            tick++
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -195,7 +267,7 @@ private fun SessionPane() {
                         busy = "启动会话…"
                         appCtx.startForegroundService(Intent(appCtx, EnvService::class.java))
                         var found = false
-                        repeat(25) {
+                        repeat(60) {
                             if (it > 0) delay(1000)
                             if (TerminalManager.readSessions(appCtx).any { it.name == TerminalManager.MAIN }) {
                                 found = true; return@repeat
@@ -220,6 +292,12 @@ private fun SessionPane() {
                     Column {
                         Text(if (s.name == TerminalManager.MAIN) "主终端" else s.name, style = MaterialTheme.typography.titleMedium)
                         Text("本地端口 :${s.port}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        s.keyId?.let { id ->
+                            Text(
+                                "密钥：" + (if (id.isBlank()) "不注入" else KeyVault.entries(context).firstOrNull { it.id == id }?.label ?: id),
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     TextButton(onClick = {
                         context.startActivity(Intent(context, TerminalActivity::class.java).putExtra("session", s.name))
@@ -229,21 +307,54 @@ private fun SessionPane() {
         }
 
         if (sessions.isNotEmpty()) {
-            OutlinedButton(enabled = busy.isBlank(), onClick = {
-                val name = TerminalManager.newSessionName(context)
-                scope.launch {
-                    busy = "新建会话 $name…"
-                    context.startForegroundService(Intent(context, EnvService::class.java).putExtra("new_session", name))
-                    var found = false
-                    repeat(25) {
-                        if (it > 0) delay(1000)
-                        if (TerminalManager.readSessions(context).any { it.name == name }) { found = true; return@repeat }
-                    }
-                    busy = ""
-                    tick++
-                    if (found) context.startActivity(Intent(context, TerminalActivity::class.java).putExtra("session", name))
-                }
-            }) { Text("新建会话") }
+            var showNew by remember { mutableStateOf(false) }
+            var pickKey by remember { mutableStateOf<String?>(null) } // null=默认；""=不注入
+            OutlinedButton(enabled = busy.isBlank(), onClick = { pickKey = null; showNew = true }) { Text("新建会话") }
+            if (showNew) {
+                AlertDialog(
+                    onDismissRequest = { showNew = false },
+                    title = { Text("新建会话 · 注入哪把密钥") },
+                    text = {
+                        Column {
+                            Row(modifier = Modifier.fillMaxWidth().clickable { pickKey = null }) {
+                                RadioButton(selected = pickKey == null, onClick = { pickKey = null })
+                                Text("默认密钥", modifier = Modifier.padding(top = 12.dp))
+                            }
+                            KeyVault.entries(context).forEach { k ->
+                                Row(modifier = Modifier.fillMaxWidth().clickable { pickKey = k.id }) {
+                                    RadioButton(selected = pickKey == k.id, onClick = { pickKey = k.id })
+                                    Text(k.label + if (k.isDefault) "（默认）" else "", modifier = Modifier.padding(top = 12.dp))
+                                }
+                            }
+                            Row(modifier = Modifier.fillMaxWidth().clickable { pickKey = "" }) {
+                                RadioButton(selected = pickKey == "", onClick = { pickKey = "" })
+                                Text("不注入（环境拿不到任何密钥）", modifier = Modifier.padding(top = 12.dp))
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showNew = false
+                            val name = TerminalManager.newSessionName(context)
+                            scope.launch {
+                                busy = "新建会话 $name…"
+                                val i = Intent(context, EnvService::class.java).putExtra("new_session", name)
+                                pickKey?.let { i.putExtra("key_id", it) } // null 不带 extra=默认；""=不注入
+                                context.startForegroundService(i)
+                                var found = false
+                                repeat(60) {
+                                    if (it > 0) delay(1000)
+                                    if (TerminalManager.readSessions(context).any { s2 -> s2.name == name }) { found = true; return@repeat }
+                                }
+                                busy = ""
+                                tick++
+                                if (found) context.startActivity(Intent(context, TerminalActivity::class.java).putExtra("session", name))
+                            }
+                        }) { Text("创建") }
+                    },
+                    dismissButton = { TextButton(onClick = { showNew = false }) { Text("取消") } },
+                )
+            }
             TextButton(onClick = { tick++ }) { Text("刷新") }
         }
     }
@@ -357,6 +468,108 @@ private fun SettingsPane() {
         }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
+        Text("密钥", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "多把密钥存系统 Keystore，新建会话时选注入哪把；默认密钥给未指定的会话。密钥永不写入环境内文件。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val keys = remember(tick) { KeyVault.entries(context) }
+        keys.forEach { k ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text("${k.label}  ${KeyVault.mask(context, k.id) ?: "（空）"}", fontSize = 13.sp)
+                    if (k.isDefault) Text("默认密钥", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                }
+                Row {
+                    if (!k.isDefault) TextButton(onClick = { KeyVault.setDefault(context, k.id); tick++ }) { Text("设默认") }
+                    TextButton(onClick = { KeyVault.delete(context, k.id); tick++ }) { Text("删除") }
+                }
+            }
+        }
+        var newLabel by remember { mutableStateOf("") }
+        var newValue by remember { mutableStateOf("") }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = newLabel, onValueChange = { newLabel = it },
+                label = { Text("名称（如 工作密钥）") }, singleLine = true, modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = newValue, onValueChange = { newValue = it },
+                label = { Text("API Key") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.weight(1.4f),
+            )
+        }
+        Button(enabled = newValue.isNotBlank(), onClick = {
+            KeyVault.add(context, newLabel.trim(), newValue)
+            newLabel = ""; newValue = ""; tick++
+        }) { Text("添加密钥") }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+        Text("环境与备份", style = MaterialTheme.typography.titleMedium)
+        var exporting by remember { mutableStateOf(false) }
+        var exportMsg by remember { mutableStateOf("") }
+        Button(
+            enabled = !exporting && RootfsManager.isDeployed(context),
+            onClick = {
+                exporting = true; exportMsg = ""
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        runCatching { RootfsManager.exportEnvTar(context.applicationContext) }
+                    }
+                    exporting = false
+                    exportMsg = r.fold({ "✓ 已导出到 Downloads/Drydock（$it）" }, { "✗ 导出失败：${it.message}" })
+                }
+            },
+        ) { Text(if (exporting) "导出中…（约 1 分钟）" else "导出工作区与配置（tar.gz）") }
+        if (exportMsg.isNotBlank()) Text(exportMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text(
+            "导出 /root 工作区与 drydock 配置（系统层按配方版本可重放，不进导出）；不含任何密钥（密钥只在系统 Keystore）。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+        Text("高级：目录直通绑定（实验）", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "把手机 Download 目录绑进环境 ${BindStore.ENV_DIR}（proot -b，双向直通）。" +
+                "需要系统「所有文件访问」权限；绑定目录读写都经 proot 翻译，比环境内慢。默认关闭。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val bindOn = remember(tick) { BindStore.enabled(context) }
+        val permOk = remember(tick) { android.os.Environment.isExternalStorageManager() }
+        Text(
+            if (permOk) "✓ 已获「所有文件访问」授权" else "未授权（开启前需在系统设置里本人授予）",
+            fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+            color = if (permOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row {
+            androidx.compose.material3.Switch(
+                checked = bindOn,
+                onCheckedChange = { on ->
+                    if (on && !permOk) {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                    android.net.Uri.parse("package:dev.drydock.prototype"),
+                                ),
+                            )
+                        }
+                    } else {
+                        BindStore.setEnabled(context, on); tick++
+                    }
+                },
+            )
+            Text(
+                if (bindOn) "已开启（新建会话生效）" else "已关闭",
+                modifier = Modifier.padding(top = 14.dp), fontSize = 13.sp,
+            )
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text("镜像源", style = MaterialTheme.typography.titleMedium)
         Text("仅影响安装下载速度；也可手编 ~/.drydock/mirrors 或让 agent 改，三者等价。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         var aptChoice by remember { mutableStateOf(aptOpts.first()) }
@@ -392,7 +605,8 @@ private fun SettingsPane() {
                 ThemeStore.Mode.LIGHT to "浅色",
                 ThemeStore.Mode.DARK to "深色",
             ).forEach { (m, label) ->
-                TextButton(onClick = { ThemeStore.save(context, m); tick++ }) { Text(label) }
+                // recreate() 让 DrydockTheme 重读偏好（组合期只读一次，否则切换不生效）
+                TextButton(onClick = { ThemeStore.save(context, m); (context as? android.app.Activity)?.recreate() }) { Text(label) }
             }
         }
 
@@ -403,7 +617,8 @@ private fun SettingsPane() {
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text(
-            "Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu ${RootfsManifest.UBUNTU_VERSION} · 配方 ${RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" }}",
+            "Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu ${RootfsManifest.UBUNTU_VERSION} · 配方 ${RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" }}" +
+                "\n⚠ 卸载或清除应用数据会连同 Linux 环境一起删除——删除前先用上面的导出备份。",
             fontSize = 11.sp, fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

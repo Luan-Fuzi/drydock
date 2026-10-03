@@ -22,7 +22,8 @@ object TerminalManager {
     private const val TAG = "DrydockTerminal"
     const val MAIN = "main"
 
-    data class Session(val name: String, val port: Int, val token: String)
+    /** keyId：null=默认密钥；""=不注入；其余=KeyVault 条目 id（D27 密钥两层制第②层）。 */
+    data class Session(val name: String, val port: Int, val token: String, val keyId: String? = null)
 
     /** L1 心跳样本：alive=holder 存活；rchar=holder /proc/io 读字节（PTY 输出代理）。 */
     data class Heartbeat(val name: String, val alive: Boolean, val rchar: Long, val silentMin: Long)
@@ -52,7 +53,8 @@ object TerminalManager {
         else JSONArray(txt).let { arr ->
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
-                Session(o.getString("name"), o.getInt("port"), o.getString("token"))
+                Session(o.getString("name"), o.getInt("port"), o.getString("token"),
+                    if (o.has("key_id")) o.getString("key_id") else null)
             }
         }
     } catch (_: Exception) {
@@ -62,10 +64,11 @@ object TerminalManager {
     /** main 会话（默认入口）。 */
     fun current(context: Context): Session? = readSessions(context).firstOrNull { it.name == MAIN }
 
-    /** 服务重启后恢复注册表内全部会话；空表则起 main。 */
+    /** 服务重启后恢复注册表内全部会话（含各自的 keyId）；空表则起 main。 */
     fun ensureAll(context: Context): List<Session> {
-        val names = readSessions(context).map { it.name }.ifEmpty { listOf(MAIN) }
-        return names.mapNotNull { start(context, it) }
+        val existing = readSessions(context)
+        val names = existing.map { it.name }.ifEmpty { listOf(MAIN) }
+        return names.mapNotNull { n -> start(context, n, existing.firstOrNull { it.name == n }?.keyId) }
     }
 
     fun newSessionName(context: Context): String {
@@ -78,7 +81,7 @@ object TerminalManager {
     /** 启动（或复用）指定会话。dtach 无 server：holder 死 = 会话内容丢，
      *  探活失败即重建全新 shell（session_recreated 入时间线）。 */
     @Synchronized
-    fun start(context: Context, name: String = MAIN): Session? {
+    fun start(context: Context, name: String = MAIN, keyId: String? = null): Session? {
         val rootfs = RootfsManager.rootfsDir(context)
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val sockHost = File(rootfs, "root/$name.sock")
@@ -86,7 +89,7 @@ object TerminalManager {
         if (holders[name]?.isAlive != true && !unixSocketAlive(sockHost)) {
             sockHost.delete()
             val existed = readSessions(context).any { it.name == name }
-            val holder = spawnHolder(context, name, sockHost) ?: return null
+            val holder = spawnHolder(context, name, sockHost, keyId) ?: return null
             holders[name] = holder
             monitorExit(context, "holder:$name", holder)
             if (existed) {
@@ -102,7 +105,7 @@ object TerminalManager {
             }.toString()
             val ttyd = spawnTtyd(context, sockHost, port, token) ?: return null
             ttyds[name] = ttyd
-            sessions[name] = Session(name, port, token)
+            sessions[name] = Session(name, port, token, keyId)
             monitorExit(context, "ttyd:$name", ttyd)
         }
 
@@ -181,14 +184,20 @@ object TerminalManager {
     private fun persist(context: Context) {
         try {
             registryFile(context).writeText(
-                JSONArray().apply { sessions.values.forEach { put(JSONObject().put("name", it.name).put("port", it.port).put("token", it.token)) } }.toString(),
+                JSONArray().apply {
+                    sessions.values.forEach {
+                        put(JSONObject().put("name", it.name).put("port", it.port).put("token", it.token).apply {
+                            it.keyId?.let { k -> put("key_id", k) }
+                        })
+                    }
+                }.toString(),
             )
         } catch (e: Exception) {
             Log.w(TAG, "注册表写入失败: $e")
         }
     }
 
-    private fun spawnHolder(context: Context, name: String, sockHost: File): Process? {
+    private fun spawnHolder(context: Context, name: String, sockHost: File, keyId: String? = null): Process? {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val rootfs = RootfsManager.rootfsDir(context)
         val holder = ProcessBuilder(
@@ -198,6 +207,7 @@ object TerminalManager {
                 "-r", rootfs.absolutePath,
                 "-b", "/dev", "-b", "/proc", "-b", "/sys",
                 "-b", RootfsManager.l2sSelfBind(context),
+            ) + BindStore.binds(context).flatMap { listOf("-b", it) } + listOf(
                 "-w", "/root",
                 "/usr/bin/dtach", "-n", "/root/$name.sock",
                 "/bin/bash", "-l",
@@ -212,10 +222,9 @@ object TerminalManager {
                 put("HOME", "/root")
                 put("TERM", "xterm-256color")
                 put("LANG", "C.UTF-8")
-                // I1 + D25 零预置：端点经 EndpointStore 配置则注入 DRYDOCK_*（配方配置文件
-                // 以插值引用，key 不落盘）；未配置时回落 AV3 仪器的 GLM 注入保持兼容；
-                // 会话建立后配置变更需重建会话才生效
-                RecipeManager.sessionEnv(context).forEach { (k, v) -> put(k, v) }
+                // I1 + D25 零预置 + D27 按会话选 key：keyId null=默认 / ""=不注入 / 条目 id；
+                // 未配置端点时回落 AV3 仪器的 GLM 注入保持兼容；会话建立后配置变更需重建会话才生效
+                RecipeManager.sessionEnv(context, keyId).forEach { (k, v) -> put(k, v) }
             }
         }.start()
         val deadline = System.currentTimeMillis() + 15_000
@@ -242,6 +251,7 @@ object TerminalManager {
             "-r", RootfsManager.rootfsDir(context).absolutePath,
             "-b", "/dev", "-b", "/proc", "-b", "/sys",
             "-b", RootfsManager.l2sSelfBind(context),
+        ) + BindStore.binds(context).flatMap { listOf("-b", it) } + listOf(
             "-w", "/root",
             "/usr/bin/ttyd",
             "-i", "127.0.0.1",

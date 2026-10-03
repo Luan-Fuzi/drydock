@@ -14,6 +14,7 @@ object RecipeManager {
     private const val TAG = "DrydockRecipe"
 
     /** 官方源兜底（回退序第二位；首位默认 npmmirror，可被 ~/.drydock/mirrors 覆盖）。 */
+    const val NPM_PRIMARY_SOURCE = "https://registry.npmmirror.com"
     const val NPM_FALLBACK_SOURCE = "https://registry.npmjs.org"
 
     /** 配方 = npm 包 + 版本 pin（升级 = 改这里 + 重走安装判据，同 RootfsManifest 口径）。 */
@@ -42,7 +43,7 @@ object RecipeManager {
     )
     val ALL = listOf(OPENCODE, PI)
 
-    fun byId(id: String): Recipe? = ALL.firstOrNull { it.id == id }
+    fun byId(id: String): Recipe? = ALL.firstOrNull { it.id.equals(id.trim(), ignoreCase = true) }
 
     /** 已安装配方（prefs 记录，主线程可读；真实安装态以 ensure 幂等检查为准）。 */
     fun installedIds(context: Context): List<String> =
@@ -74,16 +75,22 @@ object RecipeManager {
         }
         onLog("安装 ${recipe.title} ${recipe.version}…")
         val toolsSh = if (recipe.aptTools.isEmpty()) "" else """
+            TOOLS_RC=0
             command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || {
               apt-get update -o Acquire::Retries=2 >/dev/null 2>&1
               DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${recipe.aptTools.joinToString(" ")} 2>&1 | tail -1
-              [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd
             }
+            # 工具缺失会让 pi 首启转 GitHub releases 下载（国内网络挂死）——校验进 RECIPE_RC，
+            # 不许静默带病通过（夜批实锤：apt 失败时 fd 符号链接盲建悬空、rg 缺失）
+            command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || TOOLS_RC=1
+            [ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }
+            [ -e /usr/local/bin/fd ] || TOOLS_RC=1
         """.trimIndent()
         // npm 镜像回退（D12 精神：默认回退序零配置；~/.drydock/mirrors 可覆盖首选源）
         val cmd = """
             . /root/.drydock/mirrors 2>/dev/null || true
-            NPM_REG="${'$'}{DRYDOCK_NPM_REGISTRY:-$NPM_FALLBACK_SOURCE}"
+            NPM_REG="${'$'}{DRYDOCK_NPM_REGISTRY:-$NPM_PRIMARY_SOURCE}"
+            echo NPM_REG=${'$'}NPM_REG
             $toolsSh
             command -v ${recipe.bin} >/dev/null 2>&1 && ${recipe.bin} --version 2>/dev/null | grep -q '${recipe.version}' \
               && { echo RECIPE_ALREADY; echo RECIPE_RC=0; exit 0; }
@@ -95,7 +102,7 @@ object RecipeManager {
               NPM_RC=${'$'}{PIPESTATUS[0]}
             fi
             ${recipe.bin} --version 2>/dev/null; BIN_RC=${'$'}?
-            echo RECIPE_RC=${'$'}(( NPM_RC == 0 && BIN_RC == 0 ? 0 : 1 ))
+            echo RECIPE_RC=${'$'}(( NPM_RC == 0 && BIN_RC == 0 && ${if (recipe.aptTools.isEmpty()) "0" else "TOOLS_RC"} == 0 ? 0 : 1 ))
         """.trimIndent()
         val r = RootfsManager.runInEnv(context, cmd)
         Log.i(TAG, "ensure ${recipe.id}: ${r.output.takeLast(400)}")
@@ -184,11 +191,18 @@ PIJSON
         return RootfsManager.runInEnv(context, cmd, extraEnv = env)
     }
 
-    /** 会话/冒烟共用的注入环境：配置了端点走 DRYDOCK_*，否则回落 AV3 仪器的 GLM 注入（向后兼容）。 */
-    fun sessionEnv(context: Context): Map<String, String> {
+    /** 会话/冒烟共用的注入环境。keyId 语义：null=默认 key（未配置端点回落 AV3 仪器注入，
+     *  向后兼容）；""=显式不注入（「部分密钥不想让环境拿到」）；其余=指定条目。 */
+    fun sessionEnv(context: Context, keyId: String? = null): Map<String, String> {
+        if (keyId != null) {
+            val k = keyId.takeIf { it.isNotBlank() }?.let { KeyVault.load(context, it) } ?: return emptyMap()
+            val env = mutableMapOf("DRYDOCK_API_KEY" to k)
+            EndpointStore.baseUrl(context)?.let { env["DRYDOCK_BASE_URL"] = it }
+            return env
+        }
         if (EndpointStore.configured(context)) {
             return mapOf(
-                "DRYDOCK_API_KEY" to (SecretStore.load(context, EndpointStore.KEY_NAME) ?: ""),
+                "DRYDOCK_API_KEY" to (KeyVault.defaultKey(context) ?: ""),
                 "DRYDOCK_BASE_URL" to (EndpointStore.baseUrl(context) ?: ""),
             )
         }

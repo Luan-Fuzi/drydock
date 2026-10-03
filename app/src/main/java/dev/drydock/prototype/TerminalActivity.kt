@@ -108,9 +108,83 @@ class TerminalActivity : ComponentActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
+        // 会话菜单（D27 补充条目，最小版）：右上角浮钮——会话切换/新建/回主页
+        val menuBtn = android.widget.TextView(this).apply {
+            text = "☰"
+            setTextColor(Color.WHITE)
+            textSize = 22f
+            setBackgroundColor(0x88000000.toInt())
+            setPadding(28, 8, 28, 16)
+            setOnClickListener { showSessionMenu() }
+        }
+        root.addView(
+            menuBtn,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.TOP or android.view.Gravity.END,
+            ).apply { topMargin = 24; rightMargin = 24 },
+        )
         setContentView(root)
         webView.loadUrl("http://127.0.0.1:${session.port}/")
         Log.i("DrydockAv2", "loadUrl http://127.0.0.1:${session.port}/ token=${session.token.take(4)}…")
+    }
+
+    /** 终端页内会话菜单：列表切换（含各自端口）、新建（默认密钥）、回主页。 */
+    private fun showSessionMenu() {
+        val sessions = TerminalManager.readSessions(this)
+        val labels = sessions.map { if (it.name == TerminalManager.MAIN) "主终端 :${it.port}" else "${it.name} :${it.port}" } +
+            listOf("＋ 新建会话（默认密钥）", "← 回主页")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("会话")
+            .setItems(labels.toTypedArray()) { _, which ->
+                when {
+                    which < sessions.size && sessions.isNotEmpty() -> {
+                        if (sessions[which].name != intent.getStringExtra("session")) {
+                            startActivity(
+                                android.content.Intent(this, TerminalActivity::class.java)
+                                    .putExtra("session", sessions[which].name),
+                            )
+                            finish()
+                        }
+                    }
+                    which == labels.size - 2 -> {
+                        val name = TerminalManager.newSessionName(this)
+                        startForegroundService(
+                            android.content.Intent(this, EnvService::class.java).putExtra("new_session", name),
+                        )
+                        Thread {
+                            var found = false
+                            repeat(60) {
+                                if (it > 0) Thread.sleep(1000)
+                                if (TerminalManager.readSessions(this).any { s -> s.name == name }) {
+                                    found = true; return@repeat
+                                }
+                            }
+                            runOnUiThread {
+                                if (found) {
+                                    startActivity(
+                                        android.content.Intent(this, TerminalActivity::class.java)
+                                            .putExtra("session", name),
+                                    )
+                                    finish()
+                                }
+                            }
+                        }.start()
+                    }
+                    else -> {
+                        startActivity(
+                            android.content.Intent(this, HomeActivity::class.java)
+                                .addFlags(
+                                    android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                                        android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                                ),
+                        )
+                        finish()
+                    }
+                }
+            }
+            .show()
     }
 
     /** JS → Android 桥（预留；当前观测走 console→logcat）。 */
