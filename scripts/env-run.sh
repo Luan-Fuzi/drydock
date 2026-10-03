@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 宿主侧环境执行器：在 app 私有 rootfs 内以 bash 跑一个脚本（验收/调试用，绕过 App UI）。
-# 用法：scripts/env-run.sh <本地脚本路径>
+# 用法：scripts/env-run.sh <本地脚本路径> [host:env 绑定]（可选，如 /storage/emulated/0/Download:/root/AndroidDownload）
 # 依赖：adb、目标 app 为 debuggable（run-as）；AVD 或真机均可。
 # 实现注记：
 # - 含 '=' 的路径不能作为 toybox env 的命令参数（会被误判为赋值），路径一律经 sh argv 传递；
@@ -34,19 +34,30 @@ RUNNER=/data/local/tmp/drydock-run.sh
 
 cat > /tmp/drydock-inner.sh <<'EOF'
 #!/system/bin/sh
-# $1 loader, $2 proot；脚本已放在 app files/__envrun.sh
-PROOT_LOADER="$1" PROOT_TMP_DIR=cache HOME=/root LANG=C.UTF-8 \
+# $1 loader, $2 proot，$3 可选绑定（host:env）；脚本已放在 app files/__envrun.sh
+if [ -n "$3" ]; then
+  PROOT_LOADER="$1" PROOT_TMP_DIR=cache HOME=/root LANG=C.UTF-8 \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  exec "$2" -0 --link2symlink -r files/ubuntu-rootfs \
+  -b /data/user/0/dev.drydock.prototype/files/ubuntu-rootfs:/data/data/dev.drydock.prototype/files/ubuntu-rootfs \
+  -b "$3" \
+  -b /dev -b /proc -b /sys -b files/__envrun.sh:/check.sh -w /root \
+  /bin/bash /check.sh
+else
+  PROOT_LOADER="$1" PROOT_TMP_DIR=cache HOME=/root LANG=C.UTF-8 \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   exec "$2" -0 --link2symlink -r files/ubuntu-rootfs \
   -b /data/user/0/dev.drydock.prototype/files/ubuntu-rootfs:/data/data/dev.drydock.prototype/files/ubuntu-rootfs \
   -b /dev -b /proc -b /sys -b files/__envrun.sh:/check.sh -w /root \
   /bin/bash /check.sh
+fi
 EOF
-cat > /tmp/drydock-run.sh <<'EOF'
+BIND_ARG="${2:-}"
+cat > /tmp/drydock-run.sh <<EOF
 #!/system/bin/sh
-NATLIB=$(dirname "$(pm path dev.drydock.prototype | sed 's/package://')")/lib/arm64
+NATLIB=\$(dirname "\$(pm path dev.drydock.prototype | sed 's/package://')")/lib/arm64
 exec run-as dev.drydock.prototype /system/bin/sh /data/local/tmp/drydock-inner.sh \
-  "$NATLIB/libproot-loader.so" "$NATLIB/libproot.so"
+  "\$NATLIB/libproot-loader.so" "\$NATLIB/libproot.so" "$BIND_ARG"
 EOF
 
 "${ADB[@]}" push /tmp/drydock-inner.sh "$INNER" >/dev/null
