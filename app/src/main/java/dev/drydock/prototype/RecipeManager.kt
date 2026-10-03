@@ -21,6 +21,9 @@ object RecipeManager {
         val version: String,
         val bin: String,
         val extraInstallFlags: String = "",
+        /** 随配方经 apt 预装的工具（走国内镜像源）。pi 首启会从 GitHub releases 拉
+         *  fd/ripgrep，国内网络实测挂死；PATH 里已有则 pi 跳过下载（真机 2026-10-03 实证）。 */
+        val aptTools: List<String> = emptyList(),
     )
 
     val OPENCODE = Recipe(
@@ -32,6 +35,7 @@ object RecipeManager {
         npmPackage = "@earendil-works/pi-coding-agent", version = "1.0.0", bin = "pi",
         // 官方安装口径带 --ignore-scripts（纯 JS 包，无 postinstall 需求）
         extraInstallFlags = "--ignore-scripts",
+        aptTools = listOf("ripgrep", "fd-find"),
     )
     val ALL = listOf(OPENCODE, PI)
 
@@ -66,7 +70,15 @@ object RecipeManager {
             return RootfsManager.ExecResult(1, "Node 层失败：${node.output.takeLast(300)}")
         }
         onLog("安装 ${recipe.title} ${recipe.version}…")
+        val toolsSh = if (recipe.aptTools.isEmpty()) "" else """
+            command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || {
+              apt-get update -o Acquire::Retries=2 >/dev/null 2>&1
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${recipe.aptTools.joinToString(" ")} 2>&1 | tail -1
+              [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd
+            }
+        """.trimIndent()
         val cmd = """
+            $toolsSh
             command -v ${recipe.bin} >/dev/null 2>&1 && ${recipe.bin} --version 2>/dev/null | grep -q '${recipe.version}' \
               && { echo RECIPE_ALREADY; echo RECIPE_RC=0; exit 0; }
             npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
