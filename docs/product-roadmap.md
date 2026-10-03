@@ -26,6 +26,7 @@
 判据：新用户从装上 APK 到终端里 agent 出第一句话，全程不需要理解 Linux 概念；向导逐步可跳（保活除外），每条跳过路径都能到达同一终点。
 
 **状态（2026-10-03）**：AVD 可验部分全过——配方安装（OpenCode 1.18.34 / pi 1.0.0，npmmirror 直连）、三协议映射配置写入、Chat Completions 双配方 headless 出第一句话（pi 另实证 Anthropic Messages）、向导三步与跳过路径、主页产品面、向导直达终端（verdict：`draft/phase1-avd-verdict.json`）。已知问题：OpenCode × Anthropic 协议组合静默无限重试（适配器内部问题，裸端点全 200），向导引导 OpenCode 用户优先 Chat Completions；Responses 协议无端点可测、留文档口径。真机项（TUI 观感/触控/IME、端到端首话）按协作约定留批次复查。
+**状态增补（2026-10-04 夜批）**：向导 Anthropic × OpenCode 已知问题警示落地（选该协议即显，t7）；上下文窗口字段端到端实证（`limit.context` 落 opencode.json，t3）；npm 首选源默认纠回 npmmirror、假源注入实测 npmmirror→npmjs 回退真实代码路径成立（t5）；「打开终端/新建会话」主链路按钮 AVD 驱动实证（t1，附轮询 60s 与会话列表刷新修复）。
 
 ## 阶段 2：终端输入
 
@@ -42,6 +43,7 @@
 判据：系统文件选择器可见 workspace 文件（微信发送附件场景）；从微信分享一个 zip 进 Drydock，agent 处理后产物在 Downloads/Drydock 可见。
 
 **状态（2026-10-03）**：AVD 全过——SAF 选择器出现「Drydock workspace」根、目录可浏览、文件可选并导入 Inbox；分享目标（文本/文件）导入 Inbox 实证；端口面板以本地 connect 探活（/proc/net/tcp 对 app 域被 SELinux 屏蔽，实测改法），活会话端口带「（终端）」标注实证，非终端端口配「浏览器打开」按钮。微信真实分享链路留真机。
+**状态增补（2026-10-04 夜批）**：文件页 ACTION_VIEW 甩系统应用实证（logcat START 判据，Resolver 消费，t2）；WorkspaceProvider 补齐 deleteDocument/renameDocument（flags 原本声明而方法缺失=SAF 消费方崩溃路径）并经 app 进程全回路自测（写→读→改名→列举→删除，t6）；直通绑定第三档最小版落地并双向实证（固定 Download ↔ /root/AndroidDownload，默认关，t10；口径与代价见 D28-3）。
 
 ## 阶段 4：可靠性与运营面（与阶段 2/3 并行推进）
 
@@ -50,6 +52,7 @@
 判据：rootfs 受损后可自救；不装 agent 的存储占用实测入册。
 
 **状态（2026-10-03，本阶段可做项全部收口）**：救援通道 MVP 及受损自救最小场景实证——毒化 dpkg status（dpkg 全盲）→ 经 RescueActivity 界面修复（status-old 恢复）→ dpkg 复验健康；更深损坏形态（rootfs 结构性损坏）如实计为未验，留 Q8 产品期。存储实测入册（`draft/phase4-avd-verdict.json`）：不装 agent 的 app 数据装机即用态 438 MB，大头是 apt 索引与二进制缓存（合计约 317 MB），净底盘 121 MB；缓存清理已改打真目标（pkgcache + lists），清后实测 121 MB。版本升级路径与分发渠道结论入册 D26（旁路部署 + 原子切换；GitHub Releases 侧载，不做商店上架承诺）。
+**状态增补（2026-10-04 夜批）**：环境导出 + 卸载强提醒落地（口径收窄为工作区与配置，全环境 ~2GB 不可行；排除 .l2s/.npm/绑定目录，MediaStore 落 Downloads/Drydock 流式写入，t9 拉回抽查实证）；多密钥管理与会话级注入落地（KeyVault，t8）；终端页内菜单最小版落地（t11）；配套缺陷修复见 D28。
 
 ## 阶段 5：集中测试期
 

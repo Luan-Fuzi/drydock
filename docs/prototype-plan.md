@@ -46,7 +46,7 @@ Gradle（Kotlin DSL）建 `app/`：Kotlin + Jetpack Compose、minSdk 29、仅 ar
 
 ### 步骤 6：真机验证周（1 周）
 
-接真机（dev-environment 待办项）：开发者模式 + USB 调试，`adb devices` 确认；装原型真用一周；同机跑基准电池（proot vs proroot，每用例 ≥ 5 次取中位数）。
+接真机（dev-environment 待办项）：开发者模式 + USB 调试，`adb devices` 确认；装原型真用一周；proot 性能基线记录（2026-10-04 口径同步：Q7 已随 D25 收敛——proroot 出局，对比电池降级为 proot 单方基线，供调优与文档用，不再承担选型职能）。
 **判据**：S1 锁屏 30 分钟任务存活（全部样本）、S2 系统杀进程后 tmux 接回、S3 发热降频人工评估。产出 Q1/Q7 结论，触发 continue / pivot 决策（转向预案见 open-questions.md）。
 
 ## 验收方式（协作约定）
