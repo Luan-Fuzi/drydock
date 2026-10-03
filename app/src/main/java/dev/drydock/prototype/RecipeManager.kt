@@ -195,6 +195,38 @@ PIJSON
         return AgentManager.agentEnv(context)
     }
 
+    /** 镜像源 GUI 落地（D27）：写 ~/.drydock/mirrors（清空即回默认回退链）；
+     *  apt 覆盖即时重写 sources；默认选择则恢复出厂双 URI 源。 */
+    fun applyMirrors(context: Context, aptChoice: String, npmUrl: String?): RootfsManager.ExecResult {
+        val aptUrl = when (aptChoice) {
+            "tuna" -> "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
+            "ustc" -> "http://mirrors.ustc.edu.cn/ubuntu-ports"
+            "nju" -> "http://mirror.nju.edu.cn/ubuntu-ports"
+            "official" -> "http://ports.ubuntu.com/ubuntu-ports"
+            else -> null
+        }
+        if (aptUrl == null) {
+            // apt 选「默认」即恢复出厂双 URI 源（npm 选择与否不影响 apt 的恢复）
+            RootfsManager.resetAptSources(context)
+        }
+        val lines = buildString {
+            if (npmUrl != null) append("export DRYDOCK_NPM_REGISTRY=$npmUrl\n")
+            if (aptUrl != null) append("export DRYDOCK_APT_MIRROR=$aptUrl\n")
+        }
+        val cmd = """
+            mkdir -p /root/.drydock
+            cat > /root/.drydock/mirrors <<'MEOF'
+${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEOF
+            . /root/.drydock/mirrors 2>/dev/null || true
+            if [ -n "${'$'}{DRYDOCK_APT_MIRROR:-}" ]; then
+              sed -i "s|^[[:space:]]*URIs:.*|        URIs: ${'$'}DRYDOCK_APT_MIRROR|; /^           /d" /etc/apt/sources.list.d/ubuntu.sources
+              echo APT_SOURCE_NOW=${'$'}DRYDOCK_APT_MIRROR
+            fi
+            echo MIRROR_RC=0
+        """.trimIndent()
+        return RootfsManager.runInEnv(context, cmd)
+    }
+
     /** 首启 motd：「agent 是配置器」的终端内引导（D25）。 */
     private fun ensureMotd(context: Context): RootfsManager.ExecResult {
         val motd = """

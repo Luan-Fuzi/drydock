@@ -278,6 +278,11 @@ object RootfsManager {
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
+    /** 恢复出厂 apt 源（镜像设置切回默认时调用）。 */
+    fun resetAptSources(context: Context) {
+        writeAptSources(rootfsDir(context))
+    }
+
     private fun configure(rootfs: File) {
         // DNS：ubuntu-base 里的 resolv.conf 可能是悬空符号链接，先删再写
         val resolv = rootfs.resolve("etc/resolv.conf")
@@ -285,9 +290,14 @@ object RootfsManager {
             resolv.delete()
         }
         resolv.writeText("nameserver 223.5.5.5\nnameserver 8.8.8.8\n")
+        writeAptSources(rootfs)
+        val legacy = rootfs.resolve("etc/apt/sources.list")
+        if (legacy.exists()) legacy.writeText("# 已切换到 ubuntu.sources（drydock）\n")
+    }
 
-        // apt：24.04 默认 deb822（ubuntu.sources）。arm64 的包在 ports 仓库，安全源同站。
-        // 多 URIs = apt 镜像回退序（deb822 一节多 URI，apt 按序失败转移）——国产镜像先行、官方兜底（D12）。
+    // apt：24.04 默认 deb822（ubuntu.sources）。arm64 的包在 ports 仓库，安全源同站。
+    // 多 URIs = apt 镜像回退序（deb822 一节多 URI，apt 按序失败转移）——国产镜像先行、官方兜底（D12）。
+    private fun writeAptSources(rootfs: File) {
         val suite = RootfsManifest.APT_SUITE
         val mirror = RootfsManifest.APT_MIRROR
         val sources = rootfs.resolve("etc/apt/sources.list.d/ubuntu.sources")
@@ -308,7 +318,5 @@ object RootfsManager {
             Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
             """.trimIndent() + "\n",
         )
-        val legacy = rootfs.resolve("etc/apt/sources.list")
-        if (legacy.exists()) legacy.writeText("# 已切换到 ubuntu.sources（drydock）\n")
     }
 }
