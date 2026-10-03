@@ -16,10 +16,17 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- D25 文件互通：注册系统分享目标（文件/文本 → workspace Inbox） -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
 
@@ -29,9 +36,26 @@
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
-            android:name=".CockpitActivity"
+            android:name=".WizardActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".RescueActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- D7/D25 文件互通：workspace 挂给全安卓文件选择器（免存储权限） -->
+        <provider
+            android:name=".WorkspaceProvider"
+            android:authorities="dev.drydock.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
 
         <service
             android:name=".EnvService"

@@ -10,7 +10,7 @@
 
 **手机上的 agent 宿主，不是"更好的 Termux"，也不是云端沙箱的替代品。**
 
-用户在自己的安卓手机上两次点击获得一个 Linux 环境，下载安装官方 coding agent（Claude Code / Codex CLI / OpenCode 等），配一个 API key 开始干活；产品负责环境生命周期、任务存活、密钥安全、文件落点这四件"管家事务"。95% 的时间用户停在 GUI 驾驶舱（发起任务、批准、看 diff、收成果），极客随时一键进入完整终端。
+用户在自己的安卓手机上两次点击获得一个 Linux 环境，选择安装一个 coding agent（OpenCode、pi 等开源配方，或自行安装其他 agent），配一个 API key 开始干活；产品负责环境生命周期、任务存活、密钥安全、文件边界这四件「管家事务」。日常主界面就是终端：agent 的原生 TUI 直接在里面运行，宿主不做对话包装层，也不绑定任何 agent。
 
 ## 为什么成立（相对两个假想敌）
 
@@ -19,7 +19,7 @@
 
 ## 目标用户
 
-没有 PC / 不想开电脑、想在手机上用 agent 干活的人。会用终端的人装得动 Termux 不需要本产品；本产品的门面是"对话 + 批准 + 成果"，终端退到底层作为逃生舱。
+没有 PC / 不想开电脑、想在手机上用 agent 干活的人。会用终端的人自己装 Termux 也能干活，但环境安装维护、锁屏挂机存活、密钥保管与文件互通都要自己操心；本产品把这几件事做成默认可用，用户进终端就能让 agent 干活。
 
 ## 文档索引
 
@@ -31,9 +31,10 @@
 | [docs/name-check.md](docs/name-check.md) | Drydock 重名检查结果（2026-09-26） |
 | [docs/engineering-plan.md](docs/engineering-plan.md) | 工程准备：性能探针、测试策略、安全不变量、前端设计语言（2026-09-27） |
 | [docs/prototype-plan.md](docs/prototype-plan.md) | 原型实施计划：六步路线、判据、时间盒、风险止损（2026-09-27） |
+| [docs/product-roadmap.md](docs/product-roadmap.md) | 产品阶段 roadmap：功能先行、集中测试，五阶段与判据（2026-10-03） |
 | [docs/dev-environment.md](docs/dev-environment.md) | 开发环境现状：macOS 工具链、AVD 分工、注意事项（2026-09-27） |
 | `draft/` | 构想草稿与临时文件（git 忽略，见 `.gitignore`；定型后整理进 docs/） |
 
 ## 下一步
 
-见 [docs/prototype-plan.md](docs/prototype-plan.md)：六步搓出丢弃型原型（前五步全程 AVD，真机只在最后的验证周），核心是验证"锁屏挂机干活"这条链路。
+步骤 6 真机周收尾（见 [docs/prototype-plan.md](docs/prototype-plan.md)，核心是验证「锁屏挂机干活」这条链路，结论即 continue / pivot 开关）；其后按 [docs/product-roadmap.md](docs/product-roadmap.md) 推进——功能先行（首页与向导 → 输入 → 文件边界与端口），集中测试殿后。

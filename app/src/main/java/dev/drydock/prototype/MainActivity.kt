@@ -53,23 +53,79 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4705)
         }
         // 验收自动化注入口：仅 debuggable 构建存在（release 无此路径），key 直达
-        // Keystore 不落盘；无视觉环境下经 am start --es 注入后走 UI 断言。
+        // Keystore 不落盘；无视觉环境下经 am start --es 注入后走 logcat 断言。
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             intent?.getStringExtra("drydock_api_key")?.takeIf { it.isNotBlank() }?.let {
                 SecretStore.save(this, AgentManager.KEY_NAME, it)
+                SecretStore.save(this, EndpointStore.KEY_NAME, it)
                 android.util.Log.i(
                     "DrydockMain",
-                    "debug 注入 API key：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
+                    "debug 注入 API key（glm + drydock 两键名）：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
                 )
             }
-            // 验收自动化注入口：shell 无法直起非导出 Activity，经主页转投驾驶舱
-            intent?.getStringExtra("cockpit_msg")?.takeIf { it.isNotBlank() }?.let {
+            // 配方验收注入口："PROTOCOL|base_url|model"（D25 零预置：产品路径无任何默认值）
+            intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
+                val parts = spec.split("|")
+                runCatching { EndpointStore.Protocol.valueOf(parts[0]) }.getOrNull()?.let { p ->
+                    EndpointStore.save(this, p, parts[1], parts.getOrElse(2) { "" })
+                    android.util.Log.i("DrydockMain", "debug 注入端点：$p ${parts[1]} model=${parts.getOrElse(2) { "" }}")
+                }
+            }
+            // 配方验收驱动："opencode,pi" → 安装 + 写端点配置 + headless 冒烟，结论进 logcat DrydockRecipe
+            intent?.getStringExtra("drydock_recipe")?.takeIf { it.isNotBlank() }?.let { ids ->
+                val recipes = ids.split(",").mapNotNull { RecipeManager.byId(it.trim()) }
+                Thread {
+                    val appCtx = applicationContext
+                    if (!RootfsManager.isDeployed(appCtx)) {
+                        android.util.Log.i("DrydockRecipe", "deploy rootfs start")
+                        RootfsManager.deploy(appCtx) { st ->
+                            android.util.Log.i("DrydockRecipe", "deploy ${st.javaClass.simpleName}")
+                        }
+                        if (!RootfsManager.isDeployed(appCtx)) {
+                            android.util.Log.i("DrydockRecipe", "deploy FAILED，配方验收中止")
+                            return@Thread
+                        }
+                    }
+                    recipes.forEach { r ->
+                        android.util.Log.i("DrydockRecipe", "ensure ${r.id} start")
+                        val res = RecipeManager.ensure(appCtx, r) { }
+                        android.util.Log.i("DrydockRecipe", "ensure ${r.id} <${res.output.takeLast(400)}>")
+                        if (res.output.contains("RECIPE_RC=0")) RecipeManager.markInstalled(appCtx, r.id)
+                    }
+                    val cfg = RecipeManager.applyEndpointConfig(appCtx)
+                    android.util.Log.i("DrydockRecipe", "cfg <${cfg.output.takeLast(400)}>")
+                    if (EndpointStore.configured(appCtx)) {
+                        recipes.forEach { r ->
+                            val s = RecipeManager.smoke(appCtx, r)
+                            android.util.Log.i("DrydockRecipe", "smoke ${r.id} <${s.output.takeLast(600)}>")
+                        }
+                    }
+                }.start()
+            }
+            // 环境内命令执行通道（验收/诊断）：base64 规避多层 shell 引号；完整输出写
+            // files/exec-out.txt（logcat 单条 4KB 截断，长输出走 run-as cat 取回）
+            intent?.getStringExtra("drydock_exec64")?.takeIf { it.isNotBlank() }?.let { b64 ->
+                Thread {
+                    val cmd = String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT), Charsets.UTF_8)
+                    val r = RootfsManager.runInEnv(applicationContext, cmd)
+                    try {
+                        File(applicationContext.filesDir, "exec-out.txt").writeText(
+                            "EXEC_DONE exit=${r.exitCode}\n${r.output}",
+                        )
+                    } catch (_: Exception) {
+                    }
+                    android.util.Log.i("DrydockExec", "EXEC_DONE exit=${r.exitCode} (full output in files/exec-out.txt)")
+                }.start()
+            }
+            // 救援通道验收转投：shell 无法直起非导出 Activity，经主页带命令进 RescueActivity
+            intent?.getStringExtra("drydock_rescue")?.takeIf { it.isNotBlank() }?.let { rc ->
                 startActivity(
-                    android.content.Intent(this, CockpitActivity::class.java)
-                        .putExtra("cockpit_msg", it),
+                    android.content.Intent(this, RescueActivity::class.java).putExtra("drydock_cmd", rc),
                 )
             }
         }
+        // D25 文件互通：作为系统分享目标（文件流或文本 → workspace Inbox）
+        if (android.content.Intent.ACTION_SEND == intent?.action) handleSend(intent)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -77,6 +133,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (android.content.Intent.ACTION_SEND == intent.action) handleSend(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun handleSend(intent: android.content.Intent) {
+        val stream = intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+        val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
+        if (stream == null && text.isNullOrBlank()) return
+        Thread {
+            val f = if (stream != null) {
+                FileBridge.importUri(this, stream)
+            } else {
+                FileBridge.importText(this, text!!)
+            }
+            android.util.Log.i(
+                "DrydockFile",
+                if (f != null) "分享已导入 Inbox：${f.name}" else "分享导入失败",
+            )
+        }.start()
     }
 }
 
@@ -104,6 +184,136 @@ fun PrototypeScreen() {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Drydock 原型", style = MaterialTheme.typography.titleLarge)
+
+        // ---------- 终端：主入口（D24 终端原生为主屏，一键自检自装起会话） ----------
+        var termBusy by remember { mutableStateOf("") }
+        Button(
+            enabled = termBusy.isBlank(),
+            onClick = {
+                scope.launch {
+                    val appCtx = context.applicationContext
+                    try {
+                        if (!RootfsManager.isDeployed(appCtx)) {
+                            termBusy = "部署 rootfs…"
+                            withContext(Dispatchers.IO) {
+                                RootfsManager.deploy(appCtx) { st ->
+                                    termBusy = "部署：${st.javaClass.simpleName}"
+                                }
+                            }
+                        }
+                        termBusy = "终端层检查…（首次需装 ttyd/dtach）"
+                        val layer = withContext(Dispatchers.IO) { TerminalManager.ensureTerminalLayer(appCtx) }
+                        if (layer.exitCode == 0 && layer.output.contains("LAYER_RC=0")) {
+                            context.getSharedPreferences("drydock", android.content.Context.MODE_PRIVATE)
+                                .edit().putBoolean("terminal_layer_ok", true).apply()
+                            termBusy = "启动会话…"
+                            context.startForegroundService(android.content.Intent(context, EnvService::class.java))
+                            var found = false
+                            repeat(25) {
+                                if (it > 0) kotlinx.coroutines.delay(1000)
+                                if (TerminalManager.readSessions(context)
+                                        .any { it.name == TerminalManager.MAIN }
+                                ) {
+                                    found = true
+                                    return@repeat
+                                }
+                            }
+                            if (found) {
+                                termBusy = ""
+                                context.startActivity(
+                                    android.content.Intent(context, TerminalActivity::class.java),
+                                )
+                            } else {
+                                termBusy = "会话启动失败（看 logcat DrydockEnv/DrydockTerminal）"
+                            }
+                        } else {
+                            termBusy = "终端层失败：${layer.output.takeLast(200)}"
+                        }
+                    } catch (e: Exception) {
+                        termBusy = "异常：$e"
+                    }
+                }
+            },
+        ) { Text(if (termBusy.isBlank()) "打开终端" else termBusy) }
+
+        // ---------- 产品面（D25：终端宿主主状态与首启入口） ----------
+        var tick by remember { mutableStateOf(0) }
+        val endpointLine = remember(tick) { EndpointStore.summary(context) }
+        val recipesLine = remember(tick) { RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" } }
+        Text(
+            "环境 ${if (deployed) "✓ 就绪" else "未部署"} · 端点 $endpointLine · 配方 $recipesLine",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+        )
+        Button(onClick = {
+            tick++
+            context.startActivity(android.content.Intent(context, WizardActivity::class.java))
+        }) { Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置" else "① 先做初始设置（保活 / 端点 / agent）") }
+
+        // ---------- 本地服务与文件互通（阶段 3 / D25） ----------
+        var portsTick by remember { mutableStateOf(0) }
+        var ports by remember { mutableStateOf(emptyList<PortPanel.ListenPort>()) }
+        androidx.compose.runtime.LaunchedEffect(portsTick) {
+            ports = withContext(Dispatchers.IO) { PortPanel.listening(context) }
+        }
+        Text(
+            if (ports.isEmpty()) "本地服务：无"
+            else "本地服务：" + ports.joinToString("、") { p -> "${p.port}" + if (p.isTerminal) "（终端）" else "" },
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+        )
+        ports.filter { !it.isTerminal }.take(3).forEach { p ->
+            Button(onClick = {
+                context.startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("http://127.0.0.1:${p.port}"),
+                    ),
+                )
+            }) { Text("浏览器打开 :${p.port}") }
+        }
+        Button(onClick = { portsTick++ }) { Text("刷新本地服务") }
+
+        val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    val f = withContext(Dispatchers.IO) { FileBridge.importUri(context, uri) }
+                    tick++
+                    android.util.Log.i("DrydockFile", if (f != null) "SAF 已导入 Inbox：${f.name}" else "SAF 导入失败")
+                }
+            }
+        }
+        Button(onClick = { importLauncher.launch(arrayOf("*/*")) }) { Text("导入文件到工作区（Inbox）") }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+
+        // ---------- 开发者工具（原型判据仪器，验收用；产品路径不经过这里） ----------
+        var showDev by remember { mutableStateOf(false) }
+        Button(onClick = { showDev = !showDev }) { Text(if (showDev) "收起开发者工具" else "开发者工具（验收仪器）") }
+        if (showDev) {
+
+        Button(onClick = {
+            context.startActivity(android.content.Intent(context, RescueActivity::class.java))
+        }) { Text("救援通道（绕过终端层执行命令）") }
+        var cleanMsg by remember { mutableStateOf("") }
+        Button(
+            enabled = deployed && cleanMsg.isBlank(),
+            onClick = {
+                cleanMsg = "清理中…"
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) { RootfsManager.cleanCaches(context.applicationContext) }
+                    cleanMsg = if (r.output.contains("CLEAN_RC=0")) {
+                        val m = Regex("APT_KB_BEFORE=(\\d+) APT_KB_AFTER=(\\d+)").find(r.output)
+                        val freedMb = m?.let { (it.groupValues[1].toLong() - it.groupValues[2].toLong()) / 1024 } ?: 0
+                        "✓ 已清理：apt 释放约 ${freedMb} MB（下次 apt 操作需重拉索引）"
+                    } else {
+                        "✗ ${r.output.takeLast(200)}"
+                    }
+                }
+            },
+        ) { Text(if (cleanMsg.isBlank()) "清理包管理器缓存" else cleanMsg) }
 
         // ---------- 步骤 1：引擎自检 ----------
         Text("步骤 1 · proot 引擎自检", style = MaterialTheme.typography.titleMedium)
@@ -202,7 +412,13 @@ fun PrototypeScreen() {
         Text("步骤 3 · 终端链路（AV2）", style = MaterialTheme.typography.titleMedium)
 
         var layerState by remember { mutableStateOf("") }
-        var layerReady by remember { mutableStateOf(false) }
+        // 跨启动持久（此前内存态导致"打开终端"按钮重启后消失——真机 D1 实测）
+        var layerReady by remember {
+            mutableStateOf(
+                context.getSharedPreferences("drydock", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("terminal_layer_ok", false),
+            )
+        }
         var layerRunning by remember { mutableStateOf(false) }
 
         Text(
@@ -519,19 +735,7 @@ fun PrototypeScreen() {
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-
-        // ---------- 驾驶舱最小版（真机周后首块产品功能） ----------
-        Text("驾驶舱 · 最小版", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "输入发起任务 → 对话流 + 批准卡片（PreToolUse 网关）→ 产物落袋",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Button(onClick = {
-            context.startActivity(android.content.Intent(context, CockpitActivity::class.java))
-        }) { Text("打开驾驶舱") }
+        }
     }
 }
 

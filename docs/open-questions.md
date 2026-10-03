@@ -29,6 +29,7 @@ agent 任务一跑几十分钟，手机会锁屏、降频、被杀后台、发�
 ## Q5：hook 集成的实际深度
 
 **2026-10-01 真机实测（draft/q5-hooks-result.json）**：PreToolUse/PostToolUse/Stop 全链路触发、tool_input 载荷完整（file_path+content，够批准卡片展示）；PreToolUse `exit 2 + stderr` 决策返回被模型尊重——工具调用拦截、stderr 回馈、模型明确不绕过（拒绝改用 shell 等替代路径）。**批准卡片地基成立**。遗留：Notification hook 在 headless 无权限请求场景未触发，触发时机留驾驶舱交互场景验证；结构化 permissionDecision JSON（比 exit 2 更细的 allow/deny/ask 三态）留产品期。"批准"方向的挂起等待外部决策（hook ↔ 宿主 IPC）为驾驶舱期工程项。Codex notify 与 OpenCode 的事件粒度待调查。L2 只做 Claude Code，此问题不阻塞 Q1/Q2。
+**2026-10-03 随 D25 收口**：宿主转向 agent 无关、驾驶舱删除（D25），批准卡片不再有产品承载面。结论定格为「机制实测成立（exit 2 决策被模型尊重），产品不采用」；Notification hook 触发时机、结构化 permissionDecision、hook ↔ 宿主挂起 IPC 等遗留项全部留档关闭，Codex notify / OpenCode 事件粒度的调查随配方化（不做逐家 hook 集成）失去必要。
 
 ## Q6：命名与品牌
 
@@ -37,6 +38,7 @@ Drydock 暂定：GitHub 同名仓库 232 个（无本领域冲突）、npm `dryd
 ## Q7：环境翻译层选型（proot 分支 × proroot）
 
 上游 proot v5.4.1 与 Termux fork 的取舍已有初步倾向（**Termux fork**：安卓生态事实标准，proot-distro/Andronix/ZeroTermux 全在其上，见 discussion-log §17），实测仅为确认而非开放式二选一。proroot 性能收益已被 DSHA 真机验证（+58~94%），但闭源专有许可需逐条核实（能否随 APK 分发未修改二进制、条款可撤销性），且作者转向 proroom、长期维护存疑。**验证方式**：原型阶段跑 30 分钟基准电池（npm install / tar 解包 / stat 风暴 / make -j，hyperfine 重复取中位数），同机对比 proot（Termux fork）与 proroot，用一手数据决定默认引擎与降级策略。不阻塞 Q1/Q2。
+**2026-10-03 收敛（D25 开源硬前提）**：用户定工具链尽量开源为选型硬前提——proroot（闭源专有）出局，不再作为引擎候选。Q7 从「同机对比二选一」收敛为 Termux fork 的确认性实测；基准电池降级为 proot 性能基线记录（调优与文档用），不再承担选型职能。
 
 ## Q8：环境救援通道设计
 

@@ -171,6 +171,23 @@ object RootfsManager {
         Log.i(TAG, "rootfs 就绪：${RootfsManifest.UBUNTU_VERSION}")
     }
 
+    /** 维护：清理包管理器占用（阶段 4 存储优化，实测口径见 draft/phase4-storage-verdict.json）。
+     *  大头不是 deb 归档而是 apt 索引与二进制缓存（合计约 317MB）：lists 清掉后
+     *  下次 apt 操作需 update 重拉——终端层装完后常态不再用 apt，属划算交换。 */
+    fun cleanCaches(context: Context): ExecResult {
+        val cmd = """
+            BEFORE=${'$'}(du -sk /var/lib/apt/lists /var/cache/apt 2>/dev/null | awk '{s+=${'$'}1} END{print s+0}')
+            apt-get clean 2>/dev/null
+            rm -f /var/cache/apt/*.bin
+            rm -rf /var/lib/apt/lists/*
+            npm cache clean --force >/dev/null 2>&1
+            AFTER=${'$'}(du -sk /var/lib/apt/lists /var/cache/apt 2>/dev/null | awk '{s+=${'$'}1} END{print s+0}')
+            echo "APT_KB_BEFORE=${'$'}BEFORE APT_KB_AFTER=${'$'}AFTER"
+            echo CLEAN_RC=0
+        """.trimIndent()
+        return runInEnv(context, cmd)
+    }
+
     /** 在已部署环境内执行命令（proot -0 -L，绑定 dev/proc/sys）。
      *  extraBinds：额外 "宿主路径:环境内路径" 绑定；extraEnv：注入宿主侧环境变量
      *  （I1 的密钥即经此进环境，只存在于进程 environment，不落环境内文件）。 */
