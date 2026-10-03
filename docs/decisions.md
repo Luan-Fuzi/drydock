@@ -105,6 +105,11 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
 
+### D27 界面定义 v1：底部三栏（会话/文件/设置）与密钥两层制（2026-10-03，用户拍板）
+**主页 = 底部导航三栏**：①会话（管理已开终端、新建、空状态承载首启教育）②文件（Linux 目录树浏览；文件经 WorkspaceProvider 的 content URI 甩系统应用打开——有界浏览器，非文件管理器，D7 维持）③设置（镜像源、外观昼夜、端点与密钥入口、开发者工具收纳旧验收仪器）。
+**镜像源设置页 = `~/.drydock/mirrors` 覆盖文件的 GUI 编辑器**：默认回退链零配置不变（TUNA→官方、npmmirror→npmjs），GUI/手编文件/让 agent 改三条路等价写同一数据源，不构成配置中台。
+**密钥两层制（奥卡姆剃刀后）**：普通变量 `~/.drydock/env.sh`（新 shell 生效）+ Keystore 多 key 按会话注入。**否决第三档 vault 通道**（`drydock seal` 包装拉取式注入）：同 uid 下 `/proc/environ` 可读使其「防恶」不成立、「防误」两层已覆盖，工程量最大而边际收益最小。密钥不进环境内文件的硬理由：环境导出 tar（D7 规划功能）会常态化携带文件态密钥、按会话选择性注入只有文件态不存在时才可能。威胁模型口径：防误不防恶，运行期暴露（printenv）为单 uid 架构固有代价。
+
 ### D26 版本升级路径与分发渠道（2026-10-03，阶段 4 收口）
 **版本升级**：一切外部来源版本 pin 死（rootfs 走 `RootfsManifest`，D17；配方与 Node 走 `RecipeManager`/`AgentManager` 版本常量，D25），环境内自升级一律禁用。升级 = 宿主侧改清单 + 重走装机判据；产品期实现形态定为**旁路部署 + 原子切换**：新 rootfs 下载解压到旁路目录 → sha256 校验 → 目录重命名原子切换 → 保留上一版本一份供回滚，磁盘峰值约 2×rootfs。配方升级复用 npm install 语义（幂等装新 pin 版本），不引入第二套机制；终端层（ttyd/dtach）随 rootfs apt 源走。/root 下的用户文件与工作区在切换前迁移，细则随产品期实现定。
 **分发渠道**：非商业阶段 GitHub Releases 侧载，APK 只从 main tag 构建（git 纪律）；国内链路不依赖 GitHub——rootfs/Node/npm 主链路已镜像化（TUNA/npmmirror 实测直连，配方安装 OpenCode 19s / pi 12s）。**不做应用商店上架承诺**：主链路在运行时下载可执行代码，Google Play 政策对此严格限制（Termux 前车之鉴），「引导下载器」形态的合规论证成本高、收益存疑，不投入。F-Droid 纯 FOSS 构建链（proot 自编译过其 CI）留待有兴趣时评估，不阻塞判据。

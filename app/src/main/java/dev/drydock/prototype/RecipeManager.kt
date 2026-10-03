@@ -13,6 +13,9 @@ object RecipeManager {
 
     private const val TAG = "DrydockRecipe"
 
+    /** 官方源兜底（回退序第二位；首位默认 npmmirror，可被 ~/.drydock/mirrors 覆盖）。 */
+    const val NPM_FALLBACK_SOURCE = "https://registry.npmjs.org"
+
     /** 配方 = npm 包 + 版本 pin（升级 = 改这里 + 重走安装判据，同 RootfsManifest 口径）。 */
     data class Recipe(
         val id: String,
@@ -77,16 +80,18 @@ object RecipeManager {
               [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd
             }
         """.trimIndent()
-        // npm 镜像回退（D12 精神：回退序进安装脚本，零用户配置）——npmmirror 失败换官方源重试
+        // npm 镜像回退（D12 精神：默认回退序零配置；~/.drydock/mirrors 可覆盖首选源）
         val cmd = """
+            . /root/.drydock/mirrors 2>/dev/null || true
+            NPM_REG="${'$'}{DRYDOCK_NPM_REGISTRY:-$NPM_FALLBACK_SOURCE}"
             $toolsSh
             command -v ${recipe.bin} >/dev/null 2>&1 && ${recipe.bin} --version 2>/dev/null | grep -q '${recipe.version}' \
               && { echo RECIPE_ALREADY; echo RECIPE_RC=0; exit 0; }
-            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=${'$'}NPM_REG ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
             NPM_RC=${'$'}{PIPESTATUS[0]}
             if [ ${'$'}NPM_RC -ne 0 ]; then
-              echo "npmmirror 失败，换官方 npmjs 源重试…"
-              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=https://registry.npmjs.org ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+              echo "首选源失败，换官方 npmjs 源重试…"
+              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=$NPM_FALLBACK_SOURCE ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
               NPM_RC=${'$'}{PIPESTATUS[0]}
             fi
             ${recipe.bin} --version 2>/dev/null; BIN_RC=${'$'}?
@@ -108,14 +113,37 @@ object RecipeManager {
         val protocol = EndpointStore.protocol(context)
         val baseUrl = EndpointStore.baseUrl(context)
         val model = EndpointStore.model(context) ?: ""
-        if (protocol == null || baseUrl.isNullOrBlank()) {
-            return RootfsManager.ExecResult(0, "CFG_SKIPPED_NO_ENDPOINT")
+        val hasEndpoint = protocol != null && !baseUrl.isNullOrBlank()
+        if (hasEndpoint && baseUrl != null && protocol != null) {
+            // 占位：下方脚本内联使用（避免智能转换拆分）
         }
-        val opencodeJson = opencodeConfig(protocol, baseUrl, model, EndpointStore.contextWindow(context))
-        val piJson = piConfig(protocol, baseUrl, model)
-        val endpointInfo = "protocol=${protocol.name}\nbase_url=$baseUrl\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
+        val opencodeJson = if (hasEndpoint && baseUrl != null && protocol != null) {
+            opencodeConfig(protocol, baseUrl, model, EndpointStore.contextWindow(context))
+        } else ""
+        val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
+            piConfig(protocol, baseUrl, model)
+        } else ""
+        val endpointInfo = "protocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
+        val envBlock = if (hasEndpoint && baseUrl != null) """
+            cat > /etc/profile.d/drydock-env.sh <<ENVEOF
+export DRYDOCK_BASE_URL='$baseUrl'
+export DRYDOCK_MODEL='$model'
+export DRYDOCK_PROTOCOL='${protocol!!.name}'
+# 用户自定义环境变量挂载点（让 agent 帮你加也行）
+[ -f /root/.drydock/env.sh ] && . /root/.drydock/env.sh
+ENVEOF
+        """ else ""
         val cmd = """
+            . /root/.drydock/mirrors 2>/dev/null || true
             printf '%s\n' '${endpointInfo.replace("'", "'\\''")}' > /root/.drydock-endpoint
+            ${envBlock.trimIndent()}
+            mkdir -p /root/.drydock
+            [ -f /root/.drydock/env.sh ] || printf '# 用户自定义环境变量，每个新 shell 生效；例如：\n# export HTTP_PROXY=http://127.0.0.1:7890\n' > /root/.drydock/env.sh
+            [ -f /root/.drydock/mirrors ] || printf '# 镜像覆盖（可选）：\n# export DRYDOCK_NPM_REGISTRY=https://registry.npmjs.org\n# export DRYDOCK_APT_MIRROR=http://mirrors.ustc.edu.cn/ubuntu-ports\n' > /root/.drydock/mirrors
+            if [ -n "${'$'}{DRYDOCK_APT_MIRROR:-}" ]; then
+              sed -i "s|^[[:space:]]*URIs:.*|        URIs: ${'$'}DRYDOCK_APT_MIRROR|; /^           /d" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null
+              echo APT_MIRROR_APPLIED
+            fi
             if command -v opencode >/dev/null 2>&1; then
               mkdir -p /root/.config/opencode
               cat > /root/.config/opencode/opencode.json <<'OCJSON'

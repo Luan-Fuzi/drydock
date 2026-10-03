@@ -93,6 +93,8 @@ object AgentManager {
         onLog("node tarball 校验通过，环境内安装…")
         val nodeDir = NODE_TARBALL.removeSuffix(".tar.gz")
         val cmd = """
+            . /root/.drydock/mirrors 2>/dev/null || true
+            NPM_REG="${'$'}{DRYDOCK_NPM_REGISTRY:-$NPM_REGISTRY}"
             command -v node >/dev/null 2>&1 && [ "${'$'}(node --version)" = "$NODE_VERSION" ] && { echo NODE_ALREADY; echo NODE_RC=0; exit 0; }
             mkdir -p /opt
             tar -xzf /node.tgz -C /opt 2>&1 | tail -2
@@ -100,7 +102,7 @@ object AgentManager {
             ln -sf /opt/$nodeDir/bin/npm /usr/local/bin/npm
             ln -sf /opt/$nodeDir/bin/npx /usr/local/bin/npx
             node --version || { echo NODE_RC=9 NODE_BROKEN; exit 0; }
-            npm config set registry $NPM_REGISTRY
+            npm config set registry ${'$'}NPM_REG
             npm config set prefix /usr/local
             echo NODE_RC=0
         """.trimIndent()
