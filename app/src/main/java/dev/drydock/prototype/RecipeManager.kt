@@ -77,12 +77,18 @@ object RecipeManager {
               [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd
             }
         """.trimIndent()
+        // npm 镜像回退（D12 精神：回退序进安装脚本，零用户配置）——npmmirror 失败换官方源重试
         val cmd = """
             $toolsSh
             command -v ${recipe.bin} >/dev/null 2>&1 && ${recipe.bin} --version 2>/dev/null | grep -q '${recipe.version}' \
               && { echo RECIPE_ALREADY; echo RECIPE_RC=0; exit 0; }
             npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
             NPM_RC=${'$'}{PIPESTATUS[0]}
+            if [ ${'$'}NPM_RC -ne 0 ]; then
+              echo "npmmirror 失败，换官方 npmjs 源重试…"
+              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=https://registry.npmjs.org ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+              NPM_RC=${'$'}{PIPESTATUS[0]}
+            fi
             ${recipe.bin} --version 2>/dev/null; BIN_RC=${'$'}?
             echo RECIPE_RC=${'$'}(( NPM_RC == 0 && BIN_RC == 0 ? 0 : 1 ))
         """.trimIndent()
@@ -105,9 +111,9 @@ object RecipeManager {
         if (protocol == null || baseUrl.isNullOrBlank()) {
             return RootfsManager.ExecResult(0, "CFG_SKIPPED_NO_ENDPOINT")
         }
-        val opencodeJson = opencodeConfig(protocol, baseUrl, model)
+        val opencodeJson = opencodeConfig(protocol, baseUrl, model, EndpointStore.contextWindow(context))
         val piJson = piConfig(protocol, baseUrl, model)
-        val endpointInfo = "protocol=${protocol.name}\nbase_url=$baseUrl\nmodel=$model\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
+        val endpointInfo = "protocol=${protocol.name}\nbase_url=$baseUrl\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
         val cmd = """
             printf '%s\n' '${endpointInfo.replace("'", "'\\''")}' > /root/.drydock-endpoint
             if command -v opencode >/dev/null 2>&1; then
@@ -168,16 +174,26 @@ PIJSON
             # Drydock 引导（改本文件即改启动提示）
             echo "Drydock：agent 已就绪。直接运行 opencode 或 pi 开始；"
             echo "端点/模型配置见 ~/.drydock-endpoint（key 不落盘）；"
-            echo "想改启动项或装更多工具，直接让 agent 帮你配。"
+            echo "模型元数据（上下文窗口等）在 ~/.config/opencode/opencode.json 与 ~/.pi/agent/models.json——直接让 agent 帮你改；"
+            echo "想改启动项或装更多工具，也让 agent 帮你配。"
             MOTD
             echo MOTD_RC=${'$'}?
         """.trimIndent()
         return RootfsManager.runInEnv(context, motd)
     }
 
-    /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。 */
-    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String): String {
-        val models = if (model.isBlank()) "" else "\"$model\": {\"name\": \"$model\"},"
+    /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。
+     *  contextWindow 可选写入 limit.context（自定义 provider 的上下文元数据 OpenCode 不会自动识别，
+     *  真机实测默认显示 128k；用户在向导里填了才写）。 */
+    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
+        val modelEntry = buildString {
+            if (model.isNotBlank()) {
+                append("\"$model\": {\"name\": \"$model\"")
+                contextWindow?.let { append(", \"limit\": {\"context\": $it}") }
+                append("},")
+            }
+        }
+        val models = modelEntry
         return when (protocol) {
             EndpointStore.Protocol.CHAT_COMPLETIONS -> """
                 {

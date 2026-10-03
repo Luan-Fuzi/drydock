@@ -21,17 +21,19 @@ object EndpointStore {
     private fun prefs(context: Context) =
         context.getSharedPreferences("drydock", Context.MODE_PRIVATE)
 
-    fun save(context: Context, protocol: Protocol, baseUrl: String, model: String) {
+    fun save(context: Context, protocol: Protocol, baseUrl: String, model: String, contextWindow: String = "") {
         prefs(context).edit()
             .putString("endpoint_protocol", protocol.name)
             .putString("endpoint_base_url", baseUrl.trim().trimEnd('/'))
             .putString("endpoint_model", model.trim())
+            .putString("endpoint_context", contextWindow.trim())
             .apply()
     }
 
     fun clear(context: Context) {
         prefs(context).edit()
             .remove("endpoint_protocol").remove("endpoint_base_url").remove("endpoint_model")
+            .remove("endpoint_context")
             .apply()
     }
 
@@ -43,6 +45,11 @@ object EndpointStore {
 
     fun model(context: Context): String? =
         prefs(context).getString("endpoint_model", null)?.takeIf { it.isNotBlank() }
+
+    /** 上下文窗口（token 数，可选）：OpenCode 的 limit.context；pi 无此字段（上游限制，
+     *  自定义 provider 固定默认显示），仅在配置信息文件里展示。 */
+    fun contextWindow(context: Context): Long? =
+        prefs(context).getString("endpoint_context", null)?.trim()?.toLongOrNull()
 
     fun keyReady(context: Context): Boolean = SecretStore.load(context, KEY_NAME) != null
 

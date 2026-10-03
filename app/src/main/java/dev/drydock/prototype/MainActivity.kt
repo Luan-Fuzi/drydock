@@ -63,12 +63,12 @@ class MainActivity : ComponentActivity() {
                     "debug 注入 API key（glm + drydock 两键名）：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
                 )
             }
-            // 配方验收注入口："PROTOCOL|base_url|model"（D25 零预置：产品路径无任何默认值）
+            // 配方验收注入口："PROTOCOL|base_url|model|context"（D25 零预置：产品路径无任何默认值）
             intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
                 val parts = spec.split("|")
                 runCatching { EndpointStore.Protocol.valueOf(parts[0]) }.getOrNull()?.let { p ->
-                    EndpointStore.save(this, p, parts[1], parts.getOrElse(2) { "" })
-                    android.util.Log.i("DrydockMain", "debug 注入端点：$p ${parts[1]} model=${parts.getOrElse(2) { "" }}")
+                    EndpointStore.save(this, p, parts[1], parts.getOrElse(2) { "" }, parts.getOrElse(3) { "" })
+                    android.util.Log.i("DrydockMain", "debug 注入端点：$p ${parts[1]} model=${parts.getOrElse(2) { "" }} context=${parts.getOrElse(3) { "-" }}")
                 }
             }
             // 配方验收驱动："opencode,pi" → 安装 + 写端点配置 + headless 冒烟，结论进 logcat DrydockRecipe

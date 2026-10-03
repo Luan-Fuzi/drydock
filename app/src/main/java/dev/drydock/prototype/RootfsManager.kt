@@ -287,20 +287,22 @@ object RootfsManager {
         resolv.writeText("nameserver 223.5.5.5\nnameserver 8.8.8.8\n")
 
         // apt：24.04 默认 deb822（ubuntu.sources）。arm64 的包在 ports 仓库，安全源同站。
+        // 多 URIs = apt 镜像回退序（deb822 一节多 URI，apt 按序失败转移）——国产镜像先行、官方兜底（D12）。
         val suite = RootfsManifest.APT_SUITE
         val mirror = RootfsManifest.APT_MIRROR
         val sources = rootfs.resolve("etc/apt/sources.list.d/ubuntu.sources")
         sources.parentFile?.mkdirs()
+        val uris = listOf(mirror, "http://ports.ubuntu.com/ubuntu-ports")
         sources.writeText(
             """
             Types: deb
-            URIs: $mirror
+            URIs: ${uris.joinToString("\n           ")}
             Suites: $suite $suite-updates $suite-backports
             Components: main universe restricted multiverse
             Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
             Types: deb
-            URIs: $mirror
+            URIs: ${uris.joinToString("\n           ")}
             Suites: $suite-security
             Components: main universe restricted multiverse
             Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg

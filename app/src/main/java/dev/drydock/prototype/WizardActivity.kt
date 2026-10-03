@@ -212,6 +212,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     var protocol by remember { mutableStateOf(EndpointStore.Protocol.CHAT_COMPLETIONS) }
     var baseUrl by remember { mutableStateOf(EndpointStore.baseUrl(context) ?: "") }
     var model by remember { mutableStateOf(EndpointStore.model(context) ?: "") }
+    var contextWindow by remember { mutableStateOf(EndpointStore.contextWindow(context)?.toString() ?: "") }
     var apiKey by remember { mutableStateOf("") }
     val urlOk = baseUrl.startsWith("http://") || baseUrl.startsWith("https://")
     val formOk = urlOk && apiKey.isNotBlank()
@@ -248,6 +249,13 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
+        value = contextWindow,
+        onValueChange = { contextWindow = it.filter { c -> c.isDigit() } },
+        label = { Text("上下文窗口 token 数（可选；OpenCode 生效，pi 暂不支持）") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
         value = apiKey,
         onValueChange = { apiKey = it },
         label = { Text("API Key") },
@@ -259,7 +267,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     Button(
         enabled = formOk,
         onClick = {
-            EndpointStore.save(context, protocol, baseUrl, model)
+            EndpointStore.save(context, protocol, baseUrl, model, contextWindow)
             SecretStore.save(context, EndpointStore.KEY_NAME, apiKey)
             onNext()
         },
