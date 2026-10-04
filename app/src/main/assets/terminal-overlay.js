@@ -40,6 +40,28 @@
     } catch (e) { /* 不具备 resize 能力则放弃，不影响主功能 */ }
   }
 
+  // ---------- 原生手势层落点（2026-10-04）----------
+  // 宿主在 View 层接管拖动/甩动（真手指轨迹页面层拿不到，见 TerminalTouchLayout 注释），
+  // 位移按显示帧回调到这里，按行高换算成 wheel 打给 xterm——两种 buffer 的语义
+  // （鼠标模式转 SGR 序列 / normal buffer 滚自身缓冲）都由 xterm 的 wheel 链处理。
+  window.__dkScroll = function (dyCss) {
+    var t = window.term;
+    var vp = document.querySelector('.xterm-viewport');
+    if (!t || !vp) return;
+    var rH = vp.clientHeight / (t.rows || 1);
+    if (!(rH > 0)) return;
+    window.__dkScrollAcc = (window.__dkScrollAcc || 0) + dyCss / rH;
+    var n = Math.trunc(window.__dkScrollAcc);
+    if (!n) return;
+    window.__dkScrollAcc -= n;
+    var el = document.querySelector('.xterm-screen') || document.querySelector('.terminal');
+    for (var i = 0; i < Math.abs(n); i++) {
+      el.dispatchEvent(new WheelEvent('wheel', {
+        bubbles: true, cancelable: true, deltaY: n > 0 ? rH : -rH, deltaMode: 0
+      }));
+    }
+  };
+
   // ---------- 凭据补丁 ----------
   // WebView 的 basic auth 凭据缓存不进页面 JS 发起的 fetch/ws，
   // 而 ttyd 1.7 的 /token（一次性 AuthToken 的来源）受 basic auth 保护。
