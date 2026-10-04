@@ -24,6 +24,12 @@ private const val TERM_BG = 0xFF2B2B2B.toInt()
  */
 class TerminalActivity : ComponentActivity() {
 
+    /** singleTask 复用：切会话走 onNewIntent 换 URL，全程只有一个 WebView/页面。
+     * （2026-10-04 真机实锤：standard 模式下会话切换泄漏出同会话双 WebView，
+     * 前台旧页面带着过期终端模式，滚动滚的是重放假历史。） */
+    private var webView: WebView? = null
+    private var session: TerminalManager.Session? = null
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,12 +37,9 @@ class TerminalActivity : ComponentActivity() {
         // 任务期 FLAG_KEEP_SCREEN_ON 是产品正解（D23"亮着屏用"工况）
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val name = intent.getStringExtra("session") ?: TerminalManager.MAIN
-        val session = TerminalManager.readSessions(this)
-            .firstOrNull { it.name == name }
-            ?: TerminalManager.readSessions(this).firstOrNull()
-        if (session == null) {
-            Log.e("DrydockAv2", "终端会话未启动（$name）")
+        val initial = resolveSession(intent.getStringExtra("session"))
+        if (initial == null) {
+            Log.e("DrydockAv2", "终端会话未启动（${intent.getStringExtra("session")}）")
             finish()
             return
         }
@@ -44,6 +47,7 @@ class TerminalActivity : ComponentActivity() {
         WebView.setWebContentsDebuggingEnabled(true)
 
         val webView = WebView(this)
+        this.webView = webView
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -55,12 +59,14 @@ class TerminalActivity : ComponentActivity() {
                 host: String?,
                 realm: String?,
             ) {
-                handler.proceed("drydock", session.token)
+                val token = session?.token
+                if (token != null) handler.proceed("drydock", token)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                val token = session?.token ?: return
                 val cred = android.util.Base64.encodeToString(
-                    "drydock:${session.token}".toByteArray(),
+                    "drydock:$token".toByteArray(),
                     android.util.Base64.NO_WRAP,
                 )
                 view?.evaluateJavascript(
@@ -76,6 +82,18 @@ class TerminalActivity : ComponentActivity() {
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(msg: android.webkit.ConsoleMessage): Boolean {
                 Log.i("DrydockAv2", msg.message())
+                return true
+            }
+
+            // 单 WebView 切会话（onNewIntent 换 URL）撞上 ttyd 页面的 beforeunload，
+            // 默认弹「Confirm Navigation」阻塞切换——切换是用户显式动作，直接放行。
+            override fun onJsBeforeUnload(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: android.webkit.JsResult?,
+            ): Boolean {
+                result?.confirm()
                 return true
             }
         }
@@ -126,8 +144,28 @@ class TerminalActivity : ComponentActivity() {
             ).apply { topMargin = 24; rightMargin = 24 },
         )
         setContentView(root)
-        webView.loadUrl("http://127.0.0.1:${session.port}/")
-        Log.i("DrydockAv2", "loadUrl http://127.0.0.1:${session.port}/ token=${session.token.take(4)}…")
+        loadSession(initial)
+    }
+
+    /** singleTask：切会话不经重建，本实例内换 URL（旧页面卸载=旧 ws 客户端断开）。 */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val target = resolveSession(intent.getStringExtra("session")) ?: return
+        if (target.name != session?.name || target.port != session?.port) {
+            loadSession(target)
+        }
+    }
+
+    private fun resolveSession(name: String?): TerminalManager.Session? {
+        val sessions = TerminalManager.readSessions(this)
+        return sessions.firstOrNull { it.name == name } ?: sessions.firstOrNull()
+    }
+
+    private fun loadSession(s: TerminalManager.Session) {
+        session = s
+        webView?.loadUrl("http://127.0.0.1:${s.port}/")
+        Log.i("DrydockAv2", "loadUrl http://127.0.0.1:${s.port}/ token=${s.token.take(4)}…")
     }
 
     /** 终端页内会话菜单：列表切换（含各自端口）、新建（默认密钥）、回主页。 */
@@ -140,12 +178,12 @@ class TerminalActivity : ComponentActivity() {
             .setItems(labels.toTypedArray()) { _, which ->
                 when {
                     which < sessions.size && sessions.isNotEmpty() -> {
-                        if (sessions[which].name != intent.getStringExtra("session")) {
+                        if (sessions[which].name != session?.name) {
+                            // singleTask：路由回本实例 onNewIntent，同一 WebView 换 URL
                             startActivity(
                                 android.content.Intent(this, TerminalActivity::class.java)
                                     .putExtra("session", sessions[which].name),
                             )
-                            finish()
                         }
                     }
                     which == labels.size - 2 -> {
@@ -167,7 +205,6 @@ class TerminalActivity : ComponentActivity() {
                                         android.content.Intent(this, TerminalActivity::class.java)
                                             .putExtra("session", name),
                                     )
-                                    finish()
                                 }
                             }
                         }.start()

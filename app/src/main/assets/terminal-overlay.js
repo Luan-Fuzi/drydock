@@ -7,11 +7,13 @@
   // ---------- 字体修正（D24 实测）----------
   // ttyd 默认字体链（Consolas/Liberation/Menlo/Courier）在 Android 全不存在，
   // 落到通用 monospace 后缺 U+23F5(⏵) 等字形变豆腐块；换安卓实际有的等宽链。
+  // term 就绪后顺带做 resize 踹脚（见 nudgeResize）。
   function fixFont() {
     try {
       if (typeof term !== 'undefined' && term.options) {
         term.options.fontFamily =
           '"Noto Sans Mono","Roboto Mono","Droid Sans Mono",monospace';
+        nudgeResize();
         return true;
       }
     } catch (e) { /* term 未就绪则稍后重试 */ }
@@ -20,6 +22,22 @@
   if (!fixFont()) {
     var fontTimer = setInterval(function () { if (fixFont()) clearInterval(fontTimer); }, 500);
     setTimeout(function () { clearInterval(fontTimer); }, 15000);
+  }
+
+  // ---------- resize 踹脚（2026-10-04 滞后接入实证）----------
+  // ttyd 服务端对新客户端无屏幕重放：TUI 启动后才接入的页面只有等新输出才有内容。
+  // 载入后双次 resize（真尺寸变化 → 内核 SIGWINCH → dtach 链 → TUI 重绘），
+  // 至少把内容刷给本客户端。终端模式序列（alt-screen/鼠标上报）不随重绘重发，
+  // 这是已知限制（bubbletea 实测如此），完整修复需带输出历史的 WS 代理，留产品期。
+  var nudged = false;
+  function nudgeResize() {
+    if (nudged) return;
+    nudged = true;
+    try {
+      var c = term.cols, r = term.rows;
+      term.resize(c, r - 1);
+      setTimeout(function () { try { term.resize(c, r); } catch (e) {} }, 250);
+    } catch (e) { /* 不具备 resize 能力则放弃，不影响主功能 */ }
   }
 
   // ---------- 凭据补丁 ----------
@@ -46,6 +64,9 @@
   // ---------- 虚拟键条（阶段 2：Ctrl 粘滞 + 显式回车 + 翻页，横向可滚动） ----------
   var css = document.createElement('style');
   css.textContent =
+    // touch-action:none：合成器不再截走触摸流，xterm 全量吃 touchmove
+    // （2026-10-04 真机手势实测：auto 下每手势仅一个 move 到达 JS ≈ 固定滚 1-2 行）
+    '.terminal,.xterm,.xterm-screen,.xterm-viewport{touch-action:none;}' +
     '#drydock-keys{position:fixed;left:0;right:0;bottom:0;display:flex;gap:4px;' +
     'padding:4px 6px;background:rgba(20,20,20,.92);z-index:99999;' +
     'overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;}' +
