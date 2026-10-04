@@ -34,4 +34,4 @@
 
 ## 待办
 
-- [ ] **真机接入（小米13，骁龙 8 Gen 2，HyperOS）**：已插线，充电中，开机后依次确认——`adb devices -l` 识别、`getprop ro.build.version.release` 与 `ro.product.model` 记录 ROM 版本（HyperOS 2 还是 3 开机即知）、RSA 调试指纹允许。用户需在手机上开：开发者模式（连点 OS 版本）→ USB 调试 → **USB 安装**（HyperOS 可能要求登录小米账号+SIM+联网）→ USB 调试（安全设置）。Q1 存活判据与 Q7 基准电池的数据必须来自真机——模拟器无真实电源管理、OEM 杀后台与发热降频。**操作边界见 AGENTS.md「真机纪律」**。
+- [x] **真机接入（小米13，骁龙 8 Gen 2，HyperOS 3）**：2026-10-01 完成接入并采 S1/S2 正式样本（见 prototype-plan 步骤 6 与 decisions D22），本清单留档作流程参考。

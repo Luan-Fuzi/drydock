@@ -27,7 +27,10 @@ object Landing {
         val resolver = context.contentResolver
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: error("MediaStore insert 返回 null")
-        resolver.openOutputStream(uri)!!.use { it.write(src.readBytes()) }
+        // 流式拷贝：环境导出 tar 可达几十 MB，readBytes 全量进内存会顶低端机上限
+        resolver.openOutputStream(uri)!!.use { out ->
+            src.inputStream().use { it.copyTo(out, 1 shl 16) }
+        }
         values.clear()
         values.put(MediaStore.Downloads.IS_PENDING, 0)
         resolver.update(uri, values, null, null)

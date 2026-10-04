@@ -212,6 +212,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     var protocol by remember { mutableStateOf(EndpointStore.Protocol.CHAT_COMPLETIONS) }
     var baseUrl by remember { mutableStateOf(EndpointStore.baseUrl(context) ?: "") }
     var model by remember { mutableStateOf(EndpointStore.model(context) ?: "") }
+    var contextWindow by remember { mutableStateOf(EndpointStore.contextWindow(context)?.toString() ?: "") }
     var apiKey by remember { mutableStateOf("") }
     val urlOk = baseUrl.startsWith("http://") || baseUrl.startsWith("https://")
     val formOk = urlOk && apiKey.isNotBlank()
@@ -232,6 +233,14 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
             Text(p.label, modifier = Modifier.padding(top = 12.dp))
         }
     }
+    if (protocol == EndpointStore.Protocol.ANTHROPIC) {
+        Text(
+            "已知问题：OpenCode × Anthropic 组合存在适配器内部静默重试（裸端点本身正常）。" +
+                "选这个协议时建议搭配 pi，OpenCode 用户优先 Chat Completions。",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
     OutlinedTextField(
         value = baseUrl,
         onValueChange = { baseUrl = it },
@@ -248,6 +257,13 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
+        value = contextWindow,
+        onValueChange = { contextWindow = it.filter { c -> c.isDigit() } },
+        label = { Text("上下文窗口 token 数（可选；OpenCode 生效，pi 暂不支持）") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
         value = apiKey,
         onValueChange = { apiKey = it },
         label = { Text("API Key") },
@@ -259,8 +275,8 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     Button(
         enabled = formOk,
         onClick = {
-            EndpointStore.save(context, protocol, baseUrl, model)
-            SecretStore.save(context, EndpointStore.KEY_NAME, apiKey)
+            EndpointStore.save(context, protocol, baseUrl, model, contextWindow)
+            KeyVault.saveDefault(context, apiKey)
             onNext()
         },
     ) { Text("保存并下一步") }

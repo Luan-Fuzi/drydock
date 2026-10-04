@@ -114,6 +114,19 @@ class WorkspaceProvider : DocumentsProvider() {
 
     override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean = true
 
+    /** flags 声明了 DELETE/RENAME，方法必须落实——基类默认抛异常，SAF 消费方一点就崩。 */
+    override fun deleteDocument(documentId: String) {
+        val f = fileFor(documentId)
+        if (f.isDirectory) f.deleteRecursively() else f.delete()
+    }
+
+    /** 返回新 docId；null 表示不支持，由调用方退回复制+删除。 */
+    override fun renameDocument(documentId: String, displayName: String): String? {
+        val f = fileFor(documentId)
+        val target = java.io.File(f.parentFile, displayName)
+        return if (f.renameTo(target)) docIdFor(target) else null
+    }
+
     override fun openDocument(
         documentId: String,
         mode: String,

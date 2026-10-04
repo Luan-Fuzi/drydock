@@ -13,6 +13,10 @@ object RecipeManager {
 
     private const val TAG = "DrydockRecipe"
 
+    /** 官方源兜底（回退序第二位；首位默认 npmmirror，可被 ~/.drydock/mirrors 覆盖）。 */
+    const val NPM_PRIMARY_SOURCE = "https://registry.npmmirror.com"
+    const val NPM_FALLBACK_SOURCE = "https://registry.npmjs.org"
+
     /** 配方 = npm 包 + 版本 pin（升级 = 改这里 + 重走安装判据，同 RootfsManifest 口径）。 */
     data class Recipe(
         val id: String,
@@ -21,6 +25,9 @@ object RecipeManager {
         val version: String,
         val bin: String,
         val extraInstallFlags: String = "",
+        /** 随配方经 apt 预装的工具（走国内镜像源）。pi 首启会从 GitHub releases 拉
+         *  fd/ripgrep，国内网络实测挂死；PATH 里已有则 pi 跳过下载（真机 2026-10-03 实证）。 */
+        val aptTools: List<String> = emptyList(),
     )
 
     val OPENCODE = Recipe(
@@ -32,10 +39,11 @@ object RecipeManager {
         npmPackage = "@earendil-works/pi-coding-agent", version = "1.0.0", bin = "pi",
         // 官方安装口径带 --ignore-scripts（纯 JS 包，无 postinstall 需求）
         extraInstallFlags = "--ignore-scripts",
+        aptTools = listOf("ripgrep", "fd-find"),
     )
     val ALL = listOf(OPENCODE, PI)
 
-    fun byId(id: String): Recipe? = ALL.firstOrNull { it.id == id }
+    fun byId(id: String): Recipe? = ALL.firstOrNull { it.id.equals(id.trim(), ignoreCase = true) }
 
     /** 已安装配方（prefs 记录，主线程可读；真实安装态以 ensure 幂等检查为准）。 */
     fun installedIds(context: Context): List<String> =
@@ -66,13 +74,35 @@ object RecipeManager {
             return RootfsManager.ExecResult(1, "Node 层失败：${node.output.takeLast(300)}")
         }
         onLog("安装 ${recipe.title} ${recipe.version}…")
+        val toolsSh = if (recipe.aptTools.isEmpty()) "" else """
+            TOOLS_RC=0
+            command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || {
+              apt-get update -o Acquire::Retries=2 >/dev/null 2>&1
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ${recipe.aptTools.joinToString(" ")} 2>&1 | tail -1
+            }
+            # 工具缺失会让 pi 首启转 GitHub releases 下载（国内网络挂死）——校验进 RECIPE_RC，
+            # 不许静默带病通过（夜批实锤：apt 失败时 fd 符号链接盲建悬空、rg 缺失）
+            command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || TOOLS_RC=1
+            [ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }
+            [ -e /usr/local/bin/fd ] || TOOLS_RC=1
+        """.trimIndent()
+        // npm 镜像回退（D12 精神：默认回退序零配置；~/.drydock/mirrors 可覆盖首选源）
         val cmd = """
+            . /root/.drydock/mirrors 2>/dev/null || true
+            NPM_REG="${'$'}{DRYDOCK_NPM_REGISTRY:-$NPM_PRIMARY_SOURCE}"
+            echo NPM_REG=${'$'}NPM_REG
+            $toolsSh
             command -v ${recipe.bin} >/dev/null 2>&1 && ${recipe.bin} --version 2>/dev/null | grep -q '${recipe.version}' \
               && { echo RECIPE_ALREADY; echo RECIPE_RC=0; exit 0; }
-            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=${'$'}NPM_REG ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
             NPM_RC=${'$'}{PIPESTATUS[0]}
+            if [ ${'$'}NPM_RC -ne 0 ]; then
+              echo "首选源失败，换官方 npmjs 源重试…"
+              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=$NPM_FALLBACK_SOURCE ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+              NPM_RC=${'$'}{PIPESTATUS[0]}
+            fi
             ${recipe.bin} --version 2>/dev/null; BIN_RC=${'$'}?
-            echo RECIPE_RC=${'$'}(( NPM_RC == 0 && BIN_RC == 0 ? 0 : 1 ))
+            echo RECIPE_RC=${'$'}(( NPM_RC == 0 && BIN_RC == 0 && ${if (recipe.aptTools.isEmpty()) "0" else "TOOLS_RC"} == 0 ? 0 : 1 ))
         """.trimIndent()
         val r = RootfsManager.runInEnv(context, cmd)
         Log.i(TAG, "ensure ${recipe.id}: ${r.output.takeLast(400)}")
@@ -90,14 +120,37 @@ object RecipeManager {
         val protocol = EndpointStore.protocol(context)
         val baseUrl = EndpointStore.baseUrl(context)
         val model = EndpointStore.model(context) ?: ""
-        if (protocol == null || baseUrl.isNullOrBlank()) {
-            return RootfsManager.ExecResult(0, "CFG_SKIPPED_NO_ENDPOINT")
+        val hasEndpoint = protocol != null && !baseUrl.isNullOrBlank()
+        if (hasEndpoint && baseUrl != null && protocol != null) {
+            // 占位：下方脚本内联使用（避免智能转换拆分）
         }
-        val opencodeJson = opencodeConfig(protocol, baseUrl, model)
-        val piJson = piConfig(protocol, baseUrl, model)
-        val endpointInfo = "protocol=${protocol.name}\nbase_url=$baseUrl\nmodel=$model\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
+        val opencodeJson = if (hasEndpoint && baseUrl != null && protocol != null) {
+            opencodeConfig(protocol, baseUrl, model, EndpointStore.contextWindow(context))
+        } else ""
+        val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
+            piConfig(protocol, baseUrl, model)
+        } else ""
+        val endpointInfo = "protocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
+        val envBlock = if (hasEndpoint && baseUrl != null) """
+            cat > /etc/profile.d/drydock-env.sh <<ENVEOF
+export DRYDOCK_BASE_URL='$baseUrl'
+export DRYDOCK_MODEL='$model'
+export DRYDOCK_PROTOCOL='${protocol!!.name}'
+# 用户自定义环境变量挂载点（让 agent 帮你加也行）
+[ -f /root/.drydock/env.sh ] && . /root/.drydock/env.sh
+ENVEOF
+        """ else ""
         val cmd = """
+            . /root/.drydock/mirrors 2>/dev/null || true
             printf '%s\n' '${endpointInfo.replace("'", "'\\''")}' > /root/.drydock-endpoint
+            ${envBlock.trimIndent()}
+            mkdir -p /root/.drydock
+            [ -f /root/.drydock/env.sh ] || printf '# 用户自定义环境变量，每个新 shell 生效；例如：\n# export HTTP_PROXY=http://127.0.0.1:7890\n' > /root/.drydock/env.sh
+            [ -f /root/.drydock/mirrors ] || printf '# 镜像覆盖（可选）：\n# export DRYDOCK_NPM_REGISTRY=https://registry.npmjs.org\n# export DRYDOCK_APT_MIRROR=http://mirrors.ustc.edu.cn/ubuntu-ports\n' > /root/.drydock/mirrors
+            if [ -n "${'$'}{DRYDOCK_APT_MIRROR:-}" ]; then
+              sed -i "s|^[[:space:]]*URIs:.*|        URIs: ${'$'}DRYDOCK_APT_MIRROR|; /^           /d" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null
+              echo APT_MIRROR_APPLIED
+            fi
             if command -v opencode >/dev/null 2>&1; then
               mkdir -p /root/.config/opencode
               cat > /root/.config/opencode/opencode.json <<'OCJSON'
@@ -138,15 +191,54 @@ PIJSON
         return RootfsManager.runInEnv(context, cmd, extraEnv = env)
     }
 
-    /** 会话/冒烟共用的注入环境：配置了端点走 DRYDOCK_*，否则回落 AV3 仪器的 GLM 注入（向后兼容）。 */
-    fun sessionEnv(context: Context): Map<String, String> {
+    /** 会话/冒烟共用的注入环境。keyId 语义：null=默认 key（未配置端点回落 AV3 仪器注入，
+     *  向后兼容）；""=显式不注入（「部分密钥不想让环境拿到」）；其余=指定条目。 */
+    fun sessionEnv(context: Context, keyId: String? = null): Map<String, String> {
+        if (keyId != null) {
+            val k = keyId.takeIf { it.isNotBlank() }?.let { KeyVault.load(context, it) } ?: return emptyMap()
+            val env = mutableMapOf("DRYDOCK_API_KEY" to k)
+            EndpointStore.baseUrl(context)?.let { env["DRYDOCK_BASE_URL"] = it }
+            return env
+        }
         if (EndpointStore.configured(context)) {
             return mapOf(
-                "DRYDOCK_API_KEY" to (SecretStore.load(context, EndpointStore.KEY_NAME) ?: ""),
+                "DRYDOCK_API_KEY" to (KeyVault.defaultKey(context) ?: ""),
                 "DRYDOCK_BASE_URL" to (EndpointStore.baseUrl(context) ?: ""),
             )
         }
         return AgentManager.agentEnv(context)
+    }
+
+    /** 镜像源 GUI 落地（D27）：写 ~/.drydock/mirrors（清空即回默认回退链）；
+     *  apt 覆盖即时重写 sources；默认选择则恢复出厂双 URI 源。 */
+    fun applyMirrors(context: Context, aptChoice: String, npmUrl: String?): RootfsManager.ExecResult {
+        val aptUrl = when (aptChoice) {
+            "tuna" -> "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
+            "ustc" -> "http://mirrors.ustc.edu.cn/ubuntu-ports"
+            "nju" -> "http://mirror.nju.edu.cn/ubuntu-ports"
+            "official" -> "http://ports.ubuntu.com/ubuntu-ports"
+            else -> null
+        }
+        if (aptUrl == null) {
+            // apt 选「默认」即恢复出厂双 URI 源（npm 选择与否不影响 apt 的恢复）
+            RootfsManager.resetAptSources(context)
+        }
+        val lines = buildString {
+            if (npmUrl != null) append("export DRYDOCK_NPM_REGISTRY=$npmUrl\n")
+            if (aptUrl != null) append("export DRYDOCK_APT_MIRROR=$aptUrl\n")
+        }
+        val cmd = """
+            mkdir -p /root/.drydock
+            cat > /root/.drydock/mirrors <<'MEOF'
+${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEOF
+            . /root/.drydock/mirrors 2>/dev/null || true
+            if [ -n "${'$'}{DRYDOCK_APT_MIRROR:-}" ]; then
+              sed -i "s|^[[:space:]]*URIs:.*|        URIs: ${'$'}DRYDOCK_APT_MIRROR|; /^           /d" /etc/apt/sources.list.d/ubuntu.sources
+              echo APT_SOURCE_NOW=${'$'}DRYDOCK_APT_MIRROR
+            fi
+            echo MIRROR_RC=0
+        """.trimIndent()
+        return RootfsManager.runInEnv(context, cmd)
     }
 
     /** 首启 motd：「agent 是配置器」的终端内引导（D25）。 */
@@ -156,16 +248,26 @@ PIJSON
             # Drydock 引导（改本文件即改启动提示）
             echo "Drydock：agent 已就绪。直接运行 opencode 或 pi 开始；"
             echo "端点/模型配置见 ~/.drydock-endpoint（key 不落盘）；"
-            echo "想改启动项或装更多工具，直接让 agent 帮你配。"
+            echo "模型元数据（上下文窗口等）在 ~/.config/opencode/opencode.json 与 ~/.pi/agent/models.json——直接让 agent 帮你改；"
+            echo "想改启动项或装更多工具，也让 agent 帮你配。"
             MOTD
             echo MOTD_RC=${'$'}?
         """.trimIndent()
         return RootfsManager.runInEnv(context, motd)
     }
 
-    /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。 */
-    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String): String {
-        val models = if (model.isBlank()) "" else "\"$model\": {\"name\": \"$model\"},"
+    /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。
+     *  contextWindow 可选写入 limit.context（自定义 provider 的上下文元数据 OpenCode 不会自动识别，
+     *  真机实测默认显示 128k；用户在向导里填了才写）。 */
+    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
+        val modelEntry = buildString {
+            if (model.isNotBlank()) {
+                append("\"$model\": {\"name\": \"$model\"")
+                contextWindow?.let { append(", \"limit\": {\"context\": $it}") }
+                append("},")
+            }
+        }
+        val models = modelEntry
         return when (protocol) {
             EndpointStore.Protocol.CHAT_COMPLETIONS -> """
                 {
