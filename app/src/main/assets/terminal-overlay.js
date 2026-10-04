@@ -65,16 +65,46 @@
     try {
       var saved = null;
       try { saved = JSON.parse(localStorage.getItem(TUI_KEY) || 'null'); } catch (e) {}
-      if (saved && saved.alt) term.write('\x1b[?1049h');
-      if (saved && saved.mouse) term.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h');
+      var restored = false;
+      if (saved && saved.alt) { term.write('\x1b[?1049h'); restored = true; }
+      if (saved && saved.mouse) { term.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h'); restored = true; }
       var c = term.cols, r = term.rows;
       setTimeout(function () {
         try {
           term.resize(c, r - 1);
-          setTimeout(function () { try { term.resize(c, r); } catch (e) {} }, 250);
+          setTimeout(function () {
+            try { term.resize(c, r); } catch (e) {}
+            if (restored) canaryValidate();
+          }, 250);
         } catch (e) {}
       }, 120);
     } catch (e) { /* 不具备 resize 能力则放弃，不影响主功能 */ }
+  }
+
+  // 金丝雀自愈：恢复的记忆可能过期（TUI 在页面离开期间退出——2026-10-04 实锤其
+  // 恶性形态：滚轮序列被 bash 当键盘输入，回显 M64/M65 垃圾进命令行甚至提交执行）。
+  // 恢复模式后发一个滚轮事件探路：TUI 活着会静默消费；bash 会把序列尾巴回显出来。
+  // 检测到回显 → 记忆过期 → 撤销模式、清行、清记忆，页面回落 normal buffer。
+  function canaryValidate() {
+    try {
+      var el = document.querySelector('.xterm-screen') || document.querySelector('.terminal');
+      el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 16, deltaMode: 0 }));
+      setTimeout(function () {
+        try {
+          var t = window.term, b = t.buffer.active, hit = false;
+          for (var i = Math.max(0, t.rows - 3); i < t.rows; i++) {
+            var l = b.getLine(i);
+            if (l && /M6[0-9]/.test(l.translateToString(true))) { hit = true; break; }
+          }
+          if (hit) {
+            t.write('\x1b[?1049l');
+            t.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l');
+            tuiSave({ alt: false, mouse: false });
+            window.__dk.sendKey({ key: 'c', code: 'KeyC', keyCode: 67, which: 67, ctrlKey: true });
+          }
+        } catch (e) {}
+      }, 400);
+    } catch (e) {}
   }
 
   // ---------- 原生手势层落点（2026-10-04）----------
