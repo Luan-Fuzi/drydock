@@ -24,19 +24,56 @@
     setTimeout(function () { clearInterval(fontTimer); }, 15000);
   }
 
+  // ---------- 会话 TUI 模式记忆（跨页面重载）----------
+  // ttyd 不向后来接入的客户端重放终端模式（alt-screen/鼠标上报）；页面重进即失同步，
+  // normal buffer 下 TUI 的全量重绘会追加成重复帧（2026-10-04 用户实锤"两遍 π 启动头"）。
+  // 嗅探输出流里的模式序列并按端口存 localStorage；重载时先恢复模式再 resize 踹脚，
+  // TUI 重绘落进 alt 屏（覆盖而非追加）。已知局限：TUI 在页面离开期间退出时状态过期，
+  // 页面会停留在 alt 屏（reset 可解）；完整修复需带输出历史的 WS 代理（产品期）。
+  var TUI_KEY = '__dkTui.' + location.port;
+  function tuiSave(st) {
+    try { localStorage.setItem(TUI_KEY, JSON.stringify(st)); } catch (e) {}
+  }
+  var tuiState = { alt: false, mouse: false };
+  try {
+    var t0 = window.term;
+    if (t0) {
+      var origWrite = t0.write.bind(t0);
+      var dec = new TextDecoder('utf-8');
+      t0.write = function (data) {
+        try {
+          var s = typeof data === 'string' ? data : dec.decode(data);
+          if (s.indexOf('\x1b[?1049h') >= 0 || s.indexOf('\x1b[?47h') >= 0) tuiState.alt = true;
+          if (s.indexOf('\x1b[?1049l') >= 0 || s.indexOf('\x1b[?47l') >= 0) tuiState.alt = false;
+          if (/\x1b\[\?(1000|1002|1003|1006)h/.test(s)) tuiState.mouse = true;
+          if (/\x1b\[\?(1000|1002|1003|1006)l/.test(s)) tuiState.mouse = false;
+          tuiSave(tuiState);
+        } catch (e) { /* 嗅探失败不影响正常输出 */ }
+        return origWrite(data);
+      };
+    }
+  } catch (e) { /* term 未就绪则跳过（模式靠既有存量） */ }
+
   // ---------- resize 踹脚（2026-10-04 滞后接入实证）----------
   // ttyd 服务端对新客户端无屏幕重放：TUI 启动后才接入的页面只有等新输出才有内容。
-  // 载入后双次 resize（真尺寸变化 → 内核 SIGWINCH → dtach 链 → TUI 重绘），
-  // 至少把内容刷给本客户端。终端模式序列（alt-screen/鼠标上报）不随重绘重发，
-  // 这是已知限制（bubbletea 实测如此），完整修复需带输出历史的 WS 代理，留产品期。
+  // 载入后先恢复记忆的终端模式，再双次 resize（真尺寸变化 → 内核 SIGWINCH → dtach 链
+  // → TUI 重绘），重绘落进（恢复的）alt 屏即覆盖而非追加。
   var nudged = false;
   function nudgeResize() {
     if (nudged) return;
     nudged = true;
     try {
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem(TUI_KEY) || 'null'); } catch (e) {}
+      if (saved && saved.alt) term.write('\x1b[?1049h');
+      if (saved && saved.mouse) term.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h');
       var c = term.cols, r = term.rows;
-      term.resize(c, r - 1);
-      setTimeout(function () { try { term.resize(c, r); } catch (e) {} }, 250);
+      setTimeout(function () {
+        try {
+          term.resize(c, r - 1);
+          setTimeout(function () { try { term.resize(c, r); } catch (e) {} }, 250);
+        } catch (e) {}
+      }, 120);
     } catch (e) { /* 不具备 resize 能力则放弃，不影响主功能 */ }
   }
 
@@ -83,18 +120,13 @@
     };
   }
 
-  // ---------- 虚拟键条（阶段 2：Ctrl 粘滞 + 显式回车 + 翻页，横向可滚动） ----------
+  // ---------- 触摸与键盘注入（键条本体已迁原生，见 TerminalActivity.buildKeyBar） ----------
   var css = document.createElement('style');
   css.textContent =
-    // touch-action:none：合成器不再截走触摸流，xterm 全量吃 touchmove
-    // （2026-10-04 真机手势实测：auto 下每手势仅一个 move 到达 JS ≈ 固定滚 1-2 行）
-    '.terminal,.xterm,.xterm-screen,.xterm-viewport{touch-action:none;}' +
-    '#drydock-keys{position:fixed;left:0;right:0;bottom:0;display:flex;gap:4px;' +
-    'padding:4px 6px;background:rgba(20,20,20,.92);z-index:99999;' +
-    'overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;}' +
-    '#drydock-keys button{flex:0 0 auto;min-width:44px;padding:8px 10px;font-size:13px;color:#ddd;' +
-    'background:#333;border:1px solid #555;border-radius:6px;}' +
-    '#drydock-keys button.dk-armed{background:#166534;border-color:#22c55e;color:#fff;}';
+    // touch-action:none：合成器不再截走触摸流（2026-10-04 真机手势实测：
+    // auto 下每手势仅一个 move 到达 JS ≈ 固定滚 1-2 行；拖动已由原生层接管，
+    // 此处兜底剩余直达页面的触摸）
+    '.terminal,.xterm,.xterm-screen,.xterm-viewport{touch-action:none;}';
   document.head.appendChild(css);
 
   function sendKey(init) {
@@ -106,12 +138,11 @@
     ta.dispatchEvent(ev);
   }
 
-  // Ctrl 粘滞：点亮后拦截下一个字母键，合成 Ctrl+字母（IME 输入不受影响——只拦单字母 keydown）
+  // Ctrl 粘滞：点亮后拦截下一个字母键，合成 Ctrl+字母（IME 输入不受影响——只拦单字母 keydown）。
+  // 状态由原生键条的 Ctrl 按钮经 armCtrl 切换（页面 DOM 键条时代的自切按钮已迁走）。
   var ctrlArmed = false;
-  var ctrlBtn = null;
   function setCtrl(on) {
     ctrlArmed = on;
-    if (ctrlBtn) ctrlBtn.classList.toggle('dk-armed', on);
   }
   document.addEventListener('keydown', function (e) {
     // !e.ctrlKey：不拦自带 Ctrl 的事件（含本处理器合成的回环），否则自递归
@@ -124,35 +155,6 @@
       sendKey({ key: lower, code: 'Key' + lower.toUpperCase(), keyCode: code, which: code, ctrlKey: true });
     }
   }, true);
-
-  var KEYS = [
-    ['Ctrl', null],
-    ['Esc',   { key: 'Escape', code: 'Escape', keyCode: 27, which: 27 }],
-    ['Tab',   { key: 'Tab', code: 'Tab', keyCode: 9, which: 9 }],
-    ['⇧Tab',  { key: 'Tab', code: 'Tab', keyCode: 9, which: 9, shiftKey: true }],
-    ['PgUp',  { key: 'PageUp', code: 'PageUp', keyCode: 33, which: 33 }],
-    ['PgDn',  { key: 'PageDown', code: 'PageDown', keyCode: 34, which: 34 }],
-    ['←',     { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37, which: 37 }],
-    ['↑',     { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, which: 38 }],
-    ['↓',     { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40 }],
-    ['→',     { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, which: 39 }],
-    ['↵',     { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 }],
-  ];
-
-  var bar = document.createElement('div');
-  bar.id = 'drydock-keys';
-  KEYS.forEach(function (k) {
-    var b = document.createElement('button');
-    b.textContent = k[0];
-    if (k[0] === 'Ctrl') {
-      ctrlBtn = b;
-      b.addEventListener('click', function () { setCtrl(!ctrlArmed); });
-    } else {
-      b.addEventListener('click', function () { sendKey(k[1]); });
-    }
-    bar.appendChild(b);
-  });
-  document.body.appendChild(bar);
 
   // 双击终端区 = 回车；单击保持原生行为（聚焦拉输入法）
   var lastTap = 0, lastX = 0, lastY = 0;
@@ -171,13 +173,10 @@
     }, { passive: true });
   }
 
-  // 终端区底部让出键条高度
-  if (termArea) termArea.style.paddingBottom = '52px';
-
   // 验收钩子：CDP 可直接调用/断言（无视觉环境）
   window.__dk = {
     sendKey: sendKey,
-    keyLabels: KEYS.map(function (k) { return k[0]; }),
+    keyLabels: ['Ctrl','Esc','Tab','⇧Tab','PgUp','PgDn','←','↑','↓','→','↵'],
     armCtrl: setCtrl,
     isCtrlArmed: function () { return ctrlArmed; },
   };

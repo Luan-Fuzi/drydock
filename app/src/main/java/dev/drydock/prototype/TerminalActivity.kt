@@ -254,7 +254,9 @@ class TerminalActivity : ComponentActivity() {
                 WindowInsets.CONSUMED
             }
         }
-        // 触摸拦截层包住 WebView：拖动/甩动在 View 层接管，点按透传
+        // 触摸拦截层只包 WebView：终端区拖动/甩动在 View 层接管，点按透传。
+        // 原生键条在 WebView 之外——键条起手的手势不进终端触摸层（用户实锤：
+        // 页内键条时代按住键条上滑会带动终端滚动），触摸分流由视图结构天然完成。
         val touch = TerminalTouchLayout(this) { dyCss, speedPxMs ->
             // 速度增益（1:1 → 最多 3x），与页面层 v3 实测参数一致
             val k = ((speedPxMs - 0.5f) / 1.5f).coerceIn(0f, 1f)
@@ -269,8 +271,26 @@ class TerminalActivity : ComponentActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        root.addView(
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+        }
+        content.addView(
             touch,
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ),
+        )
+        content.addView(
+            buildKeyBar(webView),
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        root.addView(
+            content,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -296,6 +316,78 @@ class TerminalActivity : ComponentActivity() {
         setContentView(root)
         loadSession(initial)
     }
+
+    /** 原生虚拟键条（2026-10-04 从页面 DOM 迁移）：两行等权重、不溢出不横向滚动——
+     * 上行导航（PgUp/PgDn/方向），下行修饰与动作（Ctrl 粘滞/Esc/Tab/⇧Tab/回车）。
+     * 键位经页面 __dk.sendKey 合成（与 IME 同链路）；Ctrl 粘滞状态与 overlay 的
+     * 字母拦截逻辑（armCtrl）共用。 */
+    private fun buildKeyBar(webView: WebView): android.view.View {
+        fun send(js: String) = webView.evaluateJavascript("window.__dk&&window.__dk.sendKey($js)", null)
+
+        data class Key(val label: String, val js: String)
+        val esc = "{key:'Escape',code:'Escape',keyCode:27,which:27}"
+        val tab = "{key:'Tab',code:'Tab',keyCode:9,which:9}"
+        val nav = listOf(
+            Key("PgUp", "{key:'PageUp',code:'PageUp',keyCode:33,which:33}"),
+            Key("PgDn", "{key:'PageDown',code:'PageDown',keyCode:34,which:34}"),
+            Key("←", "{key:'ArrowLeft',code:'ArrowLeft',keyCode:37,which:37}"),
+            Key("↑", "{key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38}"),
+            Key("↓", "{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40}"),
+            Key("→", "{key:'ArrowRight',code:'ArrowRight',keyCode:39,which:39}"),
+        )
+        val actions = listOf(
+            Key("Esc", esc),
+            Key("Tab", tab),
+            Key("⇧Tab", "$tab,shiftKey:true"),
+            Key("↵", "{key:'Enter',code:'Enter',keyCode:13,which:13}"),
+        )
+
+        fun keyButton(label: String, onClick: android.view.View.OnClickListener): android.widget.Button =
+            android.widget.Button(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(0xFFDDDDDD.toInt())
+                setBackgroundColor(0xFF2E2E2E.toInt())
+                setPadding(0, 0, 0, 0)
+                minHeight = 0
+                minWidth = 0
+                setOnClickListener(onClick)
+            }
+
+        fun row(buttons: List<android.widget.Button>) = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF141414.toInt())
+            val lp = android.widget.LinearLayout.LayoutParams(0, 46.dp(), 1f)
+            lp.setMargins(2, 2, 2, 2)
+            buttons.forEach { addView(it, android.widget.LinearLayout.LayoutParams(lp)) }
+        }
+
+        val navRow = row(nav.map { k -> keyButton(k.label) { send(k.js) } })
+        val ctrlBtn = keyButton("Ctrl") { }
+        ctrlBtn.setOnClickListener {
+            val armed = !it.isSelected
+            it.isSelected = armed
+            it.setBackgroundColor(if (armed) 0xFF166534.toInt() else 0xFF2E2E2E.toInt())
+            webView.evaluateJavascript(
+                "window.__dk&&window.__dk.armCtrl($armed)", null,
+            )
+        }
+        val actionRow = row(listOf(ctrlBtn) + actions.map { k -> keyButton(k.label) { send(k.js) } })
+
+        return android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(navRow, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+            addView(actionRow, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+    }
+
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
 
     /** singleTask：切会话不经重建，本实例内换 URL（旧页面卸载=旧 ws 客户端断开）。 */
     override fun onNewIntent(intent: android.content.Intent) {
