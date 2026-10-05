@@ -125,7 +125,7 @@ object RecipeManager {
             // 占位：下方脚本内联使用（避免智能转换拆分）
         }
         val opencodeJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            opencodeConfig(protocol, baseUrl, model, EndpointStore.contextWindow(context))
+            opencodeConfig(protocol, baseUrl, model)
         } else ""
         val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
             piConfig(protocol, baseUrl, model)
@@ -257,17 +257,13 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
     }
 
     /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。
-     *  contextWindow 可选写入 limit.context（自定义 provider 的上下文元数据 OpenCode 不会自动识别，
-     *  真机实测默认显示 128k；用户在向导里填了才写）。 */
-    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
-        val modelEntry = buildString {
-            if (model.isNotBlank()) {
-                append("\"$model\": {\"name\": \"$model\"")
-                contextWindow?.let { append(", \"limit\": {\"context\": $it}") }
-                append("},")
-            }
-        }
-        val models = modelEntry
+     *  不写 models.limit：opencode 1.18.34 校验要求 limit 同时带 output（缺 output 时整个配置被拒：
+     *  "Missing key provider.drydock.models.<model>.limit.output"，2026-10-05 真机+AVD 冒烟实锤），
+     *  而 output 是端点特定值无从得知——编造会顶成 max_tokens 顶坏严格端点或截断长输出。
+     *  上下文窗口值仍记录在 .drydock-endpoint 供 agent 参考；不写 limit 时 opencode 不发
+     *  max_tokens，由端点按模型默认出（真机一直的可用形态）。 */
+    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String): String {
+        val models = if (model.isNotBlank()) "\"$model\": {\"name\": \"$model\"}," else ""
         return when (protocol) {
             EndpointStore.Protocol.CHAT_COMPLETIONS -> """
                 {

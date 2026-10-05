@@ -4,7 +4,8 @@
 覆盖：
   t1  HomeActivity 主链路（打开终端 → TerminalActivity；新建会话 → 第二会话）
   t2  文件页 ACTION_VIEW（logcat START 行判据）+ DocumentsProvider query/read
-  t3  上下文窗口字段端到端（drydock_endpoint 第四段 → opencode.json limit.context）
+  t3  上下文窗口字段端到端（drydock_endpoint 第四段 → .drydock-endpoint context 记录；opencode.json
+      不再写 limit——opencode 1.18.34 校验 limit 必须带 output，写入即被整体拒绝，见 2026-10-05 修复）
   t4  浅色主题（prefs 断言 + 截图留证；观感留白天视觉批次）
   t5  pi 配方全链 + npm 假源→npmjs 回退（真代码路径；aptTools/符号链接/models.json）
 
@@ -198,11 +199,11 @@ def t3(r):
     assert "CFG_RC" in cfg or "cfg <" in cfg, "applyEndpointConfig 日志未出现"
 
     oc = sc.env_read("cat /root/.config/opencode/opencode.json 2>/dev/null; echo ---; cat /root/.drydock-endpoint 2>/dev/null; echo ---; cat /etc/profile.d/drydock-env.sh 2>/dev/null\n", timeout=90)
-    r["opencode_context_limit"] = '"context": 131072' in oc
+    r["opencode_no_limit"] = '"limit"' not in oc  # limit 缺 output 会被 opencode 整体拒绝，不再写入
     r["endpoint_info_context"] = "context=131072" in oc
     r["drydock_env_baseurl"] = "DRYDOCK_BASE_URL='https://night.test/v4'" in oc
     r["files_tail"] = oc[-600:]
-    r["pass"] = r["opencode_context_limit"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
+    r["pass"] = r["opencode_no_limit"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
 
 
 # ---------- t4 浅色主题 ----------

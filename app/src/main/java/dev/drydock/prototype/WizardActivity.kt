@@ -259,7 +259,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     OutlinedTextField(
         value = contextWindow,
         onValueChange = { contextWindow = it.filter { c -> c.isDigit() } },
-        label = { Text("上下文窗口 token 数（可选；OpenCode 生效，pi 暂不支持）") },
+        label = { Text("上下文窗口 token 数（可选；记录在端点信息里，供 agent 参考）") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
