@@ -3,6 +3,7 @@ package dev.drydock.prototype
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Insets
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -10,6 +11,7 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.WindowInsets
+import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -22,6 +24,9 @@ import kotlin.math.abs
 /** 容器 padding 区背景，取 ttyd 页面终端底色（视觉批次校准值）。 */
 private const val TERM_BG = 0xFF2B2B2B.toInt()
 
+/** ime insets 增长被认定源自用户点按的背书窗口（键盘动画 <1s，留足余量）。 */
+private const val IME_INTENT_GRACE_MS = 10_000L
+
 /**
  * 终端触摸拦截层：在 Chromium 手势管线之前拿全 MotionEvent 流。
  * （2026-10-04 真机实证：页面级监听对合成手势全量到达、对真手指每手势仅 ~1 个
@@ -32,6 +37,7 @@ private const val TERM_BG = 0xFF2B2B2B.toInt()
  */
 private class TerminalTouchLayout(
     context: Context,
+    private val onFirstTouch: () -> Unit,
     private val emit: (dyCss: Float, speedPxMs: Float) -> Unit,
 ) : FrameLayout(context) {
 
@@ -76,6 +82,8 @@ private class TerminalTouchLayout(
                 velocity = 0f
                 dragging = false
                 suppressed = false
+                // DOWN 必经本层：给 ime insets 门控记点按背书（用户点终端=可能要拉键盘）
+                onFirstTouch()
             }
             MotionEvent.ACTION_MOVE -> {
                 if (dragging) return true
@@ -165,6 +173,14 @@ class TerminalActivity : ComponentActivity() {
     private var webView: WebView? = null
     private var session: TerminalManager.Session? = null
 
+    // ime insets 门控（2026-10-05 真机实锤）：WeType 在键盘未显示时可持幻影 touchable
+    // region 吞掉下半屏手势，并向 app 派发 ime insets 把终端压半高（无键盘可见）。
+    // insets 增长只有近期真实点按背书才落 padding；无背书的增长视为幻影——不落 padding
+    // 并探钉 hideSoftInput 顶掉幻影窗口（region 是否放行由系统侧决定，高度确定性保住）。
+    private var lastTerminalTouchAt = 0L
+    private var appliedImePad = 0
+    private var lastImeNudgeAt = 0L
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -235,29 +251,49 @@ class TerminalActivity : ComponentActivity() {
         webView.addJavascriptInterface(Av2Bridge(), "Drydock")
 
         // targetSdk 35+ 强制 edge-to-edge，window 不再避让系统栏，adjustResize 也随之失效；
-        // 状态栏/cutout/软键盘 insets 一律以容器 padding 落地，IME 弹出时 WebView 收缩、
-        // xterm.js 随尺寸 refit。padding 区背景与 ttyd 终端底色一致（TERM_BG）。
+        // 状态栏/cutout insets 以容器 padding 落地。ime insets 走点按背书包络（见字段注释）：
+        // 收起总是接受；增长须 10s 内有终端区触摸背书；等值重放维持既有决定。
         val root = FrameLayout(this).apply {
             setBackgroundColor(TERM_BG)
             setOnApplyWindowInsetsListener { v, insets ->
-                val pad = if (Build.VERSION.SDK_INT >= 30) {
-                    insets.getInsets(
-                        WindowInsets.Type.systemBars() or
-                            WindowInsets.Type.displayCutout() or
-                            WindowInsets.Type.ime()
-                    )
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val sys = insets.getInsets(
+                        WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                    val ime = insets.getInsets(WindowInsets.Type.ime())
+                    val imeNow = ime.bottom
+                    val pad = when {
+                        imeNow == appliedImePad ->
+                            if (appliedImePad > 0) Insets.max(sys, ime) else sys
+                        imeNow < appliedImePad -> {
+                            appliedImePad = imeNow
+                            nudgeHideIme() // 收起时补一记 hide：WeType 自带折叠键可能留幻影窗口
+                            sys
+                        }
+                        SystemClock.uptimeMillis() - lastTerminalTouchAt < IME_INTENT_GRACE_MS -> {
+                            appliedImePad = imeNow
+                            Insets.max(sys, ime)
+                        }
+                        else -> {
+                            nudgeHideIme()
+                            sys
+                        }
+                    }
+                    v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
                 } else {
                     @Suppress("DEPRECATION")
-                    insets.systemWindowInsets
+                    val pad = insets.systemWindowInsets
+                    v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
                 }
-                v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
                 WindowInsets.CONSUMED
             }
         }
         // 触摸拦截层只包 WebView：终端区拖动/甩动在 View 层接管，点按透传。
         // 原生键条在 WebView 之外——键条起手的手势不进终端触摸层（用户实锤：
         // 页内键条时代按住键条上滑会带动终端滚动），触摸分流由视图结构天然完成。
-        val touch = TerminalTouchLayout(this) { dyCss, speedPxMs ->
+        val touch = TerminalTouchLayout(
+            this,
+            { lastTerminalTouchAt = SystemClock.uptimeMillis() },
+        ) { dyCss, speedPxMs ->
             // 速度增益（1:1 → 最多 3x），与页面层 v3 实测参数一致
             val k = ((speedPxMs - 0.5f) / 1.5f).coerceIn(0f, 1f)
             val g = 1f + (3.0f - 1f) * k
@@ -408,6 +444,27 @@ class TerminalActivity : ComponentActivity() {
         session = s
         webView?.loadUrl("http://127.0.0.1:${s.port}/")
         Log.i("DrydockAv2", "loadUrl http://127.0.0.1:${s.port}/ token=${s.token.take(4)}…")
+    }
+
+    /** 幻影 IME 探钉：对没被用户点按背书的 ime 状态发 hideSoftInput，促 IME 释放
+     *  幻影窗口（含吞手势的 touchable region）。隐藏态下调用是廉价 no-op，1.5s 节流。 */
+    private fun nudgeHideIme() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastImeNudgeAt < 1500) return
+        lastImeNudgeAt = now
+        Log.i("DrydockAv2", "ime insets 无点按背书（幻影）：hideSoftInput 探钉")
+        val token = webView?.windowToken ?: return
+        getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(token, 0)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || Build.VERSION.SDK_INT < 30) return
+        val ime = window.decorView.rootWindowInsets?.getInsets(WindowInsets.Type.ime()) ?: return
+        // 回前台时 ime 仍悬着且无点按背书：与 insets 监听同一幻影判据，探钉清场
+        if (ime.bottom > appliedImePad &&
+            SystemClock.uptimeMillis() - lastTerminalTouchAt >= IME_INTENT_GRACE_MS
+        ) nudgeHideIme()
     }
 
     /** 终端页内会话菜单：列表切换（含各自端口）、新建（默认密钥）、回主页。 */
