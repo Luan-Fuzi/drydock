@@ -53,7 +53,7 @@
 
 | 编号 | 不变量 |
 |---|---|
-| I1 | API key 只存 Android Keystore；按进程注入环境变量；永不写入环境内文件系统 |
+| I1 | ~~API key 只存 Android Keystore；按进程注入环境变量；永不写入环境内文件系统~~ **2026-10-05 被 D29 推翻**：宿主不保管密钥，key 由用户写入 ~/.drydock/env.sh（明文，生态常态同 ~/.ssh），配置文件只写 `{env:DRYDOCK_API_KEY}` 引用；导出含 env.sh 且已在 UI 明示 |
 | I2 | ttyd/WebSocket 绑定随机 token，每次启动轮换；仅监听 localhost |
 | I3 | DocumentsProvider 只暴露环境内项目目录，不暴露宿主私有路径 |
 | I4 | 成果落袋为单向写入 `/sdcard`，不对该目录内容做执行或回读解析 |
