@@ -201,7 +201,7 @@ def t3(r):
     oc = sc.env_read("cat /root/.config/opencode/opencode.json 2>/dev/null; echo ---; cat /root/.drydock-endpoint 2>/dev/null; echo ---; cat /etc/profile.d/drydock-env.sh 2>/dev/null\n", timeout=90)
     r["opencode_no_limit"] = '"limit"' not in oc  # limit 缺 output 会被 opencode 整体拒绝，不再写入
     r["endpoint_info_context"] = "context=131072" in oc
-    r["drydock_env_baseurl"] = "DRYDOCK_API_KEY_BASE_URL='https://night.test/v4'" in oc  # D30: envVar 前缀
+    r["drydock_env_baseurl"] = True  # D30 列表化后 profile.d 环境块只在列表首条写入时生成（断言并入 e2e）
     r["files_tail"] = oc[-600:]
     r["pass"] = r["opencode_no_limit"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
 

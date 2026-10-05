@@ -77,9 +77,12 @@ class HomeActivity : ComponentActivity() {
         // debug 注入口与 MainActivity 同源（无视觉环境验收经 am start --es 驱动）
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
+                // D30 列表化：格式 "PROTOCOL|base_url|model|context[|provider|envvar]"，追加进端点列表
                 val p = spec.split("|")
                 runCatching { EndpointStore.Protocol.valueOf(p[0]) }.getOrNull()?.let { proto ->
-                    EndpointStore.save(this, proto, p[1], p.getOrElse(2) { "" }, p.getOrElse(3) { "" })
+                    EndpointStore.add(this, proto, p[1], p.getOrElse(2) { "" },
+                        p.getOrElse(3) { "" }.trim().takeIf { it.isNotBlank() && it != "-" }?.toLongOrNull(),
+                        p.getOrElse(5) { "DRYDOCK_API_KEY" }, p.getOrElse(4) { "" })
                 }
             }
             intent?.getStringExtra("drydock_recipe")?.takeIf { it.isNotBlank() }?.let { ids ->
@@ -502,11 +505,90 @@ private fun SettingsPane() {
     ) {
         Text("设置", style = MaterialTheme.typography.titleLarge)
 
-        Text("端点与模型", style = MaterialTheme.typography.titleMedium)
+        Text("Coding 端点", style = MaterialTheme.typography.titleMedium)
         Text(
-            "${EndpointStore.summary(context)} · API key 走环境变量（~/.drydock/env.sh）",
-            fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+            "自定义端点列表（写进 opencode/pi 的配置文件；内置目录厂商不需要在这——" +
+                "往 ~/.drydock/env.sh 放标准变量名即自动识别）",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // 已添加端点列表（D30：可见、可删）
+        val endpoints = remember(tick) { EndpointStore.all(context) }
+        if (endpoints.isEmpty()) {
+            Text("（暂无自定义端点）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        endpoints.forEach { e ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("${e.providerId} · ${e.model}", fontSize = 13.sp)
+                    Text(
+                        "${e.protocol.label} · ${e.baseUrl} · key=\${e.envVar}",
+                        fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = {
+                    EndpointStore.remove(context, e.providerId)
+                    scope.launch(Dispatchers.IO) {
+                        runCatching { RecipeManager.applyEndpointConfig(context.applicationContext) }
+                        tick++
+                    }
+                }) { Text("删除") }
+            }
+        }
+        // 追加表单（折叠式）
+        var showForm by remember { mutableStateOf(false) }
+        if (!showForm) {
+            OutlinedButton(onClick = { showForm = true }) { Text("添加自定义端点") }
+        } else {
+            var fProtocol by remember { mutableStateOf(EndpointStore.Protocol.CHAT_COMPLETIONS) }
+            var fBaseUrl by remember { mutableStateOf("") }
+            var fModel by remember { mutableStateOf("") }
+            var fContext by remember { mutableStateOf("") }
+            var fEnvVar by remember { mutableStateOf("") }
+            var fProvider by remember { mutableStateOf("") }
+            val fOk = fBaseUrl.startsWith("http://") || fBaseUrl.startsWith("https://")
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                EndpointStore.Protocol.entries.forEach { pr ->
+                    Row(modifier = Modifier.fillMaxWidth().clickable { fProtocol = pr }) {
+                        RadioButton(selected = fProtocol == pr, onClick = { fProtocol = pr })
+                        Text(pr.label, modifier = Modifier.padding(top = 12.dp))
+                    }
+                }
+                OutlinedTextField(value = fBaseUrl, onValueChange = { fBaseUrl = it },
+                    label = { Text("Base URL") }, singleLine = true, isError = fBaseUrl.isNotBlank() && !fOk,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = fModel, onValueChange = { fModel = it },
+                    label = { Text("模型 ID（端点实际服务的名字）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(value = fContext, onValueChange = { fContext = it.filter { c -> c.isDigit() } },
+                        label = { Text("上下文（可选）") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(value = fEnvVar, onValueChange = { fEnvVar = it.filter { c -> c.isLetterOrDigit() || c == '_' }.uppercase() },
+                        label = { Text("Key 变量名") }, singleLine = true, modifier = Modifier.weight(1f))
+                }
+                OutlinedTextField(value = fProvider, onValueChange = { fProvider = it.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' } },
+                    label = { Text("Provider 名（可留空自动生成）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(enabled = fOk, onClick = {
+                        EndpointStore.add(context, fProtocol, fBaseUrl, fModel,
+                            fContext.trim().takeIf { it.isNotBlank() }?.toLongOrNull(), fEnvVar, fProvider)
+                        showForm = false
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { RecipeManager.applyEndpointConfig(context.applicationContext) }
+                            tick++
+                        }
+                    }) { Text("保存并写入配置") }
+                    OutlinedButton(onClick = { showForm = false }) { Text("取消") }
+                }
+                Text(
+                    "保存后新会话生效；别忘往 ~/.drydock/env.sh 放上 key（变量名用上面填的名字）。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Button(onClick = { context.startActivity(Intent(context, WizardActivity::class.java)) }) {
             Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置" else "初始设置（保活 / 端点 / agent）")
         }

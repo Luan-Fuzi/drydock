@@ -57,10 +57,13 @@ class MainActivity : ComponentActivity() {
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             // 配方验收注入口："PROTOCOL|base_url|model|context"（D25 零预置：产品路径无任何默认值）
             intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
+                // D30 列表化："PROTOCOL|base_url|model|context[|provider|envvar]" 追加进端点列表
                 val parts = spec.split("|")
                 runCatching { EndpointStore.Protocol.valueOf(parts[0]) }.getOrNull()?.let { p ->
-                    EndpointStore.save(this, p, parts[1], parts.getOrElse(2) { "" }, parts.getOrElse(3) { "" })
-                    android.util.Log.i("DrydockMain", "debug 注入端点：$p ${parts[1]} model=${parts.getOrElse(2) { "" }} context=${parts.getOrElse(3) { "-" }}")
+                    EndpointStore.add(this, p, parts[1], parts.getOrElse(2) { "" },
+                        parts.getOrElse(3) { "" }.trim().takeIf { it.isNotBlank() && it != "-" }?.toLongOrNull(),
+                        parts.getOrElse(5) { "DRYDOCK_API_KEY" }, parts.getOrElse(4) { "" })
+                    android.util.Log.i("DrydockMain", "debug 注入端点：$p ${parts[1]} model=${parts.getOrElse(2) { "" }}")
                 }
             }
             // 配方验收驱动："opencode,pi" → 安装 + 写端点配置 + headless 冒烟，结论进 logcat DrydockRecipe
@@ -86,7 +89,7 @@ class MainActivity : ComponentActivity() {
                     }
                     val cfg = RecipeManager.applyEndpointConfig(appCtx)
                     android.util.Log.i("DrydockRecipe", "cfg <${cfg.output.takeLast(400)}>")
-                    if (EndpointStore.configured(appCtx)) {
+                    if (EndpointStore.all(appCtx).isNotEmpty()) {
                         recipes.forEach { r ->
                             val s = RecipeManager.smoke(appCtx, r)
                             android.util.Log.i("DrydockRecipe", "smoke ${r.id} <${s.output.takeLast(600)}>")
@@ -230,7 +233,11 @@ fun PrototypeScreen() {
 
         // ---------- 产品面（D25：终端宿主主状态与首启入口） ----------
         var tick by remember { mutableStateOf(0) }
-        val endpointLine = remember(tick) { EndpointStore.summary(context) }
+        val endpointLine = remember(tick) {
+            val items = EndpointStore.all(context)
+            if (items.isEmpty()) "端点未配置"
+            else items.joinToString("；") { "${it.providerId}/${it.model}" }
+        }
         val recipesLine = remember(tick) { RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" } }
         Text(
             "环境 ${if (deployed) "✓ 就绪" else "未部署"} · 端点 $endpointLine · 配方 $recipesLine",

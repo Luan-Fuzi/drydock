@@ -81,10 +81,7 @@ private fun WizardScreen() {
             1 -> PowerStep(onNext = { step = 2 })
             2 -> EndpointStep(
                 onNext = { step = 3 },
-                onSkip = {
-                    EndpointStore.clear(context)
-                    step = 3
-                },
+                onSkip = { step = 3 },
             )
             3 -> RecipeStep(
                 busy = busy,
@@ -106,12 +103,12 @@ private fun WizardScreen() {
                                     RecipeManager.applyEndpointConfig(appCtx).also { cfg ->
                                         when {
                                             cfg.output.contains("CFG_SKIPPED") -> report += "端点未配置，已跳过（进终端后可随时在初始设置里补）\n"
-                                            cfg.output.contains("OPENCODE_CFG_WRITTEN") ||
-                                                cfg.output.contains("PI_CFG_WRITTEN") -> report += "✓ 端点配置已写入\n"
+                                            cfg.output.contains("OPENCODE_CFG_MERGED") ||
+                                                cfg.output.contains("PI_CFG_MERGED") -> report += "✓ 端点配置已合并写入\n"
                                             else -> report += "✗ 端点配置失败：${cfg.output.takeLast(200)}\n"
                                         }
                                     }
-                                    if (EndpointStore.configured(appCtx)) {
+                                    if (EndpointStore.all(appCtx).isNotEmpty()) {
                                         log("验证中：让 agent 出第一句话…")
                                         val s = RecipeManager.smoke(appCtx, choice)
                                         report += if (s.output.contains("SMOKE_RC=0")) {
@@ -205,167 +202,27 @@ private fun PowerStep(onNext: () -> Unit) {
     Button(enabled = exempt, onClick = onNext) { Text("下一步") }
 }
 
-private sealed interface EndpointMode {
-    data object Builtin : EndpointMode
-    data class Preset(val preset: EndpointStore.Preset) : EndpointMode
-    data object Custom : EndpointMode
-}
-
-/** 步骤②端点（D30 三层）：内置厂商（引导 env.sh，不生成配置）/ 高频 plan 预设
- *  （四件套一次给对）/ 自定义端点（手填四件套）。key 一律走环境变量（D29）。 */
+/** 步骤②端点（D30 终版）：纯引导，可跳过。标准 key + 自定义端点指向设置页表单。 */
 @Composable
 private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
-    val context = LocalContext.current
-    var mode by remember { mutableStateOf<EndpointMode?>(null) }
-    var protocol by remember { mutableStateOf(EndpointStore.Protocol.CHAT_COMPLETIONS) }
-    var baseUrl by remember { mutableStateOf(EndpointStore.baseUrl(context) ?: "") }
-    var model by remember { mutableStateOf(EndpointStore.model(context) ?: "") }
-    var contextWindow by remember { mutableStateOf(EndpointStore.contextWindow(context)?.toString() ?: "") }
-    var providerId by remember { mutableStateOf("") }
-    var envVar by remember { mutableStateOf("") }
-    val urlOk = baseUrl.startsWith("http://") || baseUrl.startsWith("https://")
-    val formOk = when (mode) {
-        is EndpointMode.Builtin -> true
-        is EndpointMode.Preset -> true
-        is EndpointMode.Custom -> urlOk && providerId.isNotBlank() && envVar.isNotBlank()
-        null -> false
-    }
-
-    Text("端点与模型", style = MaterialTheme.typography.titleMedium)
+    Text("API key 与模型", style = MaterialTheme.typography.titleMedium)
     Text(
-        "API key 不在应用里存储：选好下面的方式后，把 key 写进环境变量文件 ~/.drydock/env.sh" +
-            "（设置 → 环境变量，或装好 agent 后发给它代写）。",
+        "key 不在应用里存储，写在环境变量文件 ~/.drydock/env.sh（设置 → 环境变量，" +
+            "或装好 agent 后发给它代写）。两种情况：\n\n" +
+            "① 用 DeepSeek / OpenAI / Moonshot 等内置目录厂商：往 env.sh 放一行标准变量名" +
+            "（如 export DEEPSEEK_API_KEY=你的key），agent 的模型列表自动出现，零配置；\n\n" +
+            "② 用自定义端点（GLM Coding Plan 这类目录外服务）：在 设置 → Coding 端点 " +
+            "填一张小表（协议 / Base URL / 模型 ID / key 变量名），会写进两个 agent 各自的配置文件。",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-
-    Text("内置目录厂商（DeepSeek / OpenAI / Moonshot 等）", fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-    Row(modifier = Modifier.fillMaxWidth().clickable { mode = EndpointMode.Builtin }) {
-        RadioButton(selected = mode is EndpointMode.Builtin, onClick = { mode = EndpointMode.Builtin })
-        Column(Modifier.padding(top = 10.dp)) {
-            Text("用环境变量直连，无需配置")
-            Text(
-                "往 ~/.drydock/env.sh 加一行 export DEEPSEEK_API_KEY=…（变量名按厂商文档），" +
-                    "agent 的模型列表里自动出现，能力元数据（上下文/多模态）由工具内置目录提供。",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-
-    Text("Coding Plan 预设", fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-    EndpointStore.presets.forEach { p ->
-        Row(modifier = Modifier.fillMaxWidth().clickable { mode = EndpointMode.Preset(p) }) {
-            RadioButton(selected = mode is EndpointMode.Preset && (mode as EndpointMode.Preset).preset.id == p.id,
-                onClick = { mode = EndpointMode.Preset(p) })
-            Column(Modifier.padding(top = 10.dp)) {
-                Text(p.label)
-                Text(
-                    "${p.protocol.label} · ${p.model} · ${p.contextWindow / 1000}k 上下文（端点已配好，只需填 key）",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-
-    Row(modifier = Modifier.fillMaxWidth().clickable { mode = EndpointMode.Custom }) {
-        RadioButton(selected = mode is EndpointMode.Custom, onClick = { mode = EndpointMode.Custom })
-        Text("自定义端点（任意 OpenAI / Anthropic 兼容 API）", modifier = Modifier.padding(top = 10.dp))
-    }
-
-    if (mode is EndpointMode.Preset) {
-        val p = (mode as EndpointMode.Preset).preset
-        Text(
-            "已选：${p.baseUrl}\n${p.note}",
-            fontSize = 11.sp, fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "key 变量名：${p.envVar}（写入 ~/.drydock/env.sh：export ${p.envVar}=你的key）",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    if (mode is EndpointMode.Custom) {
-        Text(
-            "自定义端点的四件套要一次填对：协议、Base URL、模型 ID（端点实际服务的名字）、" +
-                "key 变量名（之后按这个名字写进 env.sh）。provider 名用于配置段标识，" +
-                "留空则按 Base URL 主机名自动生成。",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        EndpointStore.Protocol.entries.forEach { pr ->
-            Row(modifier = Modifier.fillMaxWidth().clickable { protocol = pr }) {
-                RadioButton(selected = protocol == pr, onClick = { protocol = pr })
-                Text(pr.label, modifier = Modifier.padding(top = 12.dp))
-            }
-        }
-        if (protocol == EndpointStore.Protocol.ANTHROPIC) {
-            Text(
-                "已知问题：OpenCode × Anthropic 组合存在适配器内部静默重试（裸端点本身正常）。" +
-                    "选这个协议时建议搭配 pi，OpenCode 用户优先 Chat Completions。",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.error,
-            )
-        }
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
-            label = { Text("Base URL（如 https://example.com/v1）") },
-            singleLine = true,
-            isError = baseUrl.isNotBlank() && !urlOk,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = model,
-            onValueChange = { model = it },
-            label = { Text("模型 ID（端点实际服务的模型名）") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = providerId,
-            onValueChange = { providerId = it.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' } },
-            label = { Text("Provider 名（配置段标识，可留空自动生成）") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = envVar,
-            onValueChange = { envVar = it.filter { c -> c.isLetterOrDigit() || c == '_' }.uppercase() },
-            label = { Text("Key 的环境变量名（如 MY_LLM_KEY）") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = contextWindow,
-            onValueChange = { contextWindow = it.filter { c -> c.isDigit() } },
-            label = { Text("上下文窗口 token 数（可选；不填走工具默认）") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-
-    Button(
-        enabled = formOk,
-        onClick = {
-            when (val m = mode) {
-                is EndpointMode.Builtin -> {
-                    // 不生成配置段：内置厂商走环境变量自动识别；只完成向导
-                    EndpointStore.clear(context)
-                    onNext()
-                }
-                is EndpointMode.Preset -> {
-                    val p = m.preset
-                    EndpointStore.save(context, p.protocol, p.baseUrl, p.model,
-                        p.contextWindow.toString(), p.providerId, p.envVar)
-                    onNext()
-                }
-                is EndpointMode.Custom -> {
-                    EndpointStore.save(context, protocol, baseUrl, model, contextWindow, providerId, envVar)
-                    onNext()
-                }
-                null -> {}
-            }
-        },
-    ) { Text(if (mode is EndpointMode.Builtin) "用内置厂商（不写配置，下一步）" else "保存并下一步") }
-    OutlinedButton(onClick = onSkip) { Text("跳过此步（稍后在终端里自己配）") }
+    Text(
+        "不确定选哪种？先跳过，进终端后 motd 有同样的说明，随时可配。",
+        fontSize = 11.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Button(onClick = onNext) { Text("下一步") }
+    OutlinedButton(onClick = onSkip) { Text("跳过此步") }
 }
 
 /** 步骤③配方：OpenCode / pi / 暂不安装。 */

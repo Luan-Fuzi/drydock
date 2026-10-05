@@ -111,37 +111,68 @@ object RecipeManager {
     }
 
     /**
-     * 把 EndpointStore 的端点四件套写进各已装 agent 的 provider 配置
-     * （OpenCode: ~/.config/opencode/opencode.json；pi: ~/.pi/agent/models.json）。
-     * D30：provider 段用真名（providerId，不再有 drydock 前缀/占位模型）；
-     * key 引用 EndpointStore.envVar()（值在 env.sh）。内置目录厂商（DeepSeek 等）
-     * 不会走到这——向导对它们只引导 env.sh，不生成配置段。
+     * 把 EndpointStore 端点列表重算进各已装 agent 的 provider 配置（D30 终版）。
+     * 只管理列表内的 provider 名：opencode.json 的 provider 对象按 key 合并（列表外
+     * 的手写段原样保留）、pi models.json 的 providers 数组按 provider 名替换。
+     * 列表为空且无旧数据时不动配置文件，只顺带写 motd 与 env.sh/mirrors 模板。
      */
     fun applyEndpointConfig(context: Context): RootfsManager.ExecResult {
         ensureMotd(context)
-        val protocol = EndpointStore.protocol(context)
-        val baseUrl = EndpointStore.baseUrl(context)
-        val model = EndpointStore.model(context) ?: ""
-        val providerId = EndpointStore.providerId(context)
-        val envVar = EndpointStore.envVar(context)
-        val hasEndpoint = protocol != null && !baseUrl.isNullOrBlank()
-        val contextWindow = EndpointStore.contextWindow(context)
-        val opencodeJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            opencodeConfig(protocol, baseUrl, model, contextWindow, providerId, envVar)
-        } else ""
-        val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            piConfig(protocol, baseUrl, model, contextWindow, providerId, envVar)
-        } else ""
-        val endpointInfo = "provider=$providerId\nprotocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 走环境变量 $envVar（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
-        val envBlock = if (hasEndpoint && baseUrl != null) """
+        val endpoints = EndpointStore.all(context)
+        val envBlock = endpoints.firstOrNull()?.let { e ->
+            """
             cat > /etc/profile.d/drydock-env.sh <<ENVEOF
-export ${envVar}_BASE_URL='$baseUrl'
-export ${envVar}_MODEL='$model'
-export ${envVar}_PROTOCOL='${protocol!!.name}'
+export DRYDOCK_BASE_URL='${e.baseUrl}'
+export DRYDOCK_MODEL='${e.model}'
+export DRYDOCK_PROTOCOL='${e.protocol.name}'
 # 用户自定义环境变量挂载点（让 agent 帮你加也行）
 [ -f /root/.drydock/env.sh ] && . /root/.drydock/env.sh
 ENVEOF
-        """ else ""
+            """.trimIndent()
+        } ?: ""
+        val endpointInfo = if (endpoints.isEmpty()) "# 尚未添加自定义端点（设置 → Coding 端点）\n" else
+            endpoints.joinToString("\n") { e ->
+                "provider=${e.providerId}\nprotocol=${e.protocol.name}\nbase_url=${e.baseUrl}\nmodel=${e.model}\ncontext=${e.contextWindow ?: "-"}\nkey_env=${e.envVar}\n---"
+            } + "\n# API key 走环境变量（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
+        // 两个工具各自的「本列表 provider 段」JSON；由设备侧 python 合并进现有文件
+        // 设备侧 python 字面量：每条端点一个 provider 段
+        fun ocLit(e: EndpointStore.Endpoint): String {
+            val providerId = e.providerId
+            val baseUrl = e.baseUrl
+            val envVar = e.envVar
+            val apiNpm = when (e.protocol) {
+                EndpointStore.Protocol.CHAT_COMPLETIONS -> "@ai-sdk/openai-compatible"
+                EndpointStore.Protocol.RESPONSES -> "@ai-sdk/openai"
+                EndpointStore.Protocol.ANTHROPIC -> "@ai-sdk/anthropic"
+            }
+            val limit = e.contextWindow?.let { w ->
+                val out = minOf(w, 131_072L)
+                ",\"limit\":{\"context\":$w,\"output\":$out}"
+            } ?: ""
+            val model = if (e.model.isBlank()) ""
+            else "\"${e.model}\":{\"name\":\"${e.model}\"$limit}"
+            return ("[\"$providerId\",{\"npm\":\"$apiNpm\",\"name\":\"$providerId\"," +
+                "\"options\":{\"baseURL\":\"$baseUrl\",\"apiKey\":\"{env:$envVar}\"}," +
+                "\"models\":{$model}}]")
+                .replace("'", "'\\''")
+        }
+        fun piLit(e: EndpointStore.Endpoint): String {
+            val api = when (e.protocol) {
+                EndpointStore.Protocol.CHAT_COMPLETIONS -> "openai-completions"
+                EndpointStore.Protocol.RESPONSES -> "openai-responses"
+                EndpointStore.Protocol.ANTHROPIC -> "anthropic-messages"
+            }
+            val meta = e.contextWindow?.let { w ->
+                val out = minOf(w, 131_072L)
+                ",\"contextWindow\":$w,\"maxTokens\":$out"
+            } ?: ""
+            val model = if (e.model.isBlank()) "" else "{\"id\":\"${e.model}\"$meta}"
+            // JS 字面量里要出现 $VAR；Kotlin 模板：\$ → 字面 $，再接 ${e.envVar} 插值
+            return ("{\"providerId\":\"${e.providerId}\",\"baseUrl\":\"${e.baseUrl}\"," +
+                "\"api\":\"$api\",\"apiKey\":\"$" + e.envVar + "\",\"models\":[$model]}")
+        }
+        val ocProviders = endpoints.joinToString(",") { ocLit(it) }
+        val piProviders = endpoints.joinToString(",") { piLit(it) }
         val cmd = """
             . /root/.drydock/mirrors 2>/dev/null || true
             printf '%s\n' '${endpointInfo.replace("'", "'\\''")}' > /root/.drydock-endpoint
@@ -153,38 +184,53 @@ ENVEOF
               sed -i "s|^[[:space:]]*URIs:.*|        URIs: ${'$'}DRYDOCK_APT_MIRROR|; /^           /d" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null
               echo APT_MIRROR_APPLIED
             fi
-            if command -v opencode >/dev/null 2>&1; then
-              mkdir -p /root/.config/opencode
-              cat > /root/.config/opencode/opencode.json <<'OCJSON'
-$opencodeJson
-OCJSON
-              echo OPENCODE_CFG_WRITTEN
-            fi
-            if command -v pi >/dev/null 2>&1; then
-              mkdir -p /root/.pi/agent
-              cat > /root/.pi/agent/models.json <<'PIJSON'
-$piJson
-PIJSON
-              echo PI_CFG_WRITTEN
-            fi
+            command -v node >/dev/null 2>&1 || { echo CFG_RC=1 NO_NODE; exit 0; }
+            cat > /tmp/dd-merge.js <<'JSEOF'
+const fs = require('fs');
+const ocProviders = Object.fromEntries([${ocProviders}]);
+const piProviders = [${piProviders}];
+function mergeJson(path, fn) {
+  let doc = {};
+  if (fs.existsSync(path)) { try { doc = JSON.parse(fs.readFileSync(path, 'utf8')); } catch (e) { doc = {}; } }
+  fn(doc);
+  fs.mkdirSync(require('path').dirname(path), { recursive: true });
+  fs.writeFileSync(path, JSON.stringify(doc, null, 2));
+}
+if (Object.keys(ocProviders).length) {
+  mergeJson('/root/.config/opencode/opencode.json', doc => {
+    const prov = doc.provider || {};
+    for (const [k, v] of Object.entries(ocProviders)) prov[k] = v; // 列表内覆盖，列表外保留
+    doc.provider = prov;
+  });
+  console.log('OPENCODE_CFG_MERGED');
+}
+if (piProviders.length) {
+  mergeJson('/root/.pi/agent/models.json', doc => {
+    const provs = doc.providers || {};
+    for (const p of piProviders) provs[p.providerId] = (({ providerId, ...rest }) => rest)(p); // 对象形态，列表内替换
+    doc.providers = provs;
+  });
+  console.log('PI_CFG_MERGED');
+}
+JSEOF
+            node /tmp/dd-merge.js && rm -f /tmp/dd-merge.js
             echo CFG_RC=0
         """.trimIndent()
         return RootfsManager.runInEnv(context, cmd)
     }
 
-    /** headless 冒烟：出第一句话即止（短 prompt、小输出）。判定标记 SMOKE_RC=0。 */
+    /** headless 冒烟：对列表第一个端点出第一句话即止。判定标记 SMOKE_RC=0。 */
     fun smoke(context: Context, recipe: Recipe): RootfsManager.ExecResult {
-        val protocol = EndpointStore.protocol(context) ?: return RootfsManager.ExecResult(2, "SMOKE_RC=2 no endpoint")
-        val model = EndpointStore.model(context) ?: return RootfsManager.ExecResult(2, "SMOKE_RC=2 no model")
-        val providerId = EndpointStore.providerId(context)
+        val e = EndpointStore.all(context).firstOrNull()
+            ?: return RootfsManager.ExecResult(2, "SMOKE_RC=2 no endpoint")
         val prompt = "只回复四个字符：OK 了"
         val cmd = when (recipe.id) {
             "opencode" -> """
-                cd /root && timeout 180 opencode run --model $providerId/$model '$prompt' < /dev/null 2>&1 | tail -5
+                cd /root && timeout 180 opencode run --model ${e.providerId}/${e.model} '$prompt' < /dev/null 2>&1 | tail -5
                 echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
             """.trimIndent()
             "pi" -> """
-                cd /root && timeout 180 pi --print --provider $providerId --model $providerId/$model '$prompt' < /dev/null 2>&1 | tail -5
+                cd /root && timeout 180 pi --print --provider ${e.providerId} --model ${e.providerId}/${e.model} '$prompt' < /dev/null 2>&1 | tail -5
                 echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
             """.trimIndent()
             else -> return RootfsManager.ExecResult(2, "unknown recipe")
@@ -239,106 +285,5 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
             echo MOTD_RC=${'$'}?
         """.trimIndent()
         return RootfsManager.runInEnv(context, motd)
-    }
-
-    /** 模型元数据（D30 收缩）：knownModels 表退役——预设表（EndpointStore.presets）
-     *  自带 contextWindow，预设路径元数据从那里来；自定义路径只透传向导上下文字段给 pi
-     *  （其缺省 maxTokens=16384 会作为 max_tokens 发出，不动），opencode 不写 limit
-     *  （schema 要求 limit.context/output 双全，无 output 出处不编造，2026-10-05 实锤）。 */
-    private fun modelMeta(model: String, contextWindow: Long?): Pair<String, String> {
-        // pi 的 maxTokens 会作为 max_tokens 发给 API——GLM 端点限制 ≤131072（1210 实锤），
-        // 不能照抄 contextWindow；无独立出处时收敛到 128k（保守值，介于 pi 缺省 16384 与端点上限之间）
-        val pi = contextWindow?.let { ", \"contextWindow\": $it, \"maxTokens\": ${minOf(it, 131_072L)}" } ?: ""
-        val oc = contextWindow?.let { ", \"limit\": {\"context\": $it, \"output\": ${minOf(it, 131_072L)}}}" } ?: ""
-        return pi to oc
-    }
-
-    /** OpenCode provider 配置（D30）：provider 段用真名（providerId），key 引用向导
-     *  约定的环境变量（值在 env.sh），不再有 drydock 前缀与占位模型。
-     *  limit 只在有上下文出处时写（schema 要求 context/output 双全）。 */
-    private fun opencodeConfig(
-        protocol: EndpointStore.Protocol,
-        baseUrl: String,
-        model: String,
-        contextWindow: Long?,
-        providerId: String,
-        envVar: String,
-    ): String {
-        val ocLimit = modelMeta(model, contextWindow).second
-        val models = if (model.isNotBlank()) "\"$model\": {\"name\": \"$model\"$ocLimit}" else ""
-        return when (protocol) {
-            EndpointStore.Protocol.CHAT_COMPLETIONS -> """
-                {
-                  "${'$'}schema": "https://opencode.ai/config.json",
-                  "provider": {
-                    "$providerId": {
-                      "npm": "@ai-sdk/openai-compatible",
-                      "name": "$providerId",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:$envVar}" },
-                      "models": { $models }
-                    }
-                  }
-                }
-            """.trimIndent()
-            EndpointStore.Protocol.RESPONSES -> """
-                {
-                  "${'$'}schema": "https://opencode.ai/config.json",
-                  "provider": {
-                    "$providerId": {
-                      "npm": "@ai-sdk/openai",
-                      "name": "$providerId",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:$envVar}" },
-                      "models": { $models }
-                    }
-                  }
-                }
-            """.trimIndent()
-            EndpointStore.Protocol.ANTHROPIC -> """
-                {
-                  "${'$'}schema": "https://opencode.ai/config.json",
-                  "provider": {
-                    "$providerId": {
-                      "npm": "@ai-sdk/anthropic",
-                      "name": "$providerId",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:$envVar}" },
-                      "models": { $models }
-                    }
-                  }
-                }
-            """.trimIndent()
-        }
-    }
-
-    /** pi provider 配置（D30）：真名 provider + envVar 插值；api 字段映射协议
-     *  （openai-completions / openai-responses / anthropic-messages）。
-     *  contextWindow/maxTokens 见 modelMeta——pi 对缺省值回退 128e3/16384 且 maxTokens
-     *  会作为 max_tokens 发给 API（bundle 实证）。 */
-    private fun piConfig(
-        protocol: EndpointStore.Protocol,
-        baseUrl: String,
-        model: String,
-        contextWindow: Long?,
-        providerId: String,
-        envVar: String,
-    ): String {
-        val api = when (protocol) {
-            EndpointStore.Protocol.CHAT_COMPLETIONS -> "openai-completions"
-            EndpointStore.Protocol.RESPONSES -> "openai-responses"
-            EndpointStore.Protocol.ANTHROPIC -> "anthropic-messages"
-        }
-        val piMeta = modelMeta(model, contextWindow).first
-        val models = if (model.isBlank()) "" else "{\"id\": \"$model\"$piMeta}"
-        return """
-            {
-              "providers": {
-                "$providerId": {
-                  "baseUrl": "$baseUrl",
-                  "api": "$api",
-                  "apiKey": "${'$'}$envVar",
-                  "models": [ $models ]
-                }
-              }
-            }
-        """.trimIndent()
     }
 }
