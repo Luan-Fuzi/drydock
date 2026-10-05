@@ -234,7 +234,10 @@ object RootfsManager {
         ) + BindStore.binds(context).flatMap { listOf("-b", it) } + extraBinds.flatMap { listOf("-b", it) }
         val argv = baseArgv + listOf(
             "-w", "/root",
-            "/bin/bash", "-c", command,
+            // 非登录 shell：显式 source 用户环境变量（~/.drydock/env.sh，D27），与
+            // 登录 shell 的 profile.d 同口径；密钥自 2026-10-05 起也住这里（D29）
+            "/bin/bash", "-c",
+            ". /root/.drydock/env.sh 2>/dev/null || true; $command",
         )
         Log.i(TAG, "exec: ${argv.joinToString(" ").dropLast(command.length)}…")
         val p = ProcessBuilder(argv).redirectErrorStream(true).apply {

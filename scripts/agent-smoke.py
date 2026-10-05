@@ -28,11 +28,6 @@ def main():
     report = {"started": time.strftime("%Y-%m-%d %H:%M:%S"), "device": sc.device_identity()}
     print(f"设备：{json.dumps(report['device'], ensure_ascii=False)}")
 
-    print("\n== 注入 key（debug --es 通道，只进 Keystore；-S 保证 onCreate 重建拿到 extras）")
-    sc.shell("am", "start", "-S", "-n", sc.MAIN_ACTIVITY, "--es", "drydock_api_key", key)
-    if not sc.wait_text("已保管", 60):
-        sys.exit("key 未入 Keystore（看手机是否停在 Drydock 页）")
-
     print("\n== 安装 agent 层（Node + Claude Code，npmmirror，最长 25 分钟）")
     if not sc.tap_text("安装 agent 层", 60):
         sys.exit("找不到「安装 agent 层」按钮")
@@ -49,6 +44,16 @@ def main():
         sys.exit(f"agent 层未就绪（25 分钟超时），UI 片段：{(xml or '')[:300]}")
     report["agent_layer_s"] = round(time.time() - t0)
     print(f"agent 层就绪，耗时 {report['agent_layer_s']} 秒")
+
+    print("\n== key 写入环境变量（env.sh；AV3 运行时经 runInEnv source）")
+    out = sc.env_read(
+        "mkdir -p /root/.drydock && touch /root/.drydock/env.sh\n"
+        "grep -q DRYDOCK_API_KEY /root/.drydock/env.sh 2>/dev/null || "
+        f"printf 'export DRYDOCK_API_KEY=%s\\n' '{key}' >> /root/.drydock/env.sh\n"
+        "grep -q ANTHROPIC_AUTH_TOKEN /root/.drydock/env.sh 2>/dev/null || "
+        f"printf 'export ANTHROPIC_AUTH_TOKEN=%s\\n' '{key}' >> /root/.drydock/env.sh\n"
+        "echo KEY_ENV_OK\n", timeout=90)
+    assert "KEY_ENV_OK" in out, f"key 环境变量写入失败：{out[-200:]}"
 
     print("\n== 跑 AV3 真实对话（最长 6 分钟，花 GLM 额度）")
     if not sc.tap_text("运行 AV3", 60):

@@ -205,7 +205,7 @@ private fun PowerStep(onNext: () -> Unit) {
     Button(enabled = exempt, onClick = onNext) { Text("下一步") }
 }
 
-/** 步骤②端点：零预置，先选协议再填地址与密钥。 */
+/** 步骤②端点：零预置，先选协议再填地址；key 走环境变量（用户自管，D29）。 */
 @Composable
 private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     val context = LocalContext.current
@@ -213,13 +213,14 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     var baseUrl by remember { mutableStateOf(EndpointStore.baseUrl(context) ?: "") }
     var model by remember { mutableStateOf(EndpointStore.model(context) ?: "") }
     var contextWindow by remember { mutableStateOf(EndpointStore.contextWindow(context)?.toString() ?: "") }
-    var apiKey by remember { mutableStateOf("") }
     val urlOk = baseUrl.startsWith("http://") || baseUrl.startsWith("https://")
-    val formOk = urlOk && apiKey.isNotBlank()
+    val formOk = urlOk
 
-    Text("端点与密钥", style = MaterialTheme.typography.titleMedium)
+    Text("端点与模型", style = MaterialTheme.typography.titleMedium)
     Text(
-        "不预置任何厂商：先选 API 协议，再填 Base URL 与 API Key（密钥只进系统 Keystore，按进程注入，不写入任何文件）。",
+        "不预置任何厂商：先选 API 协议，再填 Base URL。API key 不在应用里存储——" +
+            "下一步装好 agent 后，把 key 发给 agent 让它写进环境变量（~/.drydock/env.sh，" +
+            "变量名 DRYDOCK_API_KEY），或以后在 设置 → 环境变量 里自己加。",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -263,20 +264,10 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
-    OutlinedTextField(
-        value = apiKey,
-        onValueChange = { apiKey = it },
-        label = { Text("API Key") },
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
     Button(
         enabled = formOk,
         onClick = {
             EndpointStore.save(context, protocol, baseUrl, model, contextWindow)
-            KeyVault.saveDefault(context, apiKey)
             onNext()
         },
     ) { Text("保存并下一步") }

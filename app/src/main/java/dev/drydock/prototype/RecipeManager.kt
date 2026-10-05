@@ -6,8 +6,9 @@ import android.util.Log
 /**
  * 配方系统（D25：宿主不绑定 agent，安装以配方提供——安装脚本 + 端点注入 + 模型配置）。
  * 默认引导只含开源配方（OpenCode、pi，均 MIT）；Claude Code 不进默认引导（用户自行安装）。
- * 端点零预置：协议三类映射到各 agent 自己的 provider 配置；key 只经进程环境
- * （DRYDOCK_API_KEY），配置文件用插值引用，环境内文件零明文（I1）。
+ * 端点零预置：协议三类映射到各 agent 自己的 provider 配置；key 走环境变量
+ * （DRYDOCK_API_KEY），配置文件只写引用——值由用户自管（~/.drydock/env.sh 或让
+ * agent 代配，2026-10-05 起宿主不再托管密钥，见 decisions D29）。
  */
 object RecipeManager {
 
@@ -131,7 +132,7 @@ object RecipeManager {
         val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
             piConfig(protocol, baseUrl, model, contextWindow)
         } else ""
-        val endpointInfo = "protocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
+        val endpointInfo = "protocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 走环境变量 DRYDOCK_API_KEY（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
         val envBlock = if (hasEndpoint && baseUrl != null) """
             cat > /etc/profile.d/drydock-env.sh <<ENVEOF
 export DRYDOCK_BASE_URL='$baseUrl'
@@ -188,26 +189,8 @@ PIJSON
             """.trimIndent()
             else -> return RootfsManager.ExecResult(2, "unknown recipe")
         }
-        val env = sessionEnv(context)
-        return RootfsManager.runInEnv(context, cmd, extraEnv = env)
-    }
-
-    /** 会话/冒烟共用的注入环境。keyId 语义：null=默认 key（未配置端点回落 AV3 仪器注入，
-     *  向后兼容）；""=显式不注入（「部分密钥不想让环境拿到」）；其余=指定条目。 */
-    fun sessionEnv(context: Context, keyId: String? = null): Map<String, String> {
-        if (keyId != null) {
-            val k = keyId.takeIf { it.isNotBlank() }?.let { KeyVault.load(context, it) } ?: return emptyMap()
-            val env = mutableMapOf("DRYDOCK_API_KEY" to k)
-            EndpointStore.baseUrl(context)?.let { env["DRYDOCK_BASE_URL"] = it }
-            return env
-        }
-        if (EndpointStore.configured(context)) {
-            return mapOf(
-                "DRYDOCK_API_KEY" to (KeyVault.defaultKey(context) ?: ""),
-                "DRYDOCK_BASE_URL" to (EndpointStore.baseUrl(context) ?: ""),
-            )
-        }
-        return AgentManager.agentEnv(context)
+        // key 住 ~/.drydock/env.sh（runInEnv 已统一 source）；没配 key 时由端点返回 401，如实透传
+        return RootfsManager.runInEnv(context, cmd)
     }
 
     /** 镜像源 GUI 落地（D27）：写 ~/.drydock/mirrors（清空即回默认回退链）；
@@ -248,7 +231,8 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
             cat > /etc/profile.d/zz-drydock.sh <<'MOTD'
             # Drydock 引导（改本文件即改启动提示）
             echo "Drydock：agent 已就绪。直接运行 opencode 或 pi 开始；"
-            echo "端点/模型配置见 ~/.drydock-endpoint（key 不落盘）；"
+            echo "端点/模型配置见 ~/.drydock-endpoint；API key 走环境变量 DRYDOCK_API_KEY（~/.drydock/env.sh，"
+            echo "新会话生效）——把 key 发给 agent 让它帮你写进去，或自己编辑该文件；"
             echo "模型元数据（上下文窗口等）在 ~/.config/opencode/opencode.json 与 ~/.pi/agent/models.json——直接让 agent 帮你改；"
             echo "想改启动项或装更多工具，也让 agent 帮你配。"
             MOTD

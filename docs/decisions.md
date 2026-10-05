@@ -105,6 +105,12 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
 
+### D29 删除密钥托管层：key 交还用户环境变量（2026-10-05，用户拍板，推翻 I1/D27 密钥两层制）
+**宿主不再保管密钥**：SecretStore（Keystore）与 KeyVault（多 key/会话级注入）整体删除；API key 由用户写进 `~/.drydock/env.sh`（变量名 DRYDOCK_API_KEY，新会话生效），或把 key 发给终端里的 agent 让它代写。生成的工具配置不变（仍引用 `{env:DRYDOCK_API_KEY}` / `$DRYDOCK_API_KEY`），只换了值的来源。runInEnv 统一先 source env.sh（非登录 shell 与登录 shell 的 profile.d 同口径），smoke/AV3 仪器随之续命。
+**决策理由（用户三轮推演）**：①工具生态本来就是 env-var 原生（Claude Code/Codex/各家 CLI 全读环境变量），一个通用的环境变量入口覆盖所有工具的所有变量，而 Keystore 只覆盖我们自己想到的那一个——「不可能用有限的努力对抗无穷的变量，把窗口做好」；②单变量注入确实覆盖不了多端点/多模型并存（配置层多 provider 引用各自的变量名即可解）；③明文凭据文件是生态常态（~/.ssh、~/.aws、opencode/pi 的 auth.json 全是明文），文件浏览器可见自己的文件是普遍接受的边界——宿主不必比全行业更圣洁；④防误不防恶的定位下，托管防住的面（误分享/误导出）改为在导出说明里明示「env.sh 含用户自行存放的 key」。
+**代价（如实入册）**：会话级「不注入」能力消失（env.sh 对所有会话生效）；key 明文落 env.sh，随导出 tar 走；env.sh 在 /root 下，rootfs 重装会抹掉（重装后需重新配置）。被否：保留 Keystore 作为新手默认路径（用户定调「做得干净点」，两套机制并存徒增心智负担）；KeyVault 泛化为「命名密钥→命名变量注入」（在 env.sh 已覆盖该需求的前提下属于重复建设）。迁移：装新包前从存活 holder 的 environ 提取现役 key 写入 env.sh，用户无感。
+**后续**：设置页「API key 与环境变量」指引（编辑器 GUI 暂缓，env.sh + agent 代配已可用）；motd/向导文案同步；night-b t8（多密钥会话级注入）随功能删除，t7 向导步骤更名「端点与模型」。
+
 ### D28 夜批补全：导出口径、多密钥形态、直通绑定最小版与五处实锤缺陷（2026-10-04，AVD 全实证）
 一夜跑完 B 类测试清账与 A 类缺口补全（verdict：`draft/night-b-verdict.json`，t1–t11 全绿；剧本 `scripts/night-b.py` 可复跑）。四项口径定稿：
 1. **环境导出口径收窄为「工作区与配置」**：/root 全量（排 .l2s/npm/cache/绑定目录）+ drydock 的 /etc 片段，经 MediaStore 落 Downloads/Drydock。实证依据：全环境 gzip 后 ~2GB、proot 下十分钟级，作为卸载前备份不可行；系统层（apt 包、node 运行时、配方）按 D8 版本 pin 可重放，本就不该进备份。I1 的「导出无密钥」性质保持。UI 附卸载强提醒（私有目录随卸载蒸发）。

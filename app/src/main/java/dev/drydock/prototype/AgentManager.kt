@@ -10,7 +10,8 @@ import org.json.JSONObject
  * agent 链路（步骤 4 / AV3）：
  * - 版本固化安装（D8/D11）：Node 官方二进制 tarball（npmmirror 优先）+ npm 装 pin 版
  *   Claude Code（专有软件不打包，下载式安装）；
- * - 端点预设（D12）：GLM Anthropic 兼容 base_url，key 只从 SecretStore 按进程注入（I1）；
+ * - 端点预设（D12）：GLM Anthropic 兼容 base_url；key 走环境变量（2026-10-05 起宿主
+ *   不再托管，ANTHROPIC_AUTH_TOKEN 等由用户在 ~/.drydock/env.sh 自管，runInEnv 统一 source）；
  * - 成果落袋（I4/D7）：环境内产物由宿主复制到 MediaStore Downloads/Drydock，
  *   不做通用文件管理器。
  */
@@ -19,7 +20,6 @@ object AgentManager {
     private const val TAG = "DrydockAgent"
 
     const val GLM_BASE_URL = "https://open.bigmodel.cn/api/anthropic"
-    const val KEY_NAME = "glm_api_key"
 
     // Node 22 LTS（npmmirror 与 nodejs.org 的 SHASUMS256 交叉核对一致）
     const val NODE_VERSION = "v22.20.0"
@@ -45,19 +45,13 @@ object AgentManager {
         r.resultText != null && r.producedFile != null &&
             r.landedUri?.startsWith("content://") == true
 
-    /** 注入给需要密钥的进程的环境变量（I1：只经 environment 传递，永不落文件）。 */
-    fun agentEnv(context: Context): Map<String, String> {
-        val key = SecretStore.load(context, KEY_NAME) ?: return emptyMap()
-        return mapOf(
-            "ANTHROPIC_BASE_URL" to GLM_BASE_URL,
-            "ANTHROPIC_AUTH_TOKEN" to key,
-            // 版本由宿主 pin（D11），环境内不自行升级
-            "DISABLE_AUTOUPDATER" to "1",
-        )
-    }
-
-    fun keyReady(context: Context): Boolean =
-        SecretStore.load(context, KEY_NAME) != null
+    /** AV3 仪器的进程环境：base_url 预设 + 关自动升级；key 不再由宿主提供——
+     *  ANTHROPIC_AUTH_TOKEN 等由用户在 ~/.drydock/env.sh 自管（runInEnv 统一 source）。 */
+    fun agentEnv(context: Context): Map<String, String> = mapOf(
+        "ANTHROPIC_BASE_URL" to GLM_BASE_URL,
+        // 版本由宿主 pin（D11），环境内不自行升级
+        "DISABLE_AUTOUPDATER" to "1",
+    )
 
     /** Node 运行时层（agent 层与配方共用）：宿主侧下 tarball（镜像回退 + sha256），
      *  环境内解包 + npm 源配置。幂等，判定标记 NODE_RC=0。

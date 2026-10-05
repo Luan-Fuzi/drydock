@@ -467,11 +467,11 @@ class TerminalActivity : ComponentActivity() {
         ) nudgeHideIme()
     }
 
-    /** 终端页内会话菜单：列表切换（含各自端口）、新建（默认密钥）、回主页。 */
+    /** 终端页内会话菜单：列表切换（含各自端口）、新建、回主页。 */
     private fun showSessionMenu() {
         val sessions = TerminalManager.readSessions(this)
         val labels = sessions.map { if (it.name == TerminalManager.MAIN) "主终端 :${it.port}" else "${it.name} :${it.port}" } +
-            listOf("＋ 新建会话（默认密钥）", "← 回主页")
+            listOf("＋ 新建会话", "← 回主页")
         android.app.AlertDialog.Builder(this)
             .setTitle("会话")
             .setItems(labels.toTypedArray()) { _, which ->

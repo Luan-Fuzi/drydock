@@ -22,8 +22,7 @@ object TerminalManager {
     private const val TAG = "DrydockTerminal"
     const val MAIN = "main"
 
-    /** keyId：null=默认密钥；""=不注入；其余=KeyVault 条目 id（D27 密钥两层制第②层）。 */
-    data class Session(val name: String, val port: Int, val token: String, val keyId: String? = null)
+    data class Session(val name: String, val port: Int, val token: String)
 
     /** L1 心跳样本：alive=holder 存活；rchar=holder /proc/io 读字节（PTY 输出代理）。 */
     data class Heartbeat(val name: String, val alive: Boolean, val rchar: Long, val silentMin: Long)
@@ -53,8 +52,8 @@ object TerminalManager {
         else JSONArray(txt).let { arr ->
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
-                Session(o.getString("name"), o.getInt("port"), o.getString("token"),
-                    if (o.has("key_id")) o.getString("key_id") else null)
+                Session(o.getString("name"), o.getInt("port"), o.getString("token"))
+                // 旧注册表里的 key_id 字段（D27 密钥两层制遗留）直接忽略
             }
         }
     } catch (_: Exception) {
@@ -64,11 +63,11 @@ object TerminalManager {
     /** main 会话（默认入口）。 */
     fun current(context: Context): Session? = readSessions(context).firstOrNull { it.name == MAIN }
 
-    /** 服务重启后恢复注册表内全部会话（含各自的 keyId）；空表则起 main。 */
+    /** 服务重启后恢复注册表内全部会话；空表则起 main。 */
     fun ensureAll(context: Context): List<Session> {
         val existing = readSessions(context)
         val names = existing.map { it.name }.ifEmpty { listOf(MAIN) }
-        return names.mapNotNull { n -> start(context, n, existing.firstOrNull { it.name == n }?.keyId) }
+        return names.mapNotNull { n -> start(context, n) }
     }
 
     fun newSessionName(context: Context): String {
@@ -105,7 +104,7 @@ object TerminalManager {
     /** 启动（或复用）指定会话。dtach 无 server：holder 死 = 会话内容丢，
      *  探活失败即重建全新 shell（session_recreated 入时间线）。 */
     @Synchronized
-    fun start(context: Context, name: String = MAIN, keyId: String? = null): Session? {
+    fun start(context: Context, name: String = MAIN): Session? {
         val rootfs = RootfsManager.rootfsDir(context)
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val sockHost = File(rootfs, "root/$name.sock")
@@ -113,7 +112,7 @@ object TerminalManager {
         if (holders[name]?.isAlive != true && !unixSocketAlive(sockHost)) {
             sockHost.delete()
             val existed = readSessions(context).any { it.name == name }
-            val holder = spawnHolder(context, name, sockHost, keyId) ?: return null
+            val holder = spawnHolder(context, name, sockHost) ?: return null
             holders[name] = holder
             monitorExit(context, "holder:$name", holder)
             if (existed) {
@@ -129,7 +128,7 @@ object TerminalManager {
             }.toString()
             val ttyd = spawnTtyd(context, sockHost, port, token) ?: return null
             ttyds[name] = ttyd
-            sessions[name] = Session(name, port, token, keyId)
+            sessions[name] = Session(name, port, token)
             monitorExit(context, "ttyd:$name", ttyd)
         }
 
@@ -210,9 +209,7 @@ object TerminalManager {
             registryFile(context).writeText(
                 JSONArray().apply {
                     sessions.values.forEach {
-                        put(JSONObject().put("name", it.name).put("port", it.port).put("token", it.token).apply {
-                            it.keyId?.let { k -> put("key_id", k) }
-                        })
+                        put(JSONObject().put("name", it.name).put("port", it.port).put("token", it.token))
                     }
                 }.toString(),
             )
@@ -221,7 +218,7 @@ object TerminalManager {
         }
     }
 
-    private fun spawnHolder(context: Context, name: String, sockHost: File, keyId: String? = null): Process? {
+    private fun spawnHolder(context: Context, name: String, sockHost: File): Process? {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val rootfs = RootfsManager.rootfsDir(context)
         val holder = ProcessBuilder(
@@ -246,9 +243,8 @@ object TerminalManager {
                 put("HOME", "/root")
                 put("TERM", "xterm-256color")
                 put("LANG", "C.UTF-8")
-                // I1 + D25 零预置 + D27 按会话选 key：keyId null=默认 / ""=不注入 / 条目 id；
-                // 未配置端点时回落 AV3 仪器的 GLM 注入保持兼容；会话建立后配置变更需重建会话才生效
-                RecipeManager.sessionEnv(context, keyId).forEach { (k, v) -> put(k, v) }
+                // key 自 2026-10-05 起不注入（D29）：登录 shell（bash -l）经 profile.d
+                // source ~/.drydock/env.sh，DRYDOCK_API_KEY 等变量由用户在该文件自管
             }
         }.start()
         val deadline = System.currentTimeMillis() + 15_000

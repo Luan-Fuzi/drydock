@@ -75,15 +75,6 @@ class HomeActivity : ComponentActivity() {
         enableEdgeToEdge()
         // debug 注入口与 MainActivity 同源（无视觉环境验收经 am start --es 驱动）
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-            intent?.getStringExtra("drydock_api_key")?.takeIf { it.isNotBlank() }?.let {
-                SecretStore.save(this, AgentManager.KEY_NAME, it) // AV3 验收仪器
-                KeyVault.saveDefault(this, it) // 产品路径：默认密钥
-            }
-            // 夜批验收：批量注入密钥条目（label|value）
-            intent?.getStringExtra("drydock_key_add")?.takeIf { it.contains("|") }?.let { spec ->
-                val p = spec.split("|", limit = 2)
-                KeyVault.add(this, p[0], p[1])
-            }
             intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
                 val p = spec.split("|")
                 runCatching { EndpointStore.Protocol.valueOf(p[0]) }.getOrNull()?.let { proto ->
@@ -271,9 +262,10 @@ private fun SessionPane() {
         if (sessions.isEmpty()) {
             Text(
                 "Drydock 让 coding agent 在手机上常驻干活。\n\n" +
-                    "第一次使用：先到「设置 → 初始设置」完成三步配置（保活、端点与密钥、安装 agent），" +
+                    "第一次使用：先到「设置 → 初始设置」完成三步配置（保活、端点与模型、安装 agent），" +
                     "然后点下面的按钮打开终端——OpenCode 或 pi 会直接可用。\n\n" +
-                    "锁屏挂机不中断、密钥不落盘、产物在手机文件管理器可见。",
+                    "API key 走环境变量：打开终端后把 key 发给 agent，它会帮你写进 ~/.drydock/env.sh；" +
+                    "锁屏挂机不中断、产物在手机文件管理器可见。",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -293,9 +285,7 @@ private fun SessionPane() {
                         withContext(Dispatchers.IO) { TerminalManager.ensureTerminalLayer(appCtx) }
                         busy = "启动会话…"
                         // main 插队：new_session 通道先建目标再 ensureAll 其余（串行 ~10-15s/会话）
-                        val mainEntry = TerminalManager.readSessions(appCtx).firstOrNull { it.name == TerminalManager.MAIN }
                         val si = Intent(appCtx, EnvService::class.java).putExtra("new_session", TerminalManager.MAIN)
-                        mainEntry?.keyId?.let { si.putExtra("key_id", it) }
                         appCtx.startForegroundService(si)
                         val ready = awaitSessionReady(appCtx, TerminalManager.MAIN)
                         busy = ""
@@ -317,12 +307,6 @@ private fun SessionPane() {
                     Column {
                         Text(if (s.name == TerminalManager.MAIN) "主终端" else s.name, style = MaterialTheme.typography.titleMedium)
                         Text("本地端口 :${s.port}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        s.keyId?.let { id ->
-                            Text(
-                                "密钥：" + (if (id.isBlank()) "不注入" else KeyVault.entries(context).firstOrNull { it.id == id }?.label ?: id),
-                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
                     Row {
                         TextButton(onClick = {
@@ -333,7 +317,6 @@ private fun SessionPane() {
                                 busy = "接回会话 ${s.name}…"
                                 try {
                                     val i = Intent(appCtx, EnvService::class.java).putExtra("new_session", s.name)
-                                    s.keyId?.let { i.putExtra("key_id", it) }
                                     appCtx.startForegroundService(i)
                                     val ready = awaitSessionReady(appCtx, s.name)
                                     busy = ""
@@ -394,54 +377,27 @@ private fun SessionPane() {
         }
 
         if (sessions.isNotEmpty()) {
-            var showNew by remember { mutableStateOf(false) }
-            var pickKey by remember { mutableStateOf<String?>(null) } // null=默认；""=不注入
-            OutlinedButton(enabled = busy.isBlank(), onClick = { pickKey = null; showNew = true }) { Text("新建会话") }
-            if (showNew) {
-                AlertDialog(
-                    onDismissRequest = { showNew = false },
-                    title = { Text("新建会话 · 注入哪把密钥") },
-                    text = {
-                        Column {
-                            Row(modifier = Modifier.fillMaxWidth().clickable { pickKey = null }) {
-                                RadioButton(selected = pickKey == null, onClick = { pickKey = null })
-                                Text("默认密钥", modifier = Modifier.padding(top = 12.dp))
-                            }
-                            KeyVault.entries(context).forEach { k ->
-                                Row(modifier = Modifier.fillMaxWidth().clickable { pickKey = k.id }) {
-                                    RadioButton(selected = pickKey == k.id, onClick = { pickKey = k.id })
-                                    Text(k.label + if (k.isDefault) "（默认）" else "", modifier = Modifier.padding(top = 12.dp))
-                                }
-                            }
-                            Row(modifier = Modifier.fillMaxWidth().clickable { pickKey = "" }) {
-                                RadioButton(selected = pickKey == "", onClick = { pickKey = "" })
-                                Text("不注入（环境拿不到任何密钥）", modifier = Modifier.padding(top = 12.dp))
-                            }
+            // 新建会话直建（D29 后无密钥选择；key 统一走环境变量，会话内生效）
+            OutlinedButton(enabled = busy.isBlank(), onClick = {
+                val name = TerminalManager.newSessionName(context)
+                scope.launch {
+                    busy = "新建会话 $name…"
+                    try {
+                        context.startForegroundService(
+                            Intent(context, EnvService::class.java).putExtra("new_session", name))
+                        var found = false
+                        repeat(60) {
+                            if (it > 0) delay(1000)
+                            if (TerminalManager.readSessions(context).any { s2 -> s2.name == name }) { found = true; return@repeat }
                         }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            showNew = false
-                            val name = TerminalManager.newSessionName(context)
-                            scope.launch {
-                                busy = "新建会话 $name…"
-                                val i = Intent(context, EnvService::class.java).putExtra("new_session", name)
-                                pickKey?.let { i.putExtra("key_id", it) } // null 不带 extra=默认；""=不注入
-                                context.startForegroundService(i)
-                                var found = false
-                                repeat(60) {
-                                    if (it > 0) delay(1000)
-                                    if (TerminalManager.readSessions(context).any { s2 -> s2.name == name }) { found = true; return@repeat }
-                                }
-                                busy = ""
-                                tick++
-                                if (found) context.startActivity(Intent(context, TerminalActivity::class.java).putExtra("session", name))
-                            }
-                        }) { Text("创建") }
-                    },
-                    dismissButton = { TextButton(onClick = { showNew = false }) { Text("取消") } },
-                )
-            }
+                        busy = ""
+                        tick++
+                        if (found) context.startActivity(Intent(context, TerminalActivity::class.java).putExtra("session", name))
+                    } catch (e: Exception) {
+                        busy = ""
+                    }
+                }
+            }) { Text("新建会话") }
             TextButton(onClick = { tick++ }) { Text("刷新") }
         }
     }
@@ -545,9 +501,9 @@ private fun SettingsPane() {
     ) {
         Text("设置", style = MaterialTheme.typography.titleLarge)
 
-        Text("端点与密钥", style = MaterialTheme.typography.titleMedium)
+        Text("端点与模型", style = MaterialTheme.typography.titleMedium)
         Text(
-            "${EndpointStore.summary(context)} · 密钥${if (EndpointStore.keyReady(context)) "已保管（Keystore）" else "未设置"}",
+            "${EndpointStore.summary(context)} · API key 走环境变量（~/.drydock/env.sh）",
             fontFamily = FontFamily.Monospace, fontSize = 12.sp,
         )
         Button(onClick = { context.startActivity(Intent(context, WizardActivity::class.java)) }) {
@@ -555,45 +511,12 @@ private fun SettingsPane() {
         }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("密钥", style = MaterialTheme.typography.titleMedium)
+        Text("API key 与环境变量", style = MaterialTheme.typography.titleMedium)
         Text(
-            "多把密钥存系统 Keystore，新建会话时选注入哪把；默认密钥给未指定的会话。密钥永不写入环境内文件。",
+            "key 不在应用里存储：写进 ~/.drydock/env.sh（DRYDOCK_API_KEY=你的 key，新会话生效），" +
+                "或打开终端把 key 发给 agent 让它帮你写。其他工具需要的变量（代理、各家 key）也放同一个文件。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        val keys = remember(tick) { KeyVault.entries(context) }
-        keys.forEach { k ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("${k.label}  ${KeyVault.mask(context, k.id) ?: "（空）"}", fontSize = 13.sp)
-                    if (k.isDefault) Text("默认密钥", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                }
-                Row {
-                    if (!k.isDefault) TextButton(onClick = { KeyVault.setDefault(context, k.id); tick++ }) { Text("设默认") }
-                    TextButton(onClick = { KeyVault.delete(context, k.id); tick++ }) { Text("删除") }
-                }
-            }
-        }
-        var newLabel by remember { mutableStateOf("") }
-        var newValue by remember { mutableStateOf("") }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = newLabel, onValueChange = { newLabel = it },
-                label = { Text("名称（如 工作密钥）") }, singleLine = true, modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = newValue, onValueChange = { newValue = it },
-                label = { Text("API Key") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.weight(1.4f),
-            )
-        }
-        Button(enabled = newValue.isNotBlank(), onClick = {
-            KeyVault.add(context, newLabel.trim(), newValue)
-            newLabel = ""; newValue = ""; tick++
-        }) { Text("添加密钥") }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text("环境与备份", style = MaterialTheme.typography.titleMedium)
@@ -614,7 +537,8 @@ private fun SettingsPane() {
         ) { Text(if (exporting) "导出中…（约 1 分钟）" else "导出工作区与配置（tar.gz）") }
         if (exportMsg.isNotBlank()) Text(exportMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Text(
-            "导出 /root 工作区与 drydock 配置（系统层按配方版本可重放，不进导出）；不含任何密钥（密钥只在系统 Keystore）。",
+            "导出 /root 工作区与 drydock 配置（系统层按配方版本可重放，不进导出）；" +
+                "含 ~/.drydock/env.sh——你写入的环境变量（含自行存放的 key）会进导出包。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 

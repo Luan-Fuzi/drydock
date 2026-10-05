@@ -52,17 +52,9 @@ class MainActivity : ComponentActivity() {
         ) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4705)
         }
-        // 验收自动化注入口：仅 debuggable 构建存在（release 无此路径），key 直达
-        // Keystore 不落盘；无视觉环境下经 am start --es 注入后走 logcat 断言。
+        // 验收自动化注入口：仅 debuggable 构建存在（release 无此路径）；
+        // 无视觉环境下经 am start --es 注入后走 logcat 断言。
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-            intent?.getStringExtra("drydock_api_key")?.takeIf { it.isNotBlank() }?.let {
-                SecretStore.save(this, AgentManager.KEY_NAME, it)
-                SecretStore.save(this, EndpointStore.KEY_NAME, it)
-                android.util.Log.i(
-                    "DrydockMain",
-                    "debug 注入 API key（glm + drydock 两键名）：${SecretStore.mask(this, AgentManager.KEY_NAME)}",
-                )
-            }
             // 配方验收注入口："PROTOCOL|base_url|model|context"（D25 零预置：产品路径无任何默认值）
             intent?.getStringExtra("drydock_endpoint")?.takeIf { it.contains("|") }?.let { spec ->
                 val parts = spec.split("|")
@@ -516,42 +508,17 @@ fun PrototypeScreen() {
         // ---------- 步骤 4：agent 链路（AV3） ----------
         Text("步骤 4 · agent 链路（AV3）", style = MaterialTheme.typography.titleMedium)
 
-        var apiKeyInput by remember { mutableStateOf("") }
-        var keySavedAt by remember { mutableStateOf(0L) }
-        val keyMask = remember(keySavedAt) { SecretStore.mask(context, AgentManager.KEY_NAME) }
-        var keyMsg by remember { mutableStateOf("") }
-
         Text(
             "端点预设 GLM（Anthropic 兼容）\n${AgentManager.GLM_BASE_URL}",
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
         )
         Text(
-            if (keyMask != null) "API key：已保管（$keyMask，Keystore 加密）" else "API key：未设置",
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
+            "API key 走环境变量 ANTHROPIC_AUTH_TOKEN（~/.drydock/env.sh，宿主不再托管）：" +
+                "把 key 发给终端里的 agent 让它写入，或自己编辑该文件；AV3 运行时经 env.sh 读取。",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        OutlinedTextField(
-            value = apiKeyInput,
-            onValueChange = { apiKeyInput = it },
-            label = { Text("GLM API key") },
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            enabled = apiKeyInput.isNotBlank(),
-            onClick = {
-                SecretStore.save(context, AgentManager.KEY_NAME, apiKeyInput)
-                keySavedAt = System.currentTimeMillis()
-                apiKeyInput = ""
-                keyMsg = "已入 Keystore；重开终端会话后终端内 claude 生效"
-            },
-        ) { Text("保存密钥（只进 Keystore）") }
-        if (keyMsg.isNotBlank()) {
-            Text(keyMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-        }
 
         var agentState by remember { mutableStateOf("") }
         var agentInstalling by remember { mutableStateOf(false) }
@@ -580,7 +547,7 @@ fun PrototypeScreen() {
         var av3Running by remember { mutableStateOf(false) }
         var av3Result by remember { mutableStateOf<AgentManager.Av3Result?>(null) }
         Button(
-            enabled = deployed && !av3Running && agentState.startsWith("✓") && keyMask != null,
+            enabled = deployed && !av3Running && agentState.startsWith("✓"),
             onClick = {
                 av3Running = true
                 av3Result = null
@@ -608,7 +575,7 @@ fun PrototypeScreen() {
         var i1Running by remember { mutableStateOf(false) }
         var i1Out by remember { mutableStateOf("") }
         Button(
-            enabled = deployed && !i1Running && keyMask != null,
+            enabled = deployed && !i1Running,
             onClick = {
                 i1Running = true
                 scope.launch {

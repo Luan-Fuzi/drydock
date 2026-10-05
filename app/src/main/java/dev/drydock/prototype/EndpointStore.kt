@@ -3,9 +3,9 @@ package dev.drydock.prototype
 import android.content.Context
 
 /**
- * 端点配置存储（D25：零预置厂商，用户先选协议再配 Base URL 与 API Key）。
- * 协议与 Base URL 进 SharedPreferences；API Key 只进 Keystore（I1：永不落文件）。
- * 模型 id 是端点实际服务的模型名（如 glm-4.7），两个 agent 的配置都以它为键。
+ * 端点配置存储（D25：零预置厂商，用户先选协议再配 Base URL）。
+ * 协议、Base URL、模型 id 进 SharedPreferences；API key 不经本类——2026-10-05 起
+ * 走环境变量 DRYDOCK_API_KEY（~/.drydock/env.sh 用户自管，D29），配置文件只写引用。
  */
 object EndpointStore {
 
@@ -14,9 +14,6 @@ object EndpointStore {
         RESPONSES("Responses"),
         ANTHROPIC("Anthropic Messages"),
     }
-
-    /** Keystore 键名（与 AgentManager 的 glm_api_key 分开：那是 AV3 验收仪器，这是产品路径）。 */
-    const val KEY_NAME = "drydock_api_key"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences("drydock", Context.MODE_PRIVATE)
@@ -51,11 +48,10 @@ object EndpointStore {
     fun contextWindow(context: Context): Long? =
         prefs(context).getString("endpoint_context", null)?.trim()?.toLongOrNull()
 
-    fun keyReady(context: Context): Boolean = KeyVault.defaultKey(context) != null
-
-    /** 三要素齐（协议 + Base URL + key）才算已配置；模型可空（agent 端有各自的默认选择）。 */
+    /** 两要素齐（协议 + Base URL）才算已配置；模型可空（agent 端有各自的默认选择）。
+     *  key 不在此判断里——它走环境变量，由用户自管（D29）。 */
     fun configured(context: Context): Boolean =
-        protocol(context) != null && !baseUrl(context).isNullOrBlank() && keyReady(context)
+        protocol(context) != null && !baseUrl(context).isNullOrBlank()
 
     fun summary(context: Context): String =
         if (configured(context)) "${protocol(context)!!.label} · ${baseUrl(context)}" else "未配置"

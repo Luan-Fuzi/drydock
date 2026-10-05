@@ -336,7 +336,7 @@ def t7(r):
         raise RuntimeError("向导未打开（保活步）")
     if not sc.tap_text("下一步", 30):
         raise RuntimeError("保活步过不去（豁免未生效？）")
-    if not sc.wait_text("端点与密钥", 30):
+    if not sc.wait_text("端点与模型", 30):
         raise RuntimeError("端点步未出现")
     if not sc.tap_text("Anthropic Messages", 20):
         raise RuntimeError("选不了 Anthropic Messages")
@@ -346,87 +346,6 @@ def t7(r):
     screencap("night-wizard-anthropic.png")
     sc.shell("input", "keyevent", "KEYCODE_BACK")
     r["pass"] = r["hint_shown"]
-
-
-# ---------- t8 多密钥 · 会话级注入（块 4） ----------
-
-def holder_environ(sock_name):
-    """按 <name>.sock 定位 holder 进程，读其 /proc/<pid>/environ（run-as 同 uid 可读）。"""
-    pid = None
-    for line in sc.shell("ps", "-A", "-o", "PID,ARGS").splitlines():
-        if "dtach" in line and sock_name in line and "ttyd" not in line:
-            pid = line.strip().split()[0]
-            break
-    if not pid:
-        return None
-    raw = sc.shell("run-as", sc.PKG, "cat", f"/proc/{pid}/environ", timeout=30)
-    return dict(
-        item.split("=", 1) for item in raw.replace("\r", "").split("\x00") if "=" in item
-    ) if raw and "No such" not in raw and "denied" not in raw else (raw or "")
-
-
-@stage("t8_multikey_sessions")
-def t8(r):
-    # 两把 key 经 debug 通道注入（label|value；值只进 Keystore）
-    sc.shell("am", "start", "-S", "-n", HOME, "--es", "drydock_key_add", "'工作密钥|sk-night-work-001111111111111111111'")
-    time.sleep(2)
-    sc.shell("am", "start", "-S", "-n", HOME, "--es", "drydock_key_add", "'个人密钥|sk-night-personal-002222222222222222'")
-    time.sleep(2)
-    # 设置页可见性
-    sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
-    if not nav_tap("设置"):
-        raise RuntimeError("进不了设置页")
-    sc.wait_text("镜像源", 30)
-    xml = sc.ui_dump()
-    r["settings_lists_keys"] = ("工作密钥" in xml) and ("个人密钥" in xml)
-    screencap("night-settings-keys.png")
-    # 回会话页：新建两把不同 key 的会话（s2=工作密钥，s3=不注入）
-    sc.wait_text("终端会话", 20)
-    if not nav_tap("会话"):
-        raise RuntimeError("回不了会话页")
-    if not sc.wait_text("新建会话", 60):
-        raise RuntimeError("新建会话按钮未出现")
-    if not sc.tap_text("新建会话", 20):
-        raise RuntimeError("点不开新建会话")
-    if not sc.wait_text("注入哪把密钥", 20):
-        raise RuntimeError("密钥选择对话框未出现")
-    if not sc.tap_text("工作密钥", 15):
-        raise RuntimeError("对话框里选不了工作密钥")
-    if not sc.tap_text("创建", 10):
-        raise RuntimeError("点不到创建")
-    f = wait_focus("TerminalActivity", 90)
-    r["s2_opened"] = bool(f)
-    assert f, "工作密钥会话未打开"
-
-    # 第二个：不注入
-    sc.shell("input", "keyevent", "KEYCODE_HOME")
-    sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
-    if not sc.tap_text("新建会话", 30):
-        raise RuntimeError("第二次新建会话失败")
-    if not sc.wait_text("注入哪把密钥", 20):
-        raise RuntimeError("第二个对话框未出现")
-    if not sc.tap_text("不注入", 15):
-        raise RuntimeError("选不了不注入")
-    if not sc.tap_text("创建", 10):
-        raise RuntimeError("点不到创建（2）")
-    f = wait_focus("TerminalActivity", 90)
-    r["s3_opened"] = bool(f)
-    assert f, "不注入会话未打开"
-
-    sessions = {s["name"]: s for s in sc.registry_sessions()}
-    r["registry_names"] = sorted(sessions)
-    r["s2_key_id"] = sessions.get("s2", {}).get("key_id")
-    r["s3_key_id"] = sessions.get("s3", {}).get("key_id")
-
-    env2 = holder_environ("s2.sock")
-    env3 = holder_environ("s3.sock")
-    r["s2_env_key_ok"] = bool(env2) and env2.get("DRYDOCK_API_KEY", "").startswith("sk-night-work")
-    r["s3_env_key_absent"] = bool(env3) and ("DRYDOCK_API_KEY" not in env3)
-    r["env_probe_raw_len"] = (len(str(env2)), len(str(env3)))
-    r["pass"] = all([r["settings_lists_keys"], r["s2_key_id"], r["s3_key_id"] == "",
-                     r["s2_env_key_ok"], r["s3_env_key_absent"]])
 
 
 # ---------- t9 环境导出（块 5） ----------
@@ -584,9 +503,9 @@ def t11(r):
 
 
 def main():
-    wanted = sys.argv[1:] or ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11"]
+    wanted = sys.argv[1:] or ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t9", "t10", "t11"]
     runners = {"t1": t1, "t2": t2, "t3": t3, "t4": t4, "t5": t5,
-               "t6": t6, "t7": t7, "t8": t8, "t9": t9, "t10": t10, "t11": t11}
+               "t6": t6, "t7": t7, "t9": t9, "t10": t10, "t11": t11}
     print(f"设备：{json.dumps(report['device'], ensure_ascii=False)}", flush=True)
     for k in wanted:
         runners[k]()
