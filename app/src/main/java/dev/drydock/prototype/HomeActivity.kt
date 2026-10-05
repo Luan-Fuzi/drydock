@@ -251,6 +251,7 @@ private fun SessionPane() {
     val scope = rememberCoroutineScope()
     var tick by remember { mutableStateOf(0) }
     var busy by remember { mutableStateOf("") }
+    var closeTarget by remember { mutableStateOf<TerminalManager.Session?>(null) }
     val sessions = remember(tick) { TerminalManager.readSessions(context) }
 
     // 会话列表保鲜：回主页/停留期间 5s 轮询注册表（修「回来不刷新」）
@@ -323,29 +324,73 @@ private fun SessionPane() {
                             )
                         }
                     }
+                    Row {
+                        TextButton(onClick = {
+                            scope.launch {
+                                val appCtx = context.applicationContext
+                                // 全进程死亡后（重启/force-stop/pm install）holder/ttyd 不在；
+                                // spawn 必须走 :env 进程组（app 进程直起的子进程会被 AMS 清剿，D18）
+                                busy = "接回会话 ${s.name}…"
+                                try {
+                                    val i = Intent(appCtx, EnvService::class.java).putExtra("new_session", s.name)
+                                    s.keyId?.let { i.putExtra("key_id", it) }
+                                    appCtx.startForegroundService(i)
+                                    val ready = awaitSessionReady(appCtx, s.name)
+                                    busy = ""
+                                    if (ready != null) {
+                                        context.startActivity(
+                                            Intent(context, TerminalActivity::class.java).putExtra("session", s.name))
+                                    } else busy = "会话接回失败（设置 → 开发者工具看日志）"
+                                } catch (e: Exception) {
+                                    busy = ""
+                                }
+                            }
+                        }) { Text("打开") }
+                        TextButton(onClick = { closeTarget = s }) { Text("关闭") }
+                    }
+                }
+            }
+        }
+
+        closeTarget?.let { t ->
+            AlertDialog(
+                onDismissRequest = { closeTarget = null },
+                title = { Text("关闭会话 ${t.name}？") },
+                text = {
+                    Text(
+                        "dtach 会话无服务进程：关闭后该会话的内容（含 agent TUI）丢失，" +
+                            "重新打开会是全新 shell。" +
+                            (if (t.name == TerminalManager.MAIN) "main 关闭后会在下次「打开终端」时自动重建。" else ""),
+                    )
+                },
+                confirmButton = {
                     TextButton(onClick = {
+                        closeTarget = null
                         scope.launch {
                             val appCtx = context.applicationContext
-                            // 全进程死亡后（重启/force-stop/pm install）holder/ttyd 不在；
-                            // spawn 必须走 :env 进程组（app 进程直起的子进程会被 AMS 清剿，D18）
-                            busy = "接回会话 ${s.name}…"
+                            busy = "关闭会话 ${t.name}…"
                             try {
-                                val i = Intent(appCtx, EnvService::class.java).putExtra("new_session", s.name)
-                                s.keyId?.let { i.putExtra("key_id", it) }
-                                appCtx.startForegroundService(i)
-                                val ready = awaitSessionReady(appCtx, s.name)
+                                appCtx.startForegroundService(
+                                    Intent(appCtx, EnvService::class.java).putExtra("stop_session", t.name))
+                                // 就绪判据：注册表文件里该会话消失（stop 在 :env 进程执行）
+                                var closed = false
+                                repeat(15) {
+                                    if (it > 0) delay(1000)
+                                    if (TerminalManager.readSessions(appCtx).none { s2 -> s2.name == t.name }) {
+                                        closed = true; return@repeat
+                                    }
+                                }
                                 busy = ""
-                                if (ready != null) {
-                                    context.startActivity(
-                                        Intent(context, TerminalActivity::class.java).putExtra("session", s.name))
-                                } else busy = "会话接回失败（设置 → 开发者工具看日志）"
+                                if (!closed) busy = "关闭失败（设置 → 开发者工具看日志）"
+                                tick++
                             } catch (e: Exception) {
                                 busy = ""
                             }
                         }
-                    }) { Text("打开") }
-                }
-            }
+                    }) { Text("关闭") }
+                },
+                dismissButton = { TextButton(onClick = { closeTarget = null }) { Text("取消") } },
+            )
         }
 
         if (sessions.isNotEmpty()) {

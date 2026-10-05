@@ -79,9 +79,17 @@ class EnvService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val app = applicationContext
         val newSession = intent?.getStringExtra("new_session")
+        val stopSession = intent?.getStringExtra("stop_session")
         // key_id：缺省=默认密钥；""=不注入；其余=KeyVault 条目 id（D27 密钥两层制）
         val keyId = if (intent?.hasExtra("key_id") == true) intent.getStringExtra("key_id") else null
         Thread {
+            // 关闭会话：只做关闭不跑 ensureAll——否则关掉最后一个会话会被
+            // 空表回退立刻重建 main，等于关不掉
+            if (stopSession != null) {
+                TerminalManager.stop(app, stopSession)
+                Timeline.log(this, "session_closed", mapOf("name" to stopSession))
+                return@Thread
+            }
             // 新会话优先：ensureAll 串行恢复历史会话每个 ~10s，堆多个时会把
             // 发起方的 60s 轮询耗光（夜批实锤）；先建新会话再恢复其余（幂等）
             if (newSession != null) {

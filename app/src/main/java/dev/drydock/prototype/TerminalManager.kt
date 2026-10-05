@@ -78,6 +78,30 @@ object TerminalManager {
         return "s$i"
     }
 
+    /** 关闭会话：杀 holder/ttyd 并移出注册表。dtach 无 server，会话内容随 holder
+     *  丢失（重新打开 = 全新 shell）；全部关完后由 ensureAll 的空表回退在下次
+     *  打开时重建 main。必须在 :env 进程调用（Process 句柄在服务进程内存里）。
+     *  destroy() 只杀直接子进程，ptrace 下的 dtach/bash 可能存活——先按 sock 名
+     *  清点幸存者逐个 SIGKILL（同 uid，ps 可见）。 */
+    @Synchronized
+    fun stop(context: Context, name: String): Boolean {
+        runCatching {
+            val ps = ProcessBuilder("ps", "-A", "-o", "PID,ARGS").start()
+                .inputStream.bufferedReader().readText()
+            ps.lineSequence()
+                .filter { "/root/$name.sock" in it }
+                .map { it.trim().split(Regex("\\s+"))[0] }
+                .filter { it.toIntOrNull() != null && it.toInt() != android.os.Process.myPid() }
+                .forEach { runCatching { android.os.Process.killProcess(it.toInt()) } }
+        }
+        holders.remove(name)?.destroy()
+        ttyds.remove(name)?.destroy()
+        val removed = sessions.remove(name) != null
+        persist(context)
+        Log.i(TAG, "会话 $name 已关闭（剩 ${sessions.size} 个）")
+        return removed
+    }
+
     /** 启动（或复用）指定会话。dtach 无 server：holder 死 = 会话内容丢，
      *  探活失败即重建全新 shell（session_recreated 入时间线）。 */
     @Synchronized
