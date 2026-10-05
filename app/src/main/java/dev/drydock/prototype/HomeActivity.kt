@@ -219,6 +219,32 @@ private fun HomeScreen() {
 }
 
 /** 会话页：管理已开终端、新建；空状态 = 首启教育。 */
+/** 等会话 ttyd 就绪：注册表项在（既有会话）不代表 holder/ttyd 活着，且重建 ttyd
+ *  会换端口——每轮重读注册表并对当前端口做 TCP 探活。冷启动串行重建每会话
+ *  ~10-15s（proot+ttyd 就绪探测自身 20s 上限），预算默认 120s。超时返回 null。 */
+private suspend fun awaitSessionReady(
+    appCtx: Context,
+    name: String,
+    timeoutMs: Long = 120_000,
+): TerminalManager.Session? {
+    val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs
+    while (android.os.SystemClock.elapsedRealtime() < deadline) {
+        val s = withContext(Dispatchers.IO) {
+            TerminalManager.readSessions(appCtx).firstOrNull { it.name == name }?.let { sess ->
+                try {
+                    java.net.Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", sess.port), 500) }
+                    sess
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }
+        if (s != null) return s
+        delay(1000)
+    }
+    return null
+}
+
 @Composable
 private fun SessionPane() {
     val context = LocalContext.current
@@ -265,16 +291,14 @@ private fun SessionPane() {
                         busy = "准备终端层…"
                         withContext(Dispatchers.IO) { TerminalManager.ensureTerminalLayer(appCtx) }
                         busy = "启动会话…"
-                        appCtx.startForegroundService(Intent(appCtx, EnvService::class.java))
-                        var found = false
-                        repeat(60) {
-                            if (it > 0) delay(1000)
-                            if (TerminalManager.readSessions(appCtx).any { it.name == TerminalManager.MAIN }) {
-                                found = true; return@repeat
-                            }
-                        }
+                        // main 插队：new_session 通道先建目标再 ensureAll 其余（串行 ~10-15s/会话）
+                        val mainEntry = TerminalManager.readSessions(appCtx).firstOrNull { it.name == TerminalManager.MAIN }
+                        val si = Intent(appCtx, EnvService::class.java).putExtra("new_session", TerminalManager.MAIN)
+                        mainEntry?.keyId?.let { si.putExtra("key_id", it) }
+                        appCtx.startForegroundService(si)
+                        val ready = awaitSessionReady(appCtx, TerminalManager.MAIN)
                         busy = ""
-                        if (found) context.startActivity(Intent(context, TerminalActivity::class.java))
+                        if (ready != null) context.startActivity(Intent(context, TerminalActivity::class.java))
                         else busy = "会话启动失败（设置 → 开发者工具看日志）"
                     } catch (e: Exception) {
                         busy = ""
@@ -300,7 +324,25 @@ private fun SessionPane() {
                         }
                     }
                     TextButton(onClick = {
-                        context.startActivity(Intent(context, TerminalActivity::class.java).putExtra("session", s.name))
+                        scope.launch {
+                            val appCtx = context.applicationContext
+                            // 全进程死亡后（重启/force-stop/pm install）holder/ttyd 不在；
+                            // spawn 必须走 :env 进程组（app 进程直起的子进程会被 AMS 清剿，D18）
+                            busy = "接回会话 ${s.name}…"
+                            try {
+                                val i = Intent(appCtx, EnvService::class.java).putExtra("new_session", s.name)
+                                s.keyId?.let { i.putExtra("key_id", it) }
+                                appCtx.startForegroundService(i)
+                                val ready = awaitSessionReady(appCtx, s.name)
+                                busy = ""
+                                if (ready != null) {
+                                    context.startActivity(
+                                        Intent(context, TerminalActivity::class.java).putExtra("session", s.name))
+                                } else busy = "会话接回失败（设置 → 开发者工具看日志）"
+                            } catch (e: Exception) {
+                                busy = ""
+                            }
+                        }
                     }) { Text("打开") }
                 }
             }
