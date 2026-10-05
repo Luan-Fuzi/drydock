@@ -259,7 +259,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     OutlinedTextField(
         value = contextWindow,
         onValueChange = { contextWindow = it.filter { c -> c.isDigit() } },
-        label = { Text("上下文窗口 token 数（可选；记录在端点信息里，供 agent 参考）") },
+        label = { Text("上下文窗口 token 数（可选；常见 GLM 模型自动识别，未知模型走工具默认）") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )

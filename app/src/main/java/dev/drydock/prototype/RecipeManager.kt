@@ -124,11 +124,12 @@ object RecipeManager {
         if (hasEndpoint && baseUrl != null && protocol != null) {
             // 占位：下方脚本内联使用（避免智能转换拆分）
         }
+        val contextWindow = EndpointStore.contextWindow(context)
         val opencodeJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            opencodeConfig(protocol, baseUrl, model)
+            opencodeConfig(protocol, baseUrl, model, contextWindow)
         } else ""
         val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            piConfig(protocol, baseUrl, model)
+            piConfig(protocol, baseUrl, model, contextWindow)
         } else ""
         val endpointInfo = "protocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
         val envBlock = if (hasEndpoint && baseUrl != null) """
@@ -256,14 +257,43 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
         return RootfsManager.runInEnv(context, motd)
     }
 
+    /** 已知模型元数据（context to output tokens）。两个工具都不会自动识别自定义 provider 的
+     *  上下文元数据：pi 回退 128e3（bundle 实证 `contextWindow ?? 128e3`），opencode 真机实测
+     *  默认显示 128k——对 glm-5.3-flash（官方 1M 上下文 / 128K 输出）是 8 倍低配，过早压缩。
+     *  只收录有出处的规格（官方文档 / models.dev），opencode 的 limit 校验要求 output 必填
+     *  （缺 output 整个配置被拒，2026-10-05 实锤），无出处不编造——未知模型继续走工具默认。 */
+    private val knownModels = mapOf(
+        "glm-5.3-flash" to (1_048_576L to 131_072L), // docs.bigmodel.cn GLM-5.3-Flash：1M 上下文 / 128K 输出
+        "glm-5.3" to (1_048_576L to 131_072L),       // docs.bigmodel.cn GLM-5.3：1M / 128K
+        "glm-5.2" to (1_048_576L to 32_768L),        // models.dev（deepinfra 托管口径）
+        "glm-4.7" to (202_752L to 16_384L),          // models.dev
+        "glm-4.6" to (202_752L to 131_072L),         // models.dev
+    )
+
+    /** 模型元数据注入：已知模型 context/output 取表（向导上下文字段可覆盖 context，
+     *  output 与 context 取小防倒挂）；未知模型只透传向导 context 给 pi（其缺省
+     *  maxTokens=16384 会作为 max_tokens 发出，不动），opencode 不写 limit（无 output
+     *  出处）。返回 (piMeta, ocLimit) 两段 JSON 片段。 */
+    private fun modelMeta(model: String, contextWindow: Long?): Pair<String, String> {
+        val known = knownModels[model.trim().lowercase()]
+        if (known == null) {
+            val pi = contextWindow?.let { ", \"contextWindow\": $it" } ?: ""
+            return pi to ""
+        }
+        val ctx = contextWindow ?: known.first
+        val out = minOf(known.second, ctx)
+        val pi = ", \"contextWindow\": $ctx, \"maxTokens\": $out"
+        val oc = ", \"limit\": {\"context\": $ctx, \"output\": $out}"
+        return pi to oc
+    }
+
     /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。
-     *  不写 models.limit：opencode 1.18.34 校验要求 limit 同时带 output（缺 output 时整个配置被拒：
-     *  "Missing key provider.drydock.models.<model>.limit.output"，2026-10-05 真机+AVD 冒烟实锤），
-     *  而 output 是端点特定值无从得知——编造会顶成 max_tokens 顶坏严格端点或截断长输出。
-     *  上下文窗口值仍记录在 .drydock-endpoint 供 agent 参考；不写 limit 时 opencode 不发
-     *  max_tokens，由端点按模型默认出（真机一直的可用形态）。 */
-    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String): String {
-        val models = if (model.isNotBlank()) "\"$model\": {\"name\": \"$model\"}," else ""
+     *  limit 只对已知模型写（见 knownModels）：schema 要求 limit 同时带 output（缺 output 时整个
+     *  配置被拒："Missing key provider.drydock.models.<model>.limit.output"，2026-10-05 实锤），
+     *  未知模型的 output 无出处不编造。 */
+    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
+        val ocLimit = modelMeta(model, contextWindow).second
+        val models = if (model.isNotBlank()) "\"$model\": {\"name\": \"$model\"$ocLimit}," else ""
         return when (protocol) {
             EndpointStore.Protocol.CHAT_COMPLETIONS -> """
                 {
@@ -306,14 +336,17 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
         }
     }
 
-    /** pi provider 配置：api 字段映射协议（openai-completions / openai-responses / anthropic-messages）。 */
-    private fun piConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String): String {
+    /** pi provider 配置：api 字段映射协议（openai-completions / openai-responses / anthropic-messages）。
+     *  contextWindow/maxTokens 见 modelMeta——pi 对缺省值回退 128e3/16384 且 maxTokens 会
+     *  作为 max_tokens 发给 API（bundle 实证）。 */
+    private fun piConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
         val api = when (protocol) {
             EndpointStore.Protocol.CHAT_COMPLETIONS -> "openai-completions"
             EndpointStore.Protocol.RESPONSES -> "openai-responses"
             EndpointStore.Protocol.ANTHROPIC -> "anthropic-messages"
         }
-        val models = if (model.isBlank()) "" else "{\"id\": \"$model\"},"
+        val piMeta = modelMeta(model, contextWindow).first
+        val models = if (model.isBlank()) "" else "{\"id\": \"$model\"$piMeta},"
         return """
             {
               "providers": {
