@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -511,12 +512,56 @@ private fun SettingsPane() {
         }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("API key 与环境变量", style = MaterialTheme.typography.titleMedium)
+        Text("环境变量（~/.drydock/env.sh）", style = MaterialTheme.typography.titleMedium)
         Text(
-            "key 不在应用里存储：写进 ~/.drydock/env.sh（DRYDOCK_API_KEY=你的 key，新会话生效），" +
-                "或打开终端把 key 发给 agent 让它帮你写。其他工具需要的变量（代理、各家 key）也放同一个文件。",
+            "每个新会话生效。key 写成 export DRYDOCK_API_KEY=…（opencode/pi 的配置已引用它），" +
+                "其他工具要的变量（代理、各家 key）也放这里；复杂改动也可以直接让 agent 帮你改。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (RootfsManager.isDeployed(context)) {
+            // 不挂 tick：5s 注册表轮询会把编辑中的内容重置回文件（打字被清），只在进入时读一次
+            var envText by remember {
+                mutableStateOf(
+                    runCatching { RootfsManager.envShFile(context).readText() }.getOrElse { "" },
+                )
+            }
+            var envSaving by remember { mutableStateOf(false) }
+            var envMsg by remember { mutableStateOf("") }
+            OutlinedTextField(
+                value = envText,
+                onValueChange = { envText = it },
+                label = { Text("env.sh（bash 语法，逐行 export）") },
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                ),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Button(
+                    enabled = !envSaving,
+                    onClick = {
+                        envSaving = true; envMsg = ""
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                runCatching { RootfsManager.envShFile(context).writeText(envText) }
+                            }
+                            envSaving = false
+                            envMsg = r.fold({ "✓ 已保存" }, { "✗ 保存失败：${it.message}" })
+                            tick++
+                        }
+                    },
+                ) { Text(if (envSaving) "保存中…" else "保存") }
+                if (envMsg.isNotBlank()) {
+                    Text(envMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+            Text(
+                "保存后新会话生效；已开着的终端输入 . ~/.drydock/env.sh 立即生效。",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text("（部署 Linux 环境后可编辑）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text("环境与备份", style = MaterialTheme.typography.titleMedium)
