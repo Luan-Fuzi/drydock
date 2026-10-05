@@ -111,33 +111,33 @@ object RecipeManager {
     }
 
     /**
-     * 把 EndpointStore 的协议/Base URL/模型写进各已装 agent 的 provider 配置
-     * （OpenCode: ~/.config/opencode/opencode.json；pi: ~/.pi/agent/models.json），
-     * key 以插值引用 DRYDOCK_API_KEY。未配置端点则跳过；顺带写 motd 与
-     * ~/.drydock-endpoint（不含 key——「agent 是配置器」的可读信息面）。
+     * 把 EndpointStore 的端点四件套写进各已装 agent 的 provider 配置
+     * （OpenCode: ~/.config/opencode/opencode.json；pi: ~/.pi/agent/models.json）。
+     * D30：provider 段用真名（providerId，不再有 drydock 前缀/占位模型）；
+     * key 引用 EndpointStore.envVar()（值在 env.sh）。内置目录厂商（DeepSeek 等）
+     * 不会走到这——向导对它们只引导 env.sh，不生成配置段。
      */
     fun applyEndpointConfig(context: Context): RootfsManager.ExecResult {
         ensureMotd(context)
         val protocol = EndpointStore.protocol(context)
         val baseUrl = EndpointStore.baseUrl(context)
         val model = EndpointStore.model(context) ?: ""
+        val providerId = EndpointStore.providerId(context)
+        val envVar = EndpointStore.envVar(context)
         val hasEndpoint = protocol != null && !baseUrl.isNullOrBlank()
-        if (hasEndpoint && baseUrl != null && protocol != null) {
-            // 占位：下方脚本内联使用（避免智能转换拆分）
-        }
         val contextWindow = EndpointStore.contextWindow(context)
         val opencodeJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            opencodeConfig(protocol, baseUrl, model, contextWindow)
+            opencodeConfig(protocol, baseUrl, model, contextWindow, providerId, envVar)
         } else ""
         val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            piConfig(protocol, baseUrl, model, contextWindow)
+            piConfig(protocol, baseUrl, model, contextWindow, providerId, envVar)
         } else ""
-        val endpointInfo = "protocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 走环境变量 DRYDOCK_API_KEY（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
+        val endpointInfo = "provider=$providerId\nprotocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 走环境变量 $envVar（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
         val envBlock = if (hasEndpoint && baseUrl != null) """
             cat > /etc/profile.d/drydock-env.sh <<ENVEOF
-export DRYDOCK_BASE_URL='$baseUrl'
-export DRYDOCK_MODEL='$model'
-export DRYDOCK_PROTOCOL='${protocol!!.name}'
+export ${envVar}_BASE_URL='$baseUrl'
+export ${envVar}_MODEL='$model'
+export ${envVar}_PROTOCOL='${protocol!!.name}'
 # 用户自定义环境变量挂载点（让 agent 帮你加也行）
 [ -f /root/.drydock/env.sh ] && . /root/.drydock/env.sh
 ENVEOF
@@ -175,8 +175,8 @@ PIJSON
     /** headless 冒烟：出第一句话即止（短 prompt、小输出）。判定标记 SMOKE_RC=0。 */
     fun smoke(context: Context, recipe: Recipe): RootfsManager.ExecResult {
         val protocol = EndpointStore.protocol(context) ?: return RootfsManager.ExecResult(2, "SMOKE_RC=2 no endpoint")
-        val model = EndpointStore.model(context).takeUnless { it.isNullOrBlank() } ?: "drydock-default"
-        val providerId = if (recipe.id == "opencode" && protocol == EndpointStore.Protocol.ANTHROPIC) "anthropic" else "drydock"
+        val model = EndpointStore.model(context) ?: return RootfsManager.ExecResult(2, "SMOKE_RC=2 no model")
+        val providerId = EndpointStore.providerId(context)
         val prompt = "只回复四个字符：OK 了"
         val cmd = when (recipe.id) {
             "opencode" -> """
@@ -184,7 +184,7 @@ PIJSON
                 echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
             """.trimIndent()
             "pi" -> """
-                cd /root && timeout 180 pi --print --provider drydock --model drydock/$model '$prompt' < /dev/null 2>&1 | tail -5
+                cd /root && timeout 180 pi --print --provider $providerId --model $providerId/$model '$prompt' < /dev/null 2>&1 | tail -5
                 echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
             """.trimIndent()
             else -> return RootfsManager.ExecResult(2, "unknown recipe")
@@ -231,63 +231,51 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
             cat > /etc/profile.d/zz-drydock.sh <<'MOTD'
             # Drydock 引导（改本文件即改启动提示）
             echo "Drydock：agent 已就绪。直接运行 opencode 或 pi 开始；"
-            echo "端点/模型配置见 ~/.drydock-endpoint；API key 走环境变量 DRYDOCK_API_KEY（~/.drydock/env.sh，"
-            echo "新会话生效）——把 key 发给 agent 让它帮你写进去，或自己编辑该文件；"
-            echo "模型元数据（上下文窗口等）在 ~/.config/opencode/opencode.json 与 ~/.pi/agent/models.json——直接让 agent 帮你改；"
-            echo "想改启动项或装更多工具，也让 agent 帮你配。"
+            echo "API key 走环境变量（~/.drydock/env.sh，新会话生效）——发给 agent 代写或自己编辑；"
+            echo "内置目录厂商（DeepSeek/OpenAI 等）放标准变量名即自动识别（如 export DEEPSEEK_API_KEY=…）；"
+            echo "自定义端点配置在 opencode.json / models.json，让 agent 帮你加；"
+            echo "模型列表空 = 先查 env.sh 里的 key 变量名对不对。"
             MOTD
             echo MOTD_RC=${'$'}?
         """.trimIndent()
         return RootfsManager.runInEnv(context, motd)
     }
 
-    /** 已知模型元数据（context to output tokens）。两个工具都不会自动识别自定义 provider 的
-     *  上下文元数据：pi 回退 128e3（bundle 实证 `contextWindow ?? 128e3`），opencode 真机实测
-     *  默认显示 128k——对 glm-5.3-flash（官方 1M 上下文 / 128K 输出）是 8 倍低配，过早压缩。
-     *  只收录有出处的规格（官方文档 / models.dev），opencode 的 limit 校验要求 output 必填
-     *  （缺 output 整个配置被拒，2026-10-05 实锤），无出处不编造——未知模型继续走工具默认。 */
-    private val knownModels = mapOf(
-        "glm-5.3-flash" to (1_048_576L to 131_072L), // docs.bigmodel.cn GLM-5.3-Flash：1M 上下文 / 128K 输出
-        "glm-5.3" to (1_048_576L to 131_072L),       // docs.bigmodel.cn GLM-5.3：1M / 128K
-        "glm-5.2" to (1_048_576L to 32_768L),        // models.dev（deepinfra 托管口径）
-        "glm-4.7" to (202_752L to 16_384L),          // models.dev
-        "glm-4.6" to (202_752L to 131_072L),         // models.dev
-    )
-
-    /** 模型元数据注入：已知模型 context/output 取表（向导上下文字段可覆盖 context，
-     *  output 与 context 取小防倒挂）；未知模型只透传向导 context 给 pi（其缺省
-     *  maxTokens=16384 会作为 max_tokens 发出，不动），opencode 不写 limit（无 output
-     *  出处）。返回 (piMeta, ocLimit) 两段 JSON 片段。 */
+    /** 模型元数据（D30 收缩）：knownModels 表退役——预设表（EndpointStore.presets）
+     *  自带 contextWindow，预设路径元数据从那里来；自定义路径只透传向导上下文字段给 pi
+     *  （其缺省 maxTokens=16384 会作为 max_tokens 发出，不动），opencode 不写 limit
+     *  （schema 要求 limit.context/output 双全，无 output 出处不编造，2026-10-05 实锤）。 */
     private fun modelMeta(model: String, contextWindow: Long?): Pair<String, String> {
-        val known = knownModels[model.trim().lowercase()]
-        if (known == null) {
-            val pi = contextWindow?.let { ", \"contextWindow\": $it" } ?: ""
-            return pi to ""
-        }
-        val ctx = contextWindow ?: known.first
-        val out = minOf(known.second, ctx)
-        val pi = ", \"contextWindow\": $ctx, \"maxTokens\": $out"
-        val oc = ", \"limit\": {\"context\": $ctx, \"output\": $out}"
+        // pi 的 maxTokens 会作为 max_tokens 发给 API——GLM 端点限制 ≤131072（1210 实锤），
+        // 不能照抄 contextWindow；无独立出处时收敛到 128k（保守值，介于 pi 缺省 16384 与端点上限之间）
+        val pi = contextWindow?.let { ", \"contextWindow\": $it, \"maxTokens\": ${minOf(it, 131_072L)}" } ?: ""
+        val oc = contextWindow?.let { ", \"limit\": {\"context\": $it, \"output\": ${minOf(it, 131_072L)}}}" } ?: ""
         return pi to oc
     }
 
-    /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。
-     *  limit 只对已知模型写（见 knownModels）：schema 要求 limit 同时带 output（缺 output 时整个
-     *  配置被拒："Missing key provider.drydock.models.<model>.limit.output"，2026-10-05 实锤），
-     *  未知模型的 output 无出处不编造。 */
-    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
+    /** OpenCode provider 配置（D30）：provider 段用真名（providerId），key 引用向导
+     *  约定的环境变量（值在 env.sh），不再有 drydock 前缀与占位模型。
+     *  limit 只在有上下文出处时写（schema 要求 context/output 双全）。 */
+    private fun opencodeConfig(
+        protocol: EndpointStore.Protocol,
+        baseUrl: String,
+        model: String,
+        contextWindow: Long?,
+        providerId: String,
+        envVar: String,
+    ): String {
         val ocLimit = modelMeta(model, contextWindow).second
-        val models = if (model.isNotBlank()) "\"$model\": {\"name\": \"$model\"$ocLimit}," else ""
+        val models = if (model.isNotBlank()) "\"$model\": {\"name\": \"$model\"$ocLimit}" else ""
         return when (protocol) {
             EndpointStore.Protocol.CHAT_COMPLETIONS -> """
                 {
                   "${'$'}schema": "https://opencode.ai/config.json",
                   "provider": {
-                    "drydock": {
+                    "$providerId": {
                       "npm": "@ai-sdk/openai-compatible",
-                      "name": "Drydock Endpoint",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:DRYDOCK_API_KEY}" },
-                      "models": { $models "drydock-default": {"name": "Drydock Endpoint 默认"} }
+                      "name": "$providerId",
+                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:$envVar}" },
+                      "models": { $models }
                     }
                   }
                 }
@@ -296,11 +284,11 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
                 {
                   "${'$'}schema": "https://opencode.ai/config.json",
                   "provider": {
-                    "drydock": {
+                    "$providerId": {
                       "npm": "@ai-sdk/openai",
-                      "name": "Drydock Endpoint",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:DRYDOCK_API_KEY}" },
-                      "models": { $models "drydock-default": {"name": "Drydock Endpoint 默认"} }
+                      "name": "$providerId",
+                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:$envVar}" },
+                      "models": { $models }
                     }
                   }
                 }
@@ -309,10 +297,11 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
                 {
                   "${'$'}schema": "https://opencode.ai/config.json",
                   "provider": {
-                    "anthropic": {
-                      "name": "Anthropic 兼容端点",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:DRYDOCK_API_KEY}" },
-                      "models": { $models "drydock-default": {"name": "Drydock Endpoint 默认"} }
+                    "$providerId": {
+                      "npm": "@ai-sdk/anthropic",
+                      "name": "$providerId",
+                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:$envVar}" },
+                      "models": { $models }
                     }
                   }
                 }
@@ -320,25 +309,33 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
         }
     }
 
-    /** pi provider 配置：api 字段映射协议（openai-completions / openai-responses / anthropic-messages）。
-     *  contextWindow/maxTokens 见 modelMeta——pi 对缺省值回退 128e3/16384 且 maxTokens 会
-     *  作为 max_tokens 发给 API（bundle 实证）。 */
-    private fun piConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
+    /** pi provider 配置（D30）：真名 provider + envVar 插值；api 字段映射协议
+     *  （openai-completions / openai-responses / anthropic-messages）。
+     *  contextWindow/maxTokens 见 modelMeta——pi 对缺省值回退 128e3/16384 且 maxTokens
+     *  会作为 max_tokens 发给 API（bundle 实证）。 */
+    private fun piConfig(
+        protocol: EndpointStore.Protocol,
+        baseUrl: String,
+        model: String,
+        contextWindow: Long?,
+        providerId: String,
+        envVar: String,
+    ): String {
         val api = when (protocol) {
             EndpointStore.Protocol.CHAT_COMPLETIONS -> "openai-completions"
             EndpointStore.Protocol.RESPONSES -> "openai-responses"
             EndpointStore.Protocol.ANTHROPIC -> "anthropic-messages"
         }
         val piMeta = modelMeta(model, contextWindow).first
-        val models = if (model.isBlank()) "" else "{\"id\": \"$model\"$piMeta},"
+        val models = if (model.isBlank()) "" else "{\"id\": \"$model\"$piMeta}"
         return """
             {
               "providers": {
-                "drydock": {
+                "$providerId": {
                   "baseUrl": "$baseUrl",
                   "api": "$api",
-                  "apiKey": "${'$'}DRYDOCK_API_KEY",
-                  "models": [ $models {"id": "drydock-default"} ]
+                  "apiKey": "${'$'}$envVar",
+                  "models": [ $models ]
                 }
               }
             }
