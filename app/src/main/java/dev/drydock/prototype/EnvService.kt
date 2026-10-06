@@ -89,9 +89,14 @@ class EnvService : Service() {
                 return@Thread
             }
             // 新会话优先：ensureAll 串行恢复历史会话每个 ~10s，堆多个时会把
-            // 发起方的 60s 轮询耗光（夜批实锤）；先建新会话再恢复其余（幂等）
+            // 发起方的 60s 轮询耗光（夜批实锤）；先建新会话再恢复其余（幂等）。
+            // start() 的 persist 只写本进程内存的会话表——force-stop 后新起的 :env
+            // 内存为空，直接 persist 会把注册表里的历史会话抹掉（2026-10-07 night-b
+            // t11 实锤 main 消失）。先快照旧会话名，建完新会话逐个补回。
             if (newSession != null) {
+                val preExisting = TerminalManager.readSessions(app).map { it.name }
                 TerminalManager.start(app, newSession)
+                preExisting.filter { it != newSession }.forEach { TerminalManager.start(app, it) }
             }
             TerminalManager.ensureAll(app)
             Timeline.log(this, "sessions_ready", mapOf("names" to TerminalManager.readSessions(app).map { it.name }))

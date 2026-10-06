@@ -522,7 +522,21 @@ def t11(r):
     if not sc.wait_text("回主页", 20):
         raise RuntimeError("菜单未弹出")
     xml = sc.ui_dump()
-    r["menu_lists_sessions"] = "主终端" in xml
+    # 菜单条目从注册表 + 显示名实时推导，不写死「主终端」——注册表内容依历史，
+    # 且旧会话的后台补建是异步的（force-stop 后的 :env 逐个重建 ~15s/个），
+    # 紧随其后的 force-stop 可合理打断它（2026-10-07 实锤）
+    import json as _json
+    try:
+        names = _json.loads(sc.run_as_cat("files/terminal-session-names.json") or "{}")
+    except Exception:
+        names = {}
+
+    def disp(n):
+        return names.get(n, "主终端" if n == "main" else n)
+
+    sessions = sc.registry_sessions()
+    r["menu_expected"] = [f"{disp(s['name'])} :{s['port']}" for s in sessions]
+    r["menu_lists_sessions"] = bool(sessions) and any(m in xml for m in r["menu_expected"])
     r["menu_has_new_and_home"] = ("新建会话" in xml) and ("回主页" in xml)
     screencap("night-terminal-menu.png")
 
