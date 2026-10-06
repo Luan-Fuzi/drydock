@@ -283,7 +283,7 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
             # Drydock 引导（改本文件即改启动提示）
             echo "Drydock：agent 已就绪。直接运行 opencode 或 pi 开始；"
             echo "API key 走环境变量（~/.drydock/env.sh，新会话生效）——发给 agent 代写或自己编辑；"
-            echo "内置目录厂商（DeepSeek/OpenAI 等）放标准变量名即自动识别（如 export DEEPSEEK_API_KEY=…）；"
+            echo "内置目录厂商（DeepSeek/智谱 GLM/OpenAI 等）放标准变量名即自动识别——GLM Coding Plan 用 ZHIPU_API_KEY，";
             echo "自定义端点配置在 opencode.json / models.json，让 agent 帮你改；DSH 用户：dsh web 起服务，"
 echo "把日志里带 token 的网址复制到浏览器打开；key 放 DEEPSEEK_API_KEY（env.sh）。";
             echo "模型列表空 = 先查 env.sh 里的 key 变量名对不对。"

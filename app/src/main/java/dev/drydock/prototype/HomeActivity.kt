@@ -537,8 +537,8 @@ private fun SettingsPane() {
 
         Text("Coding 端点", style = MaterialTheme.typography.titleMedium)
         Text(
-            "自定义端点列表（写进 opencode/pi 的配置文件；内置目录厂商不需要在这——" +
-                "往 ~/.drydock/env.sh 放标准变量名即自动识别）",
+            "自定义端点列表（写进 opencode/pi 的配置文件）。内置目录厂商不需要在这——" +
+                "往 ~/.drydock/env.sh 放标准变量名即自动识别（GLM Coding Plan 用 ZHIPU_API_KEY）",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // 已添加端点列表（D30：可见、可删）

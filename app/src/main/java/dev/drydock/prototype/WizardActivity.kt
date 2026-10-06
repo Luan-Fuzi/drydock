@@ -209,9 +209,10 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     Text(
         "key 不在应用里存储，写在环境变量文件 ~/.drydock/env.sh（设置 → 环境变量，" +
             "或装好 agent 后发给它代写）。两种情况：\n\n" +
-            "① 用 DeepSeek / OpenAI / Moonshot 等内置目录厂商：往 env.sh 放一行标准变量名" +
-            "（如 export DEEPSEEK_API_KEY=你的key），agent 的模型列表自动出现，零配置；\n\n" +
-            "② 用自定义端点（GLM Coding Plan 这类目录外服务）：在 设置 → Coding 端点 " +
+            "① 用内置目录厂商（DeepSeek / OpenAI / Moonshot / 智谱 GLM 等）：往 env.sh 放一行" +
+            "标准变量名（如 export DEEPSEEK_API_KEY=你的key、GLM Coding Plan 用 ZHIPU_API_KEY），" +
+            "agent 的模型列表自动出现，多模态/上下文元数据由工具官方目录维护，零配置；\n\n" +
+            "② 用真正的自定义端点（目录外服务）：在 设置 → Coding 端点 " +
             "填一张小表（协议 / Base URL / 模型 ID / key 变量名），会写进两个 agent 各自的配置文件。",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
