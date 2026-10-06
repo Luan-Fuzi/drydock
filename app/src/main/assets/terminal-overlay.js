@@ -8,12 +8,26 @@
   // ttyd 默认字体链（Consolas/Liberation/Menlo/Courier）在 Android 全不存在，
   // 落到通用 monospace 后缺 U+23F5(⏵) 等字形变豆腐块；换安卓实际有的等宽链。
   // term 就绪后顺带做 resize 踹脚（见 nudgeResize）。
+
+  // ---------- 显示配置（设置页 TermPrefs → 宿主注入）----------
+  // 首载走 window.__DK_CFG；运行中（设置页改完回到终端页）经 __dk.applyCfg 推送。
+  // 字号变化重排后须 resize 踹脚，服务端 cols/rows 才跟上。
+  function applyCfg(cfg) {
+    try {
+      if (typeof term === 'undefined' || !term.options) return false;
+      if (cfg && cfg.fontSize) term.options.fontSize = cfg.fontSize;
+      if (cfg && cfg.scrollback) term.options.scrollback = cfg.scrollback;
+      nudgeResize(true);
+      return true;
+    } catch (e) { return false; }
+  }
+
   function fixFont() {
     try {
       if (typeof term !== 'undefined' && term.options) {
         term.options.fontFamily =
           '"Noto Sans Mono","Roboto Mono","Droid Sans Mono",monospace';
-        nudgeResize();
+        applyCfg(window.__DK_CFG || {});
         return true;
       }
     } catch (e) { /* term 未就绪则稍后重试 */ }
@@ -59,8 +73,8 @@
   // 载入后先恢复记忆的终端模式，再双次 resize（真尺寸变化 → 内核 SIGWINCH → dtach 链
   // → TUI 重绘），重绘落进（恢复的）alt 屏即覆盖而非追加。
   var nudged = false;
-  function nudgeResize() {
-    if (nudged) return;
+  function nudgeResize(force) {
+    if (nudged && !force) return;
     nudged = true;
     try {
       var saved = null;
@@ -209,6 +223,7 @@
     keyLabels: ['Ctrl','Esc','Tab','⇧Tab','PgUp','PgDn','←','↑','↓','→','↵'],
     armCtrl: setCtrl,
     isCtrlArmed: function () { return ctrlArmed; },
+    applyCfg: applyCfg,
   };
 
   // ---------- AV2 观测桥 ----------

@@ -147,6 +147,28 @@ def swipe_up():
     shell("input", "swipe", "540", "1600", "540", "500", "300")
 
 
+def wait_focus_activity(name, timeout_s=180, poll=2):
+    """等指定 Activity 出现在前台焦点。"""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        out = shell("dumpsys", "window")
+        for line in out.splitlines():
+            if "mCurrentFocus=" in line and name in line:
+                return True
+        time.sleep(poll)
+    return False
+
+
+def open_terminal_session(timeout_s=180):
+    """主页 → 终端页（2026-10-06 界面：会话卡片即入口，副标题一律含「本地端口」）。
+    空列表走「新建会话」对话框（默认名直接「创建」）。返回 TerminalActivity 是否前台。"""
+    if tap_text("本地端口", 30):
+        return wait_focus_activity("TerminalActivity", timeout_s)
+    if tap_text("新建会话", 30) and tap_text("创建", 30):
+        return wait_focus_activity("TerminalActivity", timeout_s)
+    return False
+
+
 def tap_text(text, timeout_s=180):
     """等出现并点击；首屏找不到先向下滚动两轮再找（先 dump 核对，真机纪律输入限界）。"""
     for scroll_round in range(3):

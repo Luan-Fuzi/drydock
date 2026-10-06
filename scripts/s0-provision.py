@@ -92,9 +92,9 @@ def main():
     if not sc.wait_text("终端层就绪", 900):
         sys.exit("终端层未就绪")
 
-    step("打开终端会话")
-    if not sc.tap_text("打开终端", 30):
-        sys.exit("找不到「打开终端」按钮")
+    step("打开终端会话（卡片/新建对话框，2026-10-06 界面）")
+    if not sc.open_terminal_session():
+        sys.exit("打不开终端会话（主页既无会话卡片，新建对话框也不可用）")
     sess = None
     t0 = time.time()
     while time.time() - t0 < 90:

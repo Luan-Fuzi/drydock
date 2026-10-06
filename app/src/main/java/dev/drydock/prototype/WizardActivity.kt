@@ -263,6 +263,6 @@ private fun RecipeStep(
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(onClick = onFinish) { Text("打开终端") }
+        Button(onClick = onFinish) { Text("进入终端") }
     }
 }

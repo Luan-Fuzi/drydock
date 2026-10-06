@@ -28,13 +28,22 @@ def main():
     key = sys.argv[1]
     xml = dump()
     pat = re.compile(r'text="([^"]*)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
+    exact = None
+    contains = None
     for m in pat.finditer(xml):
-        if key in m.group(1):
-            x = (int(m.group(2)) + int(m.group(4))) // 2
-            y = (int(m.group(3)) + int(m.group(5))) // 2
-            print(f"tap '{m.group(1)}' @ {x},{y}")
-            sh(*adb_prefix(), "shell", "input", "tap", str(x), str(y))
-            sys.exit(0)
+        if key == m.group(1) and exact is None:
+            exact = m
+        if key in m.group(1) and contains is None:
+            contains = m
+    # 精确匹配优先：正文文案可能只「包含」关键词（如教育文案含「新建会话」、
+    # 会话卡片副标题含「本地端口」），点文案无效果（2026-10-07 t1 实测踩中）
+    hit = exact or contains
+    if hit:
+        x = (int(hit.group(2)) + int(hit.group(4))) // 2
+        y = (int(hit.group(3)) + int(hit.group(5))) // 2
+        print(f"tap '{hit.group(1)}' @ {x},{y} ({'exact' if hit is exact else 'contains'})")
+        sh(*adb_prefix(), "shell", "input", "tap", str(x), str(y))
+        sys.exit(0)
     print(f"not found: {key}", file=sys.stderr)
     # 打印可见文本帮助诊断
     for m in pat.finditer(xml):

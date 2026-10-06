@@ -44,16 +44,13 @@ def inject(sess, minutes=40):
 
 
 def bring_up_terminal():
-    """app 冷启后的 UI 路径：安装终端层（幂等秒过）→ 打开终端。"""
+    """app 冷启后的 UI 路径：主页 → 会话卡片接回（空表走新建对话框）。
+    （「安装终端层」手动页随 MainActivity 移除——终端层由新建会话自动安装。）"""
     sc.shell("am", "start", "-n", sc.MAIN_ACTIVITY)
-    if not sc.wait_text("Drydock 原型", 60):
-        sys.exit("MainActivity 未出现（锁屏？请解锁后重试）")
-    if not sc.tap_text("安装终端层", 60):
-        sys.exit("找不到「安装终端层」按钮")
-    if not sc.wait_text("终端层就绪", 300):
-        sys.exit("终端层未就绪")
-    if not sc.tap_text("打开终端", 60):
-        sys.exit("找不到「打开终端」按钮")
+    if not sc.wait_text("新建会话", 60):
+        sys.exit("主页未出现（锁屏？请解锁后重试）")
+    if not sc.open_terminal_session():
+        sys.exit("打不开终端（卡片与新建对话框都不可用）")
     t0 = time.time()
     while time.time() - t0 < 90:
         if sc.main_session():

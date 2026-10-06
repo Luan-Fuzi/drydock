@@ -53,16 +53,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** 外观偏好（D27）：跟随系统 / 浅色 / 深色。 */
+/** 外观偏好（D27）：跟随系统 / 浅色 / 深色。组合状态驱动——切换写 mode 即时
+ *  重组全树（原 recreate() 实现会重建 Activity，底栏 tab 随 remember 丢失，
+ *  点外观跳回会话页）；落盘只为下次冷启恢复。 */
 object ThemeStore {
     enum class Mode { SYSTEM, LIGHT, DARK }
-    fun load(context: Context): Mode =
-        context.getSharedPreferences("drydock", Context.MODE_PRIVATE)
-            .getString("theme_mode", null)?.let { runCatching { Mode.valueOf(it) }.getOrNull() } ?: Mode.SYSTEM
+    val mode = mutableStateOf(Mode.SYSTEM)
 
-    fun save(context: Context, mode: Mode) {
+    fun init(context: Context) {
+        mode.value = context.getSharedPreferences("drydock", Context.MODE_PRIVATE)
+            .getString("theme_mode", null)?.let { runCatching { Mode.valueOf(it) }.getOrNull() } ?: Mode.SYSTEM
+    }
+
+    fun save(context: Context, m: Mode) {
         context.getSharedPreferences("drydock", Context.MODE_PRIVATE)
-            .edit().putString("theme_mode", mode.name).apply()
+            .edit().putString("theme_mode", m.name).apply()
+        mode.value = m
     }
 }
 
@@ -177,6 +183,7 @@ class HomeActivity : ComponentActivity() {
                 }.start()
             }
         }
+        ThemeStore.init(this)
         setContent {
             DrydockTheme { HomeScreen() }
         }
@@ -208,9 +215,7 @@ class HomeActivity : ComponentActivity() {
 /** 全 app 主题入口：按 ThemeStore 切换（会话/文件/设置三栏生效；向导与救援页维持深色）。 */
 @Composable
 fun DrydockTheme(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    val mode = remember { ThemeStore.load(context) }
-    val dark = when (mode) {
+    val dark = when (ThemeStore.mode.value) {
         ThemeStore.Mode.DARK -> true
         ThemeStore.Mode.LIGHT -> false
         ThemeStore.Mode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
@@ -223,7 +228,8 @@ fun DrydockTheme(content: @Composable () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen() {
-    var tab by remember { mutableStateOf(0) }
+    // saveable：旋转/重建后停在原 tab（主题等触发 recreate 的场景不再跳页）
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -277,7 +283,13 @@ private fun SessionPane() {
     var tick by remember { mutableStateOf(0) }
     var busy by remember { mutableStateOf("") }
     var closeTarget by remember { mutableStateOf<TerminalManager.Session?>(null) }
+    var renameTarget by remember { mutableStateOf<TerminalManager.Session?>(null) }
+    var showNewDialog by remember { mutableStateOf(false) }
     val sessions = remember(tick) { TerminalManager.readSessions(context) }
+    val displayNames = remember(tick) { SessionNames.load(context) }
+
+    fun displayName(name: String): String =
+        displayNames[name] ?: if (name == TerminalManager.MAIN) "主终端" else name
 
     // 会话列表保鲜：回主页/停留期间 5s 轮询注册表（修「回来不刷新」）
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -287,97 +299,170 @@ private fun SessionPane() {
         }
     }
 
+    // 打开（或接回）会话：卡片即入口。全进程死亡后 holder/ttyd 不在，spawn 必须走
+    // :env 进程组（app 进程直起的子进程会被 AMS 清剿，D18）；就绪判据见 awaitSessionReady
+    fun openSession(name: String) {
+        if (busy.isNotBlank()) return
+        scope.launch {
+            val appCtx = context.applicationContext
+            busy = "接回会话 ${displayName(name)}…"
+            try {
+                val i = Intent(appCtx, EnvService::class.java).putExtra("new_session", name)
+                appCtx.startForegroundService(i)
+                val ready = awaitSessionReady(appCtx, name)
+                busy = ""
+                if (ready != null) {
+                    context.startActivity(
+                        Intent(context, TerminalActivity::class.java).putExtra("session", name))
+                } else busy = "会话接回失败（设置 → 开发者工具看日志）"
+            } catch (e: Exception) {
+                busy = ""
+            }
+        }
+    }
+
+    // 新建会话（唯一入口；注册表空 = 建主终端）。首启部署与终端层安装（原
+    // 「打开终端」大按钮职责）一并承担：新用户从这里一步进终端
+    fun createSession(display: String) {
+        if (busy.isNotBlank()) return
+        scope.launch {
+            val appCtx = context.applicationContext
+            try {
+                val tech = if (sessions.isEmpty()) TerminalManager.MAIN else TerminalManager.newSessionName(appCtx)
+                if (display.isNotBlank()) SessionNames.set(appCtx, tech, display)
+                if (!RootfsManager.isDeployed(appCtx)) {
+                    busy = "部署 Linux 环境（首次约 1 分钟）…"
+                    withContext(Dispatchers.IO) { RootfsManager.deploy(appCtx) { } }
+                }
+                busy = "准备终端层…"
+                withContext(Dispatchers.IO) { TerminalManager.ensureTerminalLayer(appCtx) }
+                busy = "启动会话…"
+                context.startForegroundService(
+                    Intent(appCtx, EnvService::class.java).putExtra("new_session", tech))
+                val ready = awaitSessionReady(appCtx, tech)
+                busy = ""
+                tick++
+                if (ready != null) {
+                    context.startActivity(
+                        Intent(context, TerminalActivity::class.java).putExtra("session", tech))
+                } else busy = "会话启动失败（设置 → 开发者工具看日志）"
+            } catch (e: Exception) {
+                busy = ""
+            }
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("终端会话", style = MaterialTheme.typography.titleLarge)
+        Text("会话", style = MaterialTheme.typography.titleLarge)
+
+        if (busy.isNotBlank()) {
+            Text(busy, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+        }
 
         if (sessions.isEmpty()) {
             Text(
                 "Drydock 让 coding agent 在手机上常驻干活。\n\n" +
                     "第一次使用：先到「设置 → 初始设置」完成三步配置（保活、端点与模型、安装 agent），" +
-                    "然后点下面的按钮打开终端——OpenCode 或 pi 会直接可用。\n\n" +
-                    "API key 走环境变量：打开终端后把 key 发给 agent，它会帮你写进 ~/.drydock/env.sh；" +
+                    "然后点「新建会话」进入终端——OpenCode 或 pi 会直接可用。\n\n" +
+                    "API key 走环境变量：进入终端后把 key 发给 agent，它会帮你写进 ~/.drydock/env.sh；" +
                     "锁屏挂机不中断、产物在手机文件管理器可见。",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        Button(
-            enabled = busy.isBlank(),
-            onClick = {
-                scope.launch {
-                    val appCtx = context.applicationContext
-                    try {
-                        if (!RootfsManager.isDeployed(appCtx)) {
-                            busy = "部署 Linux 环境（首次约 1 分钟）…"
-                            withContext(Dispatchers.IO) { RootfsManager.deploy(appCtx) { } }
-                        }
-                        busy = "准备终端层…"
-                        withContext(Dispatchers.IO) { TerminalManager.ensureTerminalLayer(appCtx) }
-                        busy = "启动会话…"
-                        // main 插队：new_session 通道先建目标再 ensureAll 其余（串行 ~10-15s/会话）
-                        val si = Intent(appCtx, EnvService::class.java).putExtra("new_session", TerminalManager.MAIN)
-                        appCtx.startForegroundService(si)
-                        val ready = awaitSessionReady(appCtx, TerminalManager.MAIN)
-                        busy = ""
-                        if (ready != null) context.startActivity(Intent(context, TerminalActivity::class.java))
-                        else busy = "会话启动失败（设置 → 开发者工具看日志）"
-                    } catch (e: Exception) {
-                        busy = ""
-                    }
-                }
-            },
-        ) { Text(if (busy.isBlank()) "打开终端（agent 在这里）" else busy) }
+        Button(enabled = busy.isBlank(), onClick = { showNewDialog = true }) { Text("新建会话") }
 
         sessions.forEach { s ->
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(modifier = Modifier.fillMaxWidth().clickable { openSession(s.name) }) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
-                    Column {
-                        Text(if (s.name == TerminalManager.MAIN) "主终端" else s.name, style = MaterialTheme.typography.titleMedium)
-                        Text("本地端口 :${s.port}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.weight(1f)) {
+                        Text(displayName(s.name), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            (if (displayName(s.name) != s.name) "${s.name} · " else "") +
+                                "本地端口 :${s.port}",
+                            fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    Row {
-                        TextButton(onClick = {
-                            scope.launch {
-                                val appCtx = context.applicationContext
-                                // 全进程死亡后（重启/force-stop/pm install）holder/ttyd 不在；
-                                // spawn 必须走 :env 进程组（app 进程直起的子进程会被 AMS 清剿，D18）
-                                busy = "接回会话 ${s.name}…"
-                                try {
-                                    val i = Intent(appCtx, EnvService::class.java).putExtra("new_session", s.name)
-                                    appCtx.startForegroundService(i)
-                                    val ready = awaitSessionReady(appCtx, s.name)
-                                    busy = ""
-                                    if (ready != null) {
-                                        context.startActivity(
-                                            Intent(context, TerminalActivity::class.java).putExtra("session", s.name))
-                                    } else busy = "会话接回失败（设置 → 开发者工具看日志）"
-                                } catch (e: Exception) {
-                                    busy = ""
-                                }
-                            }
-                        }) { Text("打开") }
-                        TextButton(onClick = { closeTarget = s }) { Text("关闭") }
-                    }
+                    TextButton(enabled = busy.isBlank(), onClick = { renameTarget = s }) { Text("改名") }
+                    TextButton(enabled = busy.isBlank(), onClick = { closeTarget = s }) { Text("关闭") }
                 }
             }
+        }
+
+        // 新建：默认名可改（display 层，SessionNames 落盘；technical 名照旧自动分配）
+        if (showNewDialog) {
+            var nameInput by remember(showNewDialog) {
+                mutableStateOf(if (sessions.isEmpty()) "主终端" else "会话 ${sessions.size + 1}")
+            }
+            AlertDialog(
+                onDismissRequest = { showNewDialog = false },
+                title = { Text("新建会话") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "每个会话是独立的终端，互不影响、可同时跑不同任务。",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedTextField(
+                            value = nameInput,
+                            onValueChange = { nameInput = it },
+                            label = { Text("会话名称") },
+                            singleLine = true,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = nameInput.isNotBlank() && busy.isBlank(), onClick = {
+                        showNewDialog = false
+                        createSession(nameInput)
+                    }) { Text("创建") }
+                },
+                dismissButton = { TextButton(onClick = { showNewDialog = false }) { Text("取消") } },
+            )
+        }
+
+        renameTarget?.let { t ->
+            var nameInput by remember(t.name) { mutableStateOf(displayName(t.name)) }
+            AlertDialog(
+                onDismissRequest = { renameTarget = null },
+                title = { Text("重命名会话") },
+                text = {
+                    OutlinedTextField(
+                        value = nameInput,
+                        onValueChange = { nameInput = it },
+                        label = { Text("会话名称") },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    TextButton(enabled = nameInput.isNotBlank(), onClick = {
+                        SessionNames.set(context, t.name, nameInput)
+                        renameTarget = null
+                        tick++
+                    }) { Text("保存") }
+                },
+                dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
+            )
         }
 
         closeTarget?.let { t ->
             AlertDialog(
                 onDismissRequest = { closeTarget = null },
-                title = { Text("关闭会话 ${t.name}？") },
+                title = { Text("关闭会话「${displayName(t.name)}」？") },
                 text = {
                     Text(
                         "dtach 会话无服务进程：关闭后该会话的内容（含 agent TUI）丢失，" +
                             "重新打开会是全新 shell。" +
-                            (if (t.name == TerminalManager.MAIN) "main 关闭后会在下次「打开终端」时自动重建。" else ""),
+                            (if (t.name == TerminalManager.MAIN) "全部会话都关闭后，下次打开会自动重建主终端。" else ""),
                     )
                 },
                 confirmButton = {
@@ -385,7 +470,7 @@ private fun SessionPane() {
                         closeTarget = null
                         scope.launch {
                             val appCtx = context.applicationContext
-                            busy = "关闭会话 ${t.name}…"
+                            busy = "关闭会话 ${displayName(t.name)}…"
                             try {
                                 appCtx.startForegroundService(
                                     Intent(appCtx, EnvService::class.java).putExtra("stop_session", t.name))
@@ -408,31 +493,6 @@ private fun SessionPane() {
                 },
                 dismissButton = { TextButton(onClick = { closeTarget = null }) { Text("取消") } },
             )
-        }
-
-        if (sessions.isNotEmpty()) {
-            // 新建会话直建（D29 后无密钥选择；key 统一走环境变量，会话内生效）
-            OutlinedButton(enabled = busy.isBlank(), onClick = {
-                val name = TerminalManager.newSessionName(context)
-                scope.launch {
-                    busy = "新建会话 $name…"
-                    try {
-                        context.startForegroundService(
-                            Intent(context, EnvService::class.java).putExtra("new_session", name))
-                        var found = false
-                        repeat(60) {
-                            if (it > 0) delay(1000)
-                            if (TerminalManager.readSessions(context).any { s2 -> s2.name == name }) { found = true; return@repeat }
-                        }
-                        busy = ""
-                        tick++
-                        if (found) context.startActivity(Intent(context, TerminalActivity::class.java).putExtra("session", name))
-                    } catch (e: Exception) {
-                        busy = ""
-                    }
-                }
-            }) { Text("新建会话") }
-            TextButton(onClick = { tick++ }) { Text("刷新") }
         }
     }
 }
@@ -516,18 +576,6 @@ private fun SettingsPane() {
     var tick by remember { mutableStateOf(0) }
 
     data class MirrorOpt(val id: String, val label: String, val aptUrl: String?, val npmUrl: String?)
-
-    val aptOpts = listOf(
-        MirrorOpt("default", "默认（国内镜像 + 官方自动回退）", null, null),
-        MirrorOpt("tuna", "清华 TUNA", "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports", null),
-        MirrorOpt("ustc", "中科大 USTC", "http://mirrors.ustc.edu.cn/ubuntu-ports", null),
-        MirrorOpt("nju", "南京大学 NJU", "http://mirror.nju.edu.cn/ubuntu-ports", null),
-        MirrorOpt("official", "官方源（海外网络）", "http://ports.ubuntu.com/ubuntu-ports", null),
-    )
-    val npmOpts = listOf(
-        MirrorOpt("npmmirror", "npmmirror（默认，国内）", null, "https://registry.npmmirror.com"),
-        MirrorOpt("npmjs", "npm 官方源", null, "https://registry.npmjs.org"),
-    )
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -740,30 +788,88 @@ private fun SettingsPane() {
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text("镜像源", style = MaterialTheme.typography.titleMedium)
         Text("仅影响安装下载速度；也可手编 ~/.drydock/mirrors 或让 agent 改，三者等价。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        var aptChoice by remember { mutableStateOf(aptOpts.first()) }
-        var npmChoice by remember { mutableStateOf(npmOpts.first()) }
-        var mirrorMsg by remember { mutableStateOf("") }
-        aptOpts.forEach { o ->
-            Row(modifier = Modifier.fillMaxWidth().clickable { aptChoice = o }) {
-                RadioButton(selected = aptChoice == o, onClick = { aptChoice = o })
-                Text(o.label, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
-            }
+        // 单选回填当前生效值（读 ~/.drydock/mirrors——GUI、手编、agent 改三者同源）；
+        // 列表外的手编源动态补一条，如实显示而非回落默认
+        val mirrorTxt = remember(tick) {
+            runCatching {
+                File(RootfsManager.rootfsDir(context), "root/.drydock/mirrors")
+                    .takeIf { it.exists() }?.readText()
+            }.getOrNull().orEmpty()
         }
-        npmOpts.forEach { o ->
-            Row(modifier = Modifier.fillMaxWidth().clickable { npmChoice = o }) {
-                RadioButton(selected = npmChoice == o, onClick = { npmChoice = o })
-                Text(o.label, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
-            }
-        }
-        Button(enabled = mirrorMsg.isBlank() && RootfsManager.isDeployed(context), onClick = {
-            mirrorMsg = "应用中…"
-            scope.launch {
-                val r = withContext(Dispatchers.IO) {
-                    RecipeManager.applyMirrors(context.applicationContext, aptChoice.id, npmChoice.npmUrl)
+        val curApt = Regex("DRYDOCK_APT_MIRROR=(\\S+)").find(mirrorTxt)?.groupValues?.get(1)
+        val curNpm = Regex("DRYDOCK_NPM_REGISTRY=(\\S+)").find(mirrorTxt)?.groupValues?.get(1)
+        val aptOpts = remember(mirrorTxt) {
+            buildList {
+                add(MirrorOpt("default", "默认（国内镜像 + 官方自动回退）", null, null))
+                add(MirrorOpt("tuna", "清华 TUNA", "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports", null))
+                add(MirrorOpt("ustc", "中科大 USTC", "http://mirrors.ustc.edu.cn/ubuntu-ports", null))
+                add(MirrorOpt("nju", "南京大学 NJU", "http://mirror.nju.edu.cn/ubuntu-ports", null))
+                add(MirrorOpt("official", "官方源（海外网络）", "http://ports.ubuntu.com/ubuntu-ports", null))
+                if (curApt != null && none { it.aptUrl == curApt }) {
+                    add(MirrorOpt("custom-apt", "当前手编：$curApt", curApt, null))
                 }
-                mirrorMsg = if (r.output.contains("MIRROR_RC=0")) "✓ 已生效（新安装走新源）" else "✗ ${r.output.takeLast(200)}"
             }
-        }) { Text(if (mirrorMsg.isBlank()) "应用镜像设置" else mirrorMsg) }
+        }
+        val npmOpts = remember(mirrorTxt) {
+            buildList {
+                add(MirrorOpt("npmmirror", "npmmirror（国内，默认）", null, "https://registry.npmmirror.com"))
+                add(MirrorOpt("npmjs", "npm 官方源（海外）", null, "https://registry.npmjs.org"))
+                if (curNpm != null && none { it.npmUrl == curNpm }) {
+                    add(MirrorOpt("custom-npm", "当前手编：$curNpm", null, curNpm))
+                }
+            }
+        }
+        var aptChoice by remember(mirrorTxt) {
+            mutableStateOf(aptOpts.firstOrNull { it.aptUrl == curApt } ?: aptOpts.first())
+        }
+        var npmChoice by remember(mirrorTxt) {
+            mutableStateOf(npmOpts.firstOrNull { it.npmUrl == curNpm } ?: npmOpts.first())
+        }
+        var mirrorApplying by remember { mutableStateOf(false) }
+        var mirrorMsg by remember { mutableStateOf("") }
+        Text("APT 源（系统包安装）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        aptOpts.forEach { o ->
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { aptChoice = o },
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = aptChoice == o, onClick = { aptChoice = o })
+                Text(o.label, fontSize = 13.sp)
+            }
+        }
+        Text("npm 源（agent 运行时安装）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        npmOpts.forEach { o ->
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { npmChoice = o },
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = npmChoice == o, onClick = { npmChoice = o })
+                Text(o.label, fontSize = 13.sp)
+            }
+        }
+        // 进度与结果独立成行：不再挤进按钮文字（旧实现按钮被「应用中…/✓…」撑变形）
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Button(
+                enabled = !mirrorApplying && RootfsManager.isDeployed(context),
+                onClick = {
+                    mirrorApplying = true; mirrorMsg = ""
+                    scope.launch {
+                        val r = withContext(Dispatchers.IO) {
+                            RecipeManager.applyMirrors(context.applicationContext, aptChoice.id, npmChoice.npmUrl)
+                        }
+                        mirrorApplying = false
+                        mirrorMsg = if (r.output.contains("MIRROR_RC=0")) "✓ 已生效（新安装走新源）" else "✗ ${r.output.takeLast(200)}"
+                        tick++
+                    }
+                },
+            ) { Text(if (mirrorApplying) "应用中…" else "应用镜像设置") }
+            if (mirrorMsg.isNotBlank()) {
+                Text(mirrorMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+            }
+        }
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text("外观", style = MaterialTheme.typography.titleMedium)
@@ -773,10 +879,44 @@ private fun SettingsPane() {
                 ThemeStore.Mode.LIGHT to "浅色",
                 ThemeStore.Mode.DARK to "深色",
             ).forEach { (m, label) ->
-                // recreate() 让 DrydockTheme 重读偏好（组合期只读一次，否则切换不生效）
-                TextButton(onClick = { ThemeStore.save(context, m); (context as? android.app.Activity)?.recreate() }) { Text(label) }
+                // 写 ThemeStore.mode 即时重组（DrydockTheme 观察该状态），不 recreate——
+                // 旧实现重建 Activity 重置底栏 tab，点外观直接跳回会话页
+                val active = ThemeStore.mode.value == m
+                TextButton(onClick = { ThemeStore.save(context, m) }) {
+                    Text(
+                        label,
+                        fontWeight = if (active) androidx.compose.ui.text.font.FontWeight.Bold else null,
+                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
+
+        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+        Text("终端", style = MaterialTheme.typography.titleMedium)
+        // 字号/回滚行数落 TermPrefs；TerminalActivity onResume 经 window.__dk.applyCfg
+        // 推给页面 xterm（含正在开的终端），ttyd 侧不感知
+        var termFont by remember { mutableStateOf(TermPrefs.fontSize(context)) }
+        var termRows by remember { mutableStateOf(TermPrefs.scrollback(context)) }
+        Text("字号 ${termFont}", fontSize = 13.sp)
+        androidx.compose.material3.Slider(
+            value = termFont.toFloat(),
+            onValueChange = { termFont = it.toInt().coerceIn(10, 24) },
+            valueRange = 10f..24f,
+            steps = 13,
+            onValueChangeFinished = { TermPrefs.set(context, termFont, termRows) },
+        )
+        Text("回滚行数 ${termRows}", fontSize = 13.sp)
+        androidx.compose.material3.Slider(
+            value = termRows.toFloat(),
+            onValueChange = { termRows = (it.toInt() / 100) * 100 },
+            valueRange = 200f..10_000f,
+            onValueChangeFinished = { TermPrefs.set(context, termFont, termRows) },
+        )
+        Text(
+            "改动即保存，回到终端页生效。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text("开发者工具", style = MaterialTheme.typography.titleMedium)

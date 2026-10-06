@@ -220,7 +220,9 @@ class TerminalActivity : ComponentActivity() {
                     android.util.Base64.NO_WRAP,
                 )
                 view?.evaluateJavascript(
-                    "window.__DRYDOCK_CRED='$cred';",
+                    // 凭据 + 终端显示配置（字号/回滚，overlay 落地 xterm options）
+                    "window.__DRYDOCK_CRED='$cred';" +
+                        "window.__DK_CFG={fontSize:${TermPrefs.fontSize(this@TerminalActivity)},scrollback:${TermPrefs.scrollback(this@TerminalActivity)}};",
                     android.webkit.ValueCallback<String> {
                         val overlay = assets.open("terminal-overlay.js").bufferedReader().readText()
                         view.evaluateJavascript(overlay, null)
@@ -423,6 +425,17 @@ class TerminalActivity : ComponentActivity() {
 
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
 
+    /** 设置页改字号/回滚后回到本页即套用（window.__dk.applyCfg 由 overlay 提供；
+     *  首次进入时页面未就绪则静默跳过——首载配置走 __DK_CFG 注入）。 */
+    override fun onResume() {
+        super.onResume()
+        webView?.evaluateJavascript(
+            "window.__dk&&window.__dk.applyCfg&&window.__dk.applyCfg(" +
+                "{fontSize:${TermPrefs.fontSize(this)},scrollback:${TermPrefs.scrollback(this)}})",
+            null,
+        )
+    }
+
     /** singleTask：切会话不经重建，本实例内换 URL（旧页面卸载=旧 ws 客户端断开）。 */
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
@@ -525,11 +538,11 @@ class TerminalActivity : ComponentActivity() {
         ) nudgeHideIme()
     }
 
-    /** 终端页内会话菜单：列表切换（含各自端口）、新建、回主页。 */
+    /** 终端页内会话菜单：列表切换（显示名 + 各自端口）、新建、回主页。 */
     private fun showSessionMenu() {
         val sessions = TerminalManager.readSessions(this)
         val dshInstalled = RecipeManager.installedIds(this).contains("dsh")
-        val labels = sessions.map { if (it.name == TerminalManager.MAIN) "主终端 :${'$'}{it.port}" else "${'$'}{it.name} :${'$'}{it.port}" } +
+        val labels = sessions.map { "${SessionNames.get(this, it.name)} :${it.port}" } +
             (if (dshInstalled) listOf("🌐 DSH Web（浏览器打开）") else emptyList()) +
             listOf("＋ 新建会话", "← 回主页")
         val dshIndex = if (dshInstalled) sessions.size else -1
@@ -549,6 +562,8 @@ class TerminalActivity : ComponentActivity() {
                     }
                     which == labels.size - 2 -> {
                         val name = TerminalManager.newSessionName(this)
+                        // 菜单快建不弹对话框：默认名「会话 N」，主页可改名
+                        SessionNames.set(this, name, "会话 ${sessions.size + 1}")
                         startForegroundService(
                             android.content.Intent(this, EnvService::class.java).putExtra("new_session", name),
                         )

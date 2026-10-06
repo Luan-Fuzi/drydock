@@ -200,17 +200,18 @@ class EnvService : Service() {
     private fun l1Judge(beats: List<TerminalManager.Heartbeat>) {
         val nm = getSystemService(NotificationManager::class.java)
         for (b in beats) {
+            val shown = SessionNames.get(this, b.name)
             if (!b.alive) {
                 if (b.name !in notifiedDead) {
                     notifiedDead.add(b.name)
                     notifiedSilent.remove(b.name)
-                    alert(nm, "会话 ${b.name} 已退出", "环境进程结束；重开终端会重建会话")
+                    alert(nm, "会话 $shown 已退出", "环境进程结束；重开终端会重建会话")
                 }
             } else {
                 notifiedDead.remove(b.name)
                 if (b.silentMin >= SILENT_ALERT_MIN && b.name !in notifiedSilent) {
                     notifiedSilent.add(b.name)
-                    alert(nm, "会话 ${b.name} 静默 ${b.silentMin} 分钟", "PTY 无输出（可能任务结束或等待输入）")
+                    alert(nm, "会话 $shown 静默 ${b.silentMin} 分钟", "PTY 无输出（可能任务结束或等待输入）")
                 } else if (b.silentMin == 0L) {
                     notifiedSilent.remove(b.name)
                 }

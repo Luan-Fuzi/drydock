@@ -2,7 +2,7 @@
 """B 类测试清账（2026-10-04 夜批）：已实现但未在 AVD 验过的分支，逐项脚本化。
 
 覆盖：
-  t1  HomeActivity 主链路（打开终端 → TerminalActivity；新建会话 → 第二会话）
+  t1  HomeActivity 主链路（新建会话对话框 → main → TerminalActivity；再建 s1 + 显示名落盘）
   t2  文件页 ACTION_VIEW（logcat START 行判据）+ DocumentsProvider query/read
   t3  上下文窗口字段端到端（drydock_endpoint 第四段 → .drydock-endpoint context 记录；opencode
       limit 仅在有 context 出处时写；D30 起 provider 段用真名/envVar 前缀）
@@ -96,7 +96,7 @@ def logcat_clear():
 
 
 def nav_tap(label):
-    """点底部导航：label 会撞页面正文同词（如教育文案含「打开终端」），只认
+    """点底部导航：label 会撞页面正文同词（如教育文案含「新建会话」），只认
     屏幕底部 15% 区域内含该词的节点（NavigationBar 固定在底部）。"""
     m = re.search(r"(\d+)x(\d+)", sc.shell("wm", "size"))
     h = int(m.group(2)) if m else 2400
@@ -121,38 +121,55 @@ def prefs_xml():
 
 @stage("t1_main_flow")
 def t1(r):
+    # 测试卫生：清注册表与显示名，从空状态走新用户路径（2026-10-06 界面：
+    # 「新建会话」是唯一入口，对话框默认名可改，卡片即打开）。
+    # 注意别用 run-as … sh -c "rm ..."——adb 转发剥引号，rm 收不到参数（实测）
+    sc.shell("run-as", PKG, "rm", "-f",
+             "files/terminal-sessions.json", "files/terminal-session-names.json")
     sc.shell("input", "keyevent", "KEYCODE_WAKEUP")
     sc.shell("am", "start", "-S", "-n", HOME)
-    if not sc.wait_text("终端会话", 60):
-        raise RuntimeError("HomeActivity 未出现「终端会话」")
+    if not sc.wait_text("新建会话", 60):
+        raise RuntimeError("HomeActivity 未出现「新建会话」按钮")
     r["home_shown"] = True
 
-    if not sc.tap_text("打开终端（agent 在这里）", 30):
-        raise RuntimeError("找不到「打开终端」按钮（教育文案含同词，需全名匹配）")
+    # 空状态 → 新建会话（默认名「主终端」）→ 创建直达终端
+    if not sc.tap_text("新建会话", 30):
+        raise RuntimeError("点不到「新建会话」")
+    if not sc.wait_text("会话名称", 30):
+        raise RuntimeError("新建对话框未出现")
+    r["dialog_default_first"] = "主终端" in sc.ui_dump()
+    if not sc.tap_text("创建", 30):
+        raise RuntimeError("点不到「创建」")
     f = wait_focus("TerminalActivity", 120)
     r["open_terminal_focus"] = f or "TIMEOUT"
-    assert f, "打开终端后 TerminalActivity 未前台"
+    assert f, "创建后 TerminalActivity 未前台"
 
     sessions = {s["name"] for s in sc.registry_sessions()}
     r["sessions_after_open"] = sorted(sessions)
-    assert "main" in sessions, "registry 无 main"
+    assert sessions == {"main"}, f"空表新建应只建 main：{sessions}"
 
-    # 已知缺陷（本次夜批顺带修）：回主页后会话列表不刷新 → 用 -S 重建取 fresh 状态
+    # 回主页 → 再新建（默认名「会话 2」）→ 第二会话
     sc.shell("am", "start", "-S", "-n", HOME)
     if not sc.wait_text("新建会话", 60):
-        r["new_session_button"] = "未出现（会话列表未刷新缺陷，见夜报）"
-        raise RuntimeError("新建会话按钮未出现")
+        raise RuntimeError("回主页后「新建会话」未出现")
     if not sc.tap_text("新建会话", 30):
         raise RuntimeError("点不到「新建会话」")
+    if not sc.wait_text("会话名称", 30):
+        raise RuntimeError("新建对话框未出现")
+    r["dialog_default_second"] = "会话 2" in sc.ui_dump()
+    if not sc.tap_text("创建", 30):
+        raise RuntimeError("点不到「创建」")
     f = wait_focus("TerminalActivity", 120)
     r["new_session_focus"] = f or "TIMEOUT"
     assert f, "新建会话后 TerminalActivity 未前台"
 
     sessions = {s["name"] for s in sc.registry_sessions()}
     r["sessions_final"] = sorted(sessions)
-    # D30 后注册表内容依环境历史而定（会话可关/恢复），断言「新建动作产生了会话」即可
-    assert sessions, f"注册表空：{sessions}"
-    r["pass"] = True
+    assert "s1" in sessions, f"第二会话 s1 不在注册表：{sessions}"
+    names = sc.run_as_cat("files/terminal-session-names.json")
+    r["display_names"] = names.strip()[:120]
+    r["display_name_saved"] = "会话 2" in names
+    r["pass"] = r["display_name_saved"]
 
 
 # ---------- t2 ACTION_VIEW + provider ----------
@@ -164,7 +181,7 @@ def t2(r):
     assert "WROTE" in out, f"探针文件写入失败：{out[-200:]}"
     # -S：上一阶段可能把 TerminalActivity 留在栈顶，非 -S 只把任务带前台揭不开主页
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
+    sc.wait_text("新建会话", 30)
     if not nav_tap("文件"):
         raise RuntimeError("进不了文件页（底部导航无「文件」）")
     if not wait_text_scroll("night-probe.txt", 30):
@@ -229,29 +246,26 @@ def t3(r):
 @stage("t4_theme_light")
 def t4(r):
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
+    sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页（底部导航无「设置」）")
     if not wait_text_scroll("镜像源", 30):
         raise RuntimeError("设置页未出现")
     if not sc.tap_text("浅色", 15):
         raise RuntimeError("点不到「浅色」")
+    time.sleep(1)  # apply() 异步落盘 + 状态重组
     r["pref_light"] = ">LIGHT</string>" in prefs_xml()
-    # recreate() 后 tab 状态不保留、回到会话页：等重建完成再进设置截图
-    time.sleep(1)
-    sc.wait_text("终端会话", 20)
-    if not nav_tap("设置") and not nav_tap("设置"):
-        raise RuntimeError("recreate 后进不了设置页")
-    sc.wait_text("镜像源", 30)
-    r["screenshot"] = screencap("night-light-home.png")  # recreate 后的浅色实况
-    r["theme_recreate_fix"] = True  # 观感判断留白天视觉批次
+    # 2026-10-06 起主题状态驱动即时重组：停留在设置页，不再 recreate 跳回会话页
+    # （锚点用「外观」：tap_text 找「浅色」时「镜像源」可能已滚出可视区）
+    r["stays_on_settings"] = "HomeActivity" in focus() and "外观" in sc.ui_dump()
+    r["screenshot"] = screencap("night-light-home.png")
     if not sc.tap_text("跟随系统", 15):
         xml = sc.ui_dump()
         r["restore_dump_has_label"] = "跟随系统" in xml
         raise RuntimeError(f"点不到「跟随系统」（dump 含标签：{r['restore_dump_has_label']}）")
     time.sleep(1)  # apply() 异步落盘，稍候再读
     r["pref_restored"] = ">SYSTEM</string>" in prefs_xml()
-    r["pass"] = r["pref_light"] and r["pref_restored"]
+    r["pass"] = r["pref_light"] and r["pref_restored"] and r["stays_on_settings"]
 
 
 # ---------- t5 pi 配方 + npm 回退 ----------
@@ -451,11 +465,14 @@ def t10(r):
     r["perm_ok"] = "已获" in sc.ui_dump()
     r["pref_bind_on"] = 'name="bind_download" value="true"' in prefs_xml()
 
-    # 主会话验证绑定（干净注册表下空状态没有「新建会话」按钮；打开终端=新 spawn 同样带 -b）
+    # 绑定只在新 spawn 的 holder 上生效（-b 是 proot 启动参数）：清注册表后
+    # 走「新建会话」对话框保证新 spawn 带绑定
+    sc.shell("run-as", PKG, "rm", "-f",
+             "files/terminal-sessions.json", "files/terminal-session-names.json")
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
-    if not sc.tap_text("打开终端（agent 在这里）", 30):
-        raise RuntimeError("打不开终端")
+    sc.wait_text("新建会话", 30)
+    if not (sc.tap_text("新建会话", 30) and sc.tap_text("创建", 30)):
+        raise RuntimeError("打不开终端（新建对话框流程）")
     assert wait_focus("TerminalActivity", 120), "验证会话未打开"
     # 环境侧探针走 exec64（app 进程口径）：run-as 通道的 FUSE 视角不具代表性
     # （夜批实证：run-as 下 appops 已 allow 仍 Permission denied；app 进程则绑定全通）。
@@ -494,9 +511,11 @@ def t10(r):
 @stage("t11_terminal_menu")
 def t11(r):
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
-    if not sc.tap_text("打开终端（agent 在这里）", 30):
-        raise RuntimeError("打不开终端")
+    sc.wait_text("新建会话", 30)
+    # 卡片即入口（t10 后注册表非空）；空表回落新建对话框
+    if not sc.tap_text("本地端口", 30):
+        if not (sc.tap_text("新建会话", 30) and sc.tap_text("创建", 30)):
+            raise RuntimeError("打不开终端")
     assert wait_focus("TerminalActivity", 120), "终端未前台"
     if not sc.tap_text("☰", 20):
         raise RuntimeError("找不到菜单按钮 ☰")
