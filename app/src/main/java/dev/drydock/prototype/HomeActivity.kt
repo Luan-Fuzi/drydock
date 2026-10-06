@@ -595,7 +595,7 @@ private fun SettingsPane() {
                     label = { Text("模型 ID（端点实际服务的名字）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(value = fContext, onValueChange = { fContext = it.filter { c -> c.isDigit() } },
-                        label = { Text("上下文（可选）") }, singleLine = true, modifier = Modifier.weight(1f))
+                        label = { Text("上下文（可选，如 1048576）") }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = fEnvVar, onValueChange = { fEnvVar = it.filter { c -> c.isLetterOrDigit() || c == '_' }.uppercase() },
                         label = { Text("Key 变量名") }, singleLine = true, modifier = Modifier.weight(1f))
                 }

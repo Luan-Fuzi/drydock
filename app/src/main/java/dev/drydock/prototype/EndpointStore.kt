@@ -86,7 +86,8 @@ object EndpointStore {
             contextWindow = contextWindow,
             envVar = envVar.trim().ifBlank { "DRYDOCK_API_KEY" },
         )
-        persist(context, list(context) + e)
+        // 同 providerId 覆盖（重复添加 = 更新），列表语义是「每家端点一条」
+        persist(context, list(context).filterNot { it.providerId == e.providerId } + e)
         return e
     }
 
