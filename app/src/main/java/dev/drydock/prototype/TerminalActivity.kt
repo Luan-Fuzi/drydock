@@ -30,14 +30,16 @@ private const val IME_INTENT_GRACE_MS = 10_000L
  * 终端触摸拦截层：在 Chromium 手势管线之前拿全 MotionEvent 流。
  * （2026-10-04 真机实证：页面级监听对合成手势全量到达、对真手指每手势仅 ~1 个
  * move——合成器认领拖动后页面拿不到轨迹，输入必须在 View 层接管。）
+ * 滚动物理按平台惯例：拖动 1:1 直接操纵，松手按末速进惯性（指数衰减）——
+ * 对应 Android OverScroller.fling / iOS decelerationRate 的通用形态。
  * 点按（未过 slop）不拦截：聚焦/IME 走 WebView 原路；拖动与甩动按帧把位移
  * （CSS px，>0=看新内容）经 __dkScroll 打给页面，由 xterm 按当前 buffer 语义
- * 转 wheel。速度增益与惯性衰减掩掉 TUI 重绘的 ~46ms 往返。
+ * 转 wheel。
  */
 private class TerminalTouchLayout(
     context: Context,
     private val onFirstTouch: () -> Unit,
-    private val emit: (dyCss: Float, speedPxMs: Float) -> Unit,
+    private val emit: (dyCss: Float) -> Unit,
 ) : FrameLayout(context) {
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
@@ -59,7 +61,6 @@ private class TerminalTouchLayout(
 
     // 发射侧：帧内累计，按显示帧率整流
     private var pendingCss = 0f
-    private var pendingSpeed = 0f
     private var flushScheduled = false
 
     // 吞掉 WebView 的「禁止父层拦截」请求：快速甩动时 Chromium 会在 slop 之前
@@ -112,7 +113,6 @@ private class TerminalTouchLayout(
                 lastY = ev.y
                 lastMoveT = now
                 pendingCss += d / density
-                pendingSpeed = abs(velocity)
                 scheduleFlush()
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -126,7 +126,8 @@ private class TerminalTouchLayout(
         return true
     }
 
-    /** 惯性：指数衰减（每帧 95%），帧间隔按 16.7ms 归一。 */
+    /** 惯性：指数衰减（每帧 95%），帧间隔按 16.7ms 归一。
+     *  2 px/ms 的甩动滑行约 670 CSS px（≈1/3 屏）——「一点点」的量级。 */
     private fun fling(v0: Float) {
         var v = v0
         var prev = SystemClock.uptimeMillis()
@@ -137,7 +138,6 @@ private class TerminalTouchLayout(
                 prev = now
                 v *= Math.pow(0.95, dt / 16.7).toFloat()
                 pendingCss += v * dt / density
-                pendingSpeed = abs(v)
                 scheduleFlush()
                 if (abs(v) > velStop) postOnAnimation(this)
             }
@@ -150,9 +150,8 @@ private class TerminalTouchLayout(
         postOnAnimation {
             flushScheduled = false
             if (pendingCss != 0f) {
-                emit(pendingCss, pendingSpeed)
+                emit(pendingCss)
                 pendingCss = 0f
-                pendingSpeed = 0f
             }
         }
     }
@@ -290,14 +289,14 @@ class TerminalActivity : ComponentActivity() {
         // 触摸拦截层只包 WebView：终端区拖动/甩动在 View 层接管，点按透传。
         // 原生键条在 WebView 之外——键条起手的手势不进终端触摸层（用户实锤：
         // 页内键条时代按住键条上滑会带动终端滚动），触摸分流由视图结构天然完成。
+        // 滚动 = 1:1 直接操纵 + 松手惯性（平台惯例，见 TerminalTouchLayout 注释）；
+        // 曾用的 1-3x 速度增益按用户反馈移除（2026-10-07）：与 TUI 单事件大步长
+        // 相乘，高速拖动直接窜到头。
         val touch = TerminalTouchLayout(
             this,
             { lastTerminalTouchAt = SystemClock.uptimeMillis() },
-        ) { dyCss, speedPxMs ->
-            // 速度增益（1:1 → 最多 3x），与页面层 v3 实测参数一致
-            val k = ((speedPxMs - 0.5f) / 1.5f).coerceIn(0f, 1f)
-            val g = 1f + (3.0f - 1f) * k
-            val dy = Math.round(dyCss * g * 10) / 10.0
+        ) { dyCss ->
+            val dy = Math.round(dyCss * 10) / 10.0
             webView.evaluateJavascript("window.__dkScroll&&window.__dkScroll($dy)", null)
         }
         touch.addView(
