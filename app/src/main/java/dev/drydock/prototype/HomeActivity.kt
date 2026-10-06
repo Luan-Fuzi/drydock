@@ -127,6 +127,14 @@ class HomeActivity : ComponentActivity() {
                     android.util.Log.i("DrydockExec", out.take(200))
                 }.start()
             }
+            // 环境救援转发（原 MainActivity 通道）：drydock_rescue → RescueActivity
+            intent?.getStringExtra("drydock_rescue")?.takeIf { it.isNotBlank() }?.let { rc ->
+                startActivity(
+                    android.content.Intent(this, RescueActivity::class.java).putExtra("drydock_cmd", rc),
+                )
+            }
+            // D25 文件互通：系统分享目标（文件流或文本 → workspace Inbox）——原 MainActivity 通道迁入
+            if (android.content.Intent.ACTION_SEND == intent.action) handleSend(intent)
             // provider 全回路自测（写→读→改名→列举→删除），写→读经 contentResolver 走
             // grant 免权限路径，与 DocumentsUI 同口径；结果落 files/exec-out.txt
             if (intent?.getStringExtra("drydock_provider_test") != null) {
@@ -172,6 +180,28 @@ class HomeActivity : ComponentActivity() {
         setContent {
             DrydockTheme { HomeScreen() }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (android.content.Intent.ACTION_SEND == intent.action) handleSend(intent)
+    }
+
+    private fun handleSend(intent: android.content.Intent) {
+        val stream = intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+        val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
+        if (stream == null && text.isNullOrBlank()) return
+        Thread {
+            val f = if (stream != null) {
+                FileBridge.importUri(this, stream)
+            } else {
+                FileBridge.importText(this, text!!)
+            }
+            android.util.Log.i(
+                "DrydockFile",
+                if (f != null) "分享已导入 Inbox：${f.name}" else "分享导入失败",
+            )
+        }.start()
     }
 }
 
@@ -750,8 +780,11 @@ private fun SettingsPane() {
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text("开发者工具", style = MaterialTheme.typography.titleMedium)
-        Text("原型验收仪器（部署、AV1/AV2/AV3、救援通道、缓存清理等）。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = { context.startActivity(Intent(context, MainActivity::class.java)) }) { Text("打开开发者工具") }
+        Text(
+            "debug 验收通道随本 Activity（am start --es：drydock_endpoint/recipe/exec64/export/provider_test/rescue）。" +
+                "救援通道见桌面入口；原型验收仪器（部署/AV1/AV2/AV3 手动页）随 MainActivity 一并移除。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         HorizontalDivider(Modifier.padding(vertical = 6.dp))
         Text(

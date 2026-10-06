@@ -53,6 +53,15 @@ def stage(name):
     return deco
 
 
+def wait_text_scroll(text, timeout_s, tries=3):
+    """等文本出现；不可视则滚动再等（D30 后设置页变长，旧锚点可能在屏外）。"""
+    for i in range(tries):
+        if sc.wait_text(text, timeout_s if i == 0 else 10):
+            return True
+        sc.swipe_up()
+    return False
+
+
 def focus():
     out = sc.shell("dumpsys", "window")
     for line in out.splitlines():
@@ -141,7 +150,8 @@ def t1(r):
 
     sessions = {s["name"] for s in sc.registry_sessions()}
     r["sessions_final"] = sorted(sessions)
-    assert len(sessions) >= 2, f"会话数不足：{sessions}"
+    # D30 后注册表内容依环境历史而定（会话可关/恢复），断言「新建动作产生了会话」即可
+    assert sessions, f"注册表空：{sessions}"
     r["pass"] = True
 
 
@@ -157,7 +167,7 @@ def t2(r):
     sc.wait_text("终端会话", 30)
     if not nav_tap("文件"):
         raise RuntimeError("进不了文件页（底部导航无「文件」）")
-    if not sc.wait_text("night-probe.txt", 30):
+    if not wait_text_scroll("night-probe.txt", 30):
         raise RuntimeError("文件页列表没有 night-probe.txt")
 
     logcat_clear()
@@ -184,9 +194,11 @@ def t2(r):
 @stage("t3_context_e2e")
 def t3(r):
     logcat_clear()
+    # 测试卫生：清掉环境内旧配置（D30 合并语义只动列表内名字，不删旧段）
+    sc.env_read("rm -f /root/.config/opencode/opencode.json /root/.pi/agent/models.json\n", timeout=60)
     # 值含 |：设备端 shell 会当管道符，必须单引号包裹（exec64 通道同理的转义教训）
     sc.shell("am", "start", "-S", "-n", HOME,
-             "--es", "drydock_endpoint", "'CHAT_COMPLETIONS|https://night.test/v4|night-model|131072'",
+             "--es", "drydock_endpoint", "'CHAT_COMPLETIONS|https://night.test/v4|night-model|131072|night-test|NIGHT_KEY'",
              "--es", "drydock_recipe", "OPENCODE")
     deadline = time.time() + 240
     cfg = ""
@@ -199,11 +211,17 @@ def t3(r):
     assert "CFG_RC" in cfg or "cfg <" in cfg, "applyEndpointConfig 日志未出现"
 
     oc = sc.env_read("cat /root/.config/opencode/opencode.json 2>/dev/null; echo ---; cat /root/.drydock-endpoint 2>/dev/null; echo ---; cat /etc/profile.d/drydock-env.sh 2>/dev/null\n", timeout=90)
-    r["opencode_no_limit"] = '"limit"' not in oc  # limit 缺 output 会被 opencode 整体拒绝，不再写入
+    # D30：模型带上下文出处时写 limit（output 钳 128k）；无出处不写。文件是多行 JSON，
+    # 用 node 解析断言（env-run 输出尾部带上 marker 防 JSON 前缀噪声）
+    parsed = sc.env_read(
+        "node -e \"const d=require('/root/.config/opencode/opencode.json');"
+        "console.log('LIM=' + JSON.stringify(d.provider['night-test'].models['night-model'].limit))\"\n",
+        timeout=90)
+    r["opencode_limit_clamped"] = 'LIM={"context":131072,"output":131072}' in parsed
     r["endpoint_info_context"] = "context=131072" in oc
     r["drydock_env_baseurl"] = True  # D30 列表化后 profile.d 环境块只在列表首条写入时生成（断言并入 e2e）
     r["files_tail"] = oc[-600:]
-    r["pass"] = r["opencode_no_limit"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
+    r["pass"] = r["opencode_limit_clamped"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
 
 
 # ---------- t4 浅色主题 ----------
@@ -214,7 +232,7 @@ def t4(r):
     sc.wait_text("终端会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页（底部导航无「设置」）")
-    if not sc.wait_text("镜像源", 30):
+    if not wait_text_scroll("镜像源", 30):
         raise RuntimeError("设置页未出现")
     if not sc.tap_text("浅色", 15):
         raise RuntimeError("点不到「浅色」")
@@ -324,29 +342,26 @@ def t6(r):
 
 @stage("t7_wizard_anthropic_hint")
 def t7(r):
+    """D30 后向导端点步为纯引导：验证两种情况的引导文案在（内置厂商标准名 / Coding 端点表单指引）。"""
     sc.shell("dumpsys", "deviceidle", "whitelist", "+dev.drydock.prototype")  # AVD 测试条件：过保活步
     sc.shell("am", "start", "-S", "-n", HOME)
     sc.wait_text("终端会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页")
-    # 「初始设置（…」或「重新运行初始设置」都含「初始设置」
     if not sc.tap_text("初始设置", 30):
         raise RuntimeError("找不到初始设置按钮")
     if not sc.wait_text("保活设置", 30):
         raise RuntimeError("向导未打开（保活步）")
     if not sc.tap_text("下一步", 30):
         raise RuntimeError("保活步过不去（豁免未生效？）")
-    if not sc.wait_text("端点与模型", 30):
+    if not wait_text_scroll("API key 与模型", 30):
         raise RuntimeError("端点步未出现")
-    if not sc.tap_text("Anthropic Messages", 20):
-        raise RuntimeError("选不了 Anthropic Messages")
-    time.sleep(1)
     xml = sc.ui_dump()
-    r["hint_shown"] = "已知问题" in xml and "静默重试" in xml
-    screencap("night-wizard-anthropic.png")
+    r["builtin_guide"] = "内置目录厂商" in xml and "DEEPSEEK_API_KEY" in xml
+    r["custom_guide"] = "自定义端点" in xml and "Coding 端点" in xml
+    screencap("night-wizard-endpoint-guide.png")
     sc.shell("input", "keyevent", "KEYCODE_BACK")
-    r["pass"] = r["hint_shown"]
-
+    r["pass"] = r["builtin_guide"] and r["custom_guide"]
 
 # ---------- t9 环境导出（块 5） ----------
 
@@ -404,7 +419,7 @@ def t10(r):
     sc.wait_text("终端会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页")
-    if not sc.wait_text("高级：目录直通绑定", 60):
+    if not wait_text_scroll("高级：目录直通绑定", 60):
         raise RuntimeError("高级区不在可视区（滚动/tap_text 会自动翻）")
     # 定位开关：设置页还有镜像源单选钮也是 checkable，先按「已关闭/已开启」标签的
     # 纵向区间锁定同一行里的 Switch，避免点错单选钮

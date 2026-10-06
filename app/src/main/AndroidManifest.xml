@@ -33,18 +33,6 @@
         </activity>
 
         <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
-            <!-- 原型验收控制台（开发者工具入口）：保留 SEND 分享目标与 debug 通道 -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-        </activity>
-
-        <activity
             android:name=".TerminalActivity"
             android:exported="true"
             android:launchMode="singleTask"

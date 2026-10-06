@@ -1,7 +1,10 @@
 package dev.drydock.prototype
 
 import android.content.Context
+import java.io.File
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 配方系统（D25：宿主不绑定 agent，安装以配方提供——安装脚本 + 端点注入 + 模型配置）。
@@ -42,7 +45,11 @@ object RecipeManager {
         extraInstallFlags = "--ignore-scripts",
         aptTools = listOf("ripgrep", "fd-find"),
     )
-    val ALL = listOf(OPENCODE, PI)
+    val DSH = Recipe(
+        id = "dsh", title = "DSH（DeepSeek Harness）",
+        npmPackage = "@deepseek-ai/dsh", version = "0.2.0-rc.2", bin = "dsh",
+    )
+    val ALL = listOf(OPENCODE, PI, DSH)
 
     fun byId(id: String): Recipe? = ALL.firstOrNull { it.id.equals(id.trim(), ignoreCase = true) }
 
@@ -134,12 +141,9 @@ ENVEOF
             endpoints.joinToString("\n") { e ->
                 "provider=${e.providerId}\nprotocol=${e.protocol.name}\nbase_url=${e.baseUrl}\nmodel=${e.model}\ncontext=${e.contextWindow ?: "-"}\nkey_env=${e.envVar}\n---"
             } + "\n# API key 走环境变量（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
-        // 两个工具各自的「本列表 provider 段」JSON；由设备侧 python 合并进现有文件
-        // 设备侧 python 字面量：每条端点一个 provider 段
-        fun ocLit(e: EndpointStore.Endpoint): String {
-            val providerId = e.providerId
-            val baseUrl = e.baseUrl
-            val envVar = e.envVar
+        // 合并脚本固定在 assets/dd-merge.js（不随端点变化）；端点数据经 JSON 注入 argv——
+        // 消灭 Kotlin 字符串拼 JS 的多层转义（D30 三轮 bug 的根源）
+        fun ocEntry(e: EndpointStore.Endpoint): JSONObject {
             val apiNpm = when (e.protocol) {
                 EndpointStore.Protocol.CHAT_COMPLETIONS -> "@ai-sdk/openai-compatible"
                 EndpointStore.Protocol.RESPONSES -> "@ai-sdk/openai"
@@ -149,30 +153,48 @@ ENVEOF
                 val out = minOf(w, 131_072L)
                 ",\"limit\":{\"context\":$w,\"output\":$out}"
             } ?: ""
-            val model = if (e.model.isBlank()) ""
-            else "\"${e.model}\":{\"name\":\"${e.model}\"$limit}"
-            return ("[\"$providerId\",{\"npm\":\"$apiNpm\",\"name\":\"$providerId\"," +
-                "\"options\":{\"baseURL\":\"$baseUrl\",\"apiKey\":\"{env:$envVar}\"}," +
-                "\"models\":{$model}}]")
-                .replace("'", "'\\''")
+            val models = JSONObject()
+            if (e.model.isNotBlank()) {
+                models.put(e.model, JSONObject().put("name", e.model).apply {
+                    e.contextWindow?.let { w ->
+                        put("limit", JSONObject().put("context", w).put("output", minOf(w, 131_072L)))
+                    }
+                })
+            }
+            return JSONObject()
+                .put("npm", apiNpm)
+                .put("name", e.providerId)
+                .put("options", JSONObject()
+                    .put("baseURL", e.baseUrl)
+                    .put("apiKey", "{env:${e.envVar}}"))
+                .put("models", models)
         }
-        fun piLit(e: EndpointStore.Endpoint): String {
+        fun piEntry(e: EndpointStore.Endpoint): JSONObject {
             val api = when (e.protocol) {
                 EndpointStore.Protocol.CHAT_COMPLETIONS -> "openai-completions"
                 EndpointStore.Protocol.RESPONSES -> "openai-responses"
                 EndpointStore.Protocol.ANTHROPIC -> "anthropic-messages"
             }
-            val meta = e.contextWindow?.let { w ->
-                val out = minOf(w, 131_072L)
-                ",\"contextWindow\":$w,\"maxTokens\":$out"
-            } ?: ""
-            val model = if (e.model.isBlank()) "" else "{\"id\":\"${e.model}\"$meta}"
-            // JS 字面量里要出现 $VAR；Kotlin 模板：\$ → 字面 $，再接 ${e.envVar} 插值
-            return ("{\"providerId\":\"${e.providerId}\",\"baseUrl\":\"${e.baseUrl}\"," +
-                "\"api\":\"$api\",\"apiKey\":\"$" + e.envVar + "\",\"models\":[$model]}")
+            val models = JSONArray()
+            if (e.model.isNotBlank()) {
+                val m = JSONObject().put("id", e.model)
+                e.contextWindow?.let { w ->
+                    m.put("contextWindow", w).put("maxTokens", minOf(w, 131_072L))
+                }
+                models.put(m)
+            }
+            return JSONObject()
+                .put("providerId", e.providerId)
+                .put("baseUrl", e.baseUrl)
+                .put("api", api)
+                .put("apiKey", "$" + e.envVar)
+                .put("models", models)
         }
-        val ocProviders = endpoints.joinToString(",") { ocLit(it) }
-        val piProviders = endpoints.joinToString(",") { piLit(it) }
+        val ocJson = JSONObject()
+        endpoints.forEach { e -> ocJson.put(e.providerId, ocEntry(e)) }
+        val piJson = JSONArray()
+        endpoints.forEach { piJson.put(piEntry(it)) }
+        val mergeJs = assetsJs(context, "dd-merge.js")
         val cmd = """
             . /root/.drydock/mirrors 2>/dev/null || true
             printf '%s\n' '${endpointInfo.replace("'", "'\\''")}' > /root/.drydock-endpoint
@@ -185,38 +207,17 @@ ENVEOF
               echo APT_MIRROR_APPLIED
             fi
             command -v node >/dev/null 2>&1 || { echo CFG_RC=1 NO_NODE; exit 0; }
-            cat > /tmp/dd-merge.js <<'JSEOF'
-const fs = require('fs');
-const ocProviders = Object.fromEntries([${ocProviders}]);
-const piProviders = [${piProviders}];
-function mergeJson(path, fn) {
-  let doc = {};
-  if (fs.existsSync(path)) { try { doc = JSON.parse(fs.readFileSync(path, 'utf8')); } catch (e) { doc = {}; } }
-  fn(doc);
-  fs.mkdirSync(require('path').dirname(path), { recursive: true });
-  fs.writeFileSync(path, JSON.stringify(doc, null, 2));
-}
-if (Object.keys(ocProviders).length) {
-  mergeJson('/root/.config/opencode/opencode.json', doc => {
-    const prov = doc.provider || {};
-    for (const [k, v] of Object.entries(ocProviders)) prov[k] = v; // 列表内覆盖，列表外保留
-    doc.provider = prov;
-  });
-  console.log('OPENCODE_CFG_MERGED');
-}
-if (piProviders.length) {
-  mergeJson('/root/.pi/agent/models.json', doc => {
-    const provs = doc.providers || {};
-    for (const p of piProviders) provs[p.providerId] = (({ providerId, ...rest }) => rest)(p); // 对象形态，列表内替换
-    doc.providers = provs;
-  });
-  console.log('PI_CFG_MERGED');
-}
-JSEOF
-            node /tmp/dd-merge.js && rm -f /tmp/dd-merge.js
+            node $mergeJs '${ocJson}' '${piJson}'
             echo CFG_RC=0
         """.trimIndent()
         return RootfsManager.runInEnv(context, cmd)
+    }
+
+    /** assets 脚本落盘到 rootfs 的 /tmp（proot 内可见），返回环境内路径。 */
+    private fun assetsJs(context: Context, name: String): String {
+        val f = File(RootfsManager.rootfsDir(context), "tmp/$name")
+        context.assets.open(name).use { input -> f.outputStream().use { input.copyTo(it) } }
+        return "/tmp/$name"
     }
 
     /** headless 冒烟：对列表第一个端点出第一句话即止。判定标记 SMOKE_RC=0。 */
@@ -231,6 +232,10 @@ JSEOF
             """.trimIndent()
             "pi" -> """
                 cd /root && timeout 180 pi --print --provider ${e.providerId} --model ${e.providerId}/${e.model} '$prompt' < /dev/null 2>&1 | tail -5
+                echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
+            """.trimIndent()
+            "dsh" -> """
+                cd /root && timeout 180 dsh --profile headless '$prompt' < /dev/null 2>&1 | tail -5
                 echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
             """.trimIndent()
             else -> return RootfsManager.ExecResult(2, "unknown recipe")
@@ -279,7 +284,8 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
             echo "Drydock：agent 已就绪。直接运行 opencode 或 pi 开始；"
             echo "API key 走环境变量（~/.drydock/env.sh，新会话生效）——发给 agent 代写或自己编辑；"
             echo "内置目录厂商（DeepSeek/OpenAI 等）放标准变量名即自动识别（如 export DEEPSEEK_API_KEY=…）；"
-            echo "自定义端点配置在 opencode.json / models.json，让 agent 帮你加；"
+            echo "自定义端点配置在 opencode.json / models.json，让 agent 帮你改；DSH 用户：dsh web 起服务，"
+echo "把日志里带 token 的网址复制到浏览器打开；key 放 DEEPSEEK_API_KEY（env.sh）。";
             echo "模型列表空 = 先查 env.sh 里的 key 变量名对不对。"
             MOTD
             echo MOTD_RC=${'$'}?

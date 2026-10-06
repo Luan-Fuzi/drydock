@@ -241,7 +241,7 @@ private fun RecipeStep(
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    listOf(RecipeManager.OPENCODE, RecipeManager.PI, null).forEach { r ->
+    listOf(RecipeManager.OPENCODE, RecipeManager.PI, RecipeManager.DSH, null).forEach { r ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()

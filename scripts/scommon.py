@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from adbdev import adb_prefix, online_devices, resolved_serial
 
 PKG = "dev.drydock.prototype"
-MAIN_ACTIVITY = f"{PKG}/.MainActivity"
+MAIN_ACTIVITY = f"{PKG}/.HomeActivity"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DRAFT = os.path.join(ROOT, "draft")
 DUMP = "/data/local/tmp/uitap-ui.xml"

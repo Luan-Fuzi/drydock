@@ -33,8 +33,9 @@ def app_pid() -> str:
 async def main():
     expr = sys.argv[1]
     # 列出可调试页面
-    pages = json.load(urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5))
-    page = next((p for p in pages if "127.0.0.1" in p.get("url", "")), pages[0])
+    sys.path.insert(0, __file__.rsplit("/", 1)[0])
+    from cdp_common import pick_page
+    page = pick_page()
     ws_url = page["webSocketDebuggerUrl"]
     async with websockets.connect(ws_url, max_size=2**22) as ws:
         await ws.send(json.dumps({
