@@ -123,7 +123,6 @@ object BinDoctor {
     private fun runOnce(context: Context) {
         installScript(context)
         ensureGitConfig(context)
-        ensureNoAutoupdate(context)
 
         // 1) 扫描（环境内，纯本地秒级）
         val scan = RootfsManager.runInEnv(context, "bash /root/.drydock/bin-doctor.sh scan")
@@ -232,24 +231,6 @@ object BinDoctor {
             Log.i(TAG, "gitconfig 写入 core.createObject=rename")
         } catch (e: Exception) {
             Log.w(TAG, "gitconfig 写入失败：$e")
-        }
-    }
-
-    /** 关 opencode 静默自升级（产品定调：更新由用户操作）。默认 autoupdate=true
-     *  会 TUI 启动即 npm 自升级——版本失控、每次升级都可能踩 l2s 断链（2026-10-07
-     *  AVD 两次实证 1.18.34→35 自升级断链）。只补缺失字段，用户显式写 true/false
-     *  后不动。dd-merge.js 的配置合并路径同款逻辑，这里覆盖存量已装用户。 */
-    private fun ensureNoAutoupdate(context: Context) {
-        try {
-            val f = File(RootfsManager.rootfsDir(context), "root/.config/opencode/opencode.json")
-            if (!f.exists()) return // 未装 opencode
-            val doc = org.json.JSONObject(f.readText())
-            if (doc.has("autoupdate")) return
-            doc.put("autoupdate", false)
-            f.writeText(doc.toString(2))
-            Log.i(TAG, "opencode autoupdate=false 已写入")
-        } catch (e: Exception) {
-            Log.w(TAG, "autoupdate 写入失败：$e")
         }
     }
 }

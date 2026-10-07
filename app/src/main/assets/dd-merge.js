@@ -23,10 +23,6 @@ if (Object.keys(ocProviders).length) {
     const prov = doc.provider || {};
     for (const [k, v] of Object.entries(ocProviders)) prov[k] = v;
     doc.provider = prov;
-    // opencode 默认 autoupdate=true：TUI 启动即静默 npm 自升级——版本失控且每次
-    // 升级都可能踩 proot l2s 断链（2026-10-07 两次实证）。默认关；用户显式写
-    // true/false 后不再动（尊重手动选择）。
-    if (doc.autoupdate === undefined) doc.autoupdate = false;
   });
   console.log('OPENCODE_CFG_MERGED');
 }
