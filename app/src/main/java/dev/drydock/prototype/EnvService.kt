@@ -100,6 +100,8 @@ class EnvService : Service() {
             }
             TerminalManager.ensureAll(app)
             Timeline.log(this, "sessions_ready", mapOf("names" to TerminalManager.readSessions(app).map { it.name }))
+            // bin 健康检查（Q8：npm×l2s 断链自愈 + gitconfig 预防），异步不阻塞会话
+            BinDoctor.ensureAsync(app)
         }.start()
         return START_STICKY
     }
