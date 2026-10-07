@@ -81,10 +81,7 @@ private fun WizardScreen() {
             1 -> PowerStep(onNext = { step = 2 })
             2 -> EndpointStep(
                 onNext = { step = 3 },
-                onSkip = {
-                    EndpointStore.clear(context)
-                    step = 3
-                },
+                onSkip = { step = 3 },
             )
             3 -> RecipeStep(
                 busy = busy,
@@ -106,12 +103,12 @@ private fun WizardScreen() {
                                     RecipeManager.applyEndpointConfig(appCtx).also { cfg ->
                                         when {
                                             cfg.output.contains("CFG_SKIPPED") -> report += "端点未配置，已跳过（进终端后可随时在初始设置里补）\n"
-                                            cfg.output.contains("OPENCODE_CFG_WRITTEN") ||
-                                                cfg.output.contains("PI_CFG_WRITTEN") -> report += "✓ 端点配置已写入\n"
+                                            cfg.output.contains("OPENCODE_CFG_MERGED") ||
+                                                cfg.output.contains("PI_CFG_MERGED") -> report += "✓ 端点配置已合并写入\n"
                                             else -> report += "✗ 端点配置失败：${cfg.output.takeLast(200)}\n"
                                         }
                                     }
-                                    if (EndpointStore.configured(appCtx)) {
+                                    if (EndpointStore.all(appCtx).isNotEmpty()) {
                                         log("验证中：让 agent 出第一句话…")
                                         val s = RecipeManager.smoke(appCtx, choice)
                                         report += if (s.output.contains("SMOKE_RC=0")) {
@@ -205,82 +202,28 @@ private fun PowerStep(onNext: () -> Unit) {
     Button(enabled = exempt, onClick = onNext) { Text("下一步") }
 }
 
-/** 步骤②端点：零预置，先选协议再填地址与密钥。 */
+/** 步骤②端点（D30 终版）：纯引导，可跳过。标准 key + 自定义端点指向设置页表单。 */
 @Composable
 private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
-    val context = LocalContext.current
-    var protocol by remember { mutableStateOf(EndpointStore.Protocol.CHAT_COMPLETIONS) }
-    var baseUrl by remember { mutableStateOf(EndpointStore.baseUrl(context) ?: "") }
-    var model by remember { mutableStateOf(EndpointStore.model(context) ?: "") }
-    var contextWindow by remember { mutableStateOf(EndpointStore.contextWindow(context)?.toString() ?: "") }
-    var apiKey by remember { mutableStateOf("") }
-    val urlOk = baseUrl.startsWith("http://") || baseUrl.startsWith("https://")
-    val formOk = urlOk && apiKey.isNotBlank()
-
-    Text("端点与密钥", style = MaterialTheme.typography.titleMedium)
+    Text("API key 与模型", style = MaterialTheme.typography.titleMedium)
     Text(
-        "不预置任何厂商：先选 API 协议，再填 Base URL 与 API Key（密钥只进系统 Keystore，按进程注入，不写入任何文件）。",
+        "key 不在应用里存储，写在环境变量文件 ~/.drydock/env.sh（设置 → 环境变量，" +
+            "或装好 agent 后发给它代写）。两种情况：\n\n" +
+            "① 用内置目录厂商（DeepSeek / OpenAI / Moonshot / 智谱 GLM 等）：往 env.sh 放一行" +
+            "标准变量名（如 export DEEPSEEK_API_KEY=你的key、GLM Coding Plan 用 ZHIPU_API_KEY），" +
+            "agent 的模型列表自动出现，多模态/上下文元数据由工具官方目录维护，零配置；\n\n" +
+            "② 用真正的自定义端点（目录外服务）：在 设置 → Coding 端点 " +
+            "填一张小表（协议 / Base URL / 模型 ID / key 变量名），会写进两个 agent 各自的配置文件。",
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    EndpointStore.Protocol.entries.forEach { p ->
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { protocol = p },
-        ) {
-            RadioButton(selected = protocol == p, onClick = { protocol = p })
-            Text(p.label, modifier = Modifier.padding(top = 12.dp))
-        }
-    }
-    if (protocol == EndpointStore.Protocol.ANTHROPIC) {
-        Text(
-            "已知问题：OpenCode × Anthropic 组合存在适配器内部静默重试（裸端点本身正常）。" +
-                "选这个协议时建议搭配 pi，OpenCode 用户优先 Chat Completions。",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-    OutlinedTextField(
-        value = baseUrl,
-        onValueChange = { baseUrl = it },
-        label = { Text("Base URL（如 https://example.com/v1）") },
-        singleLine = true,
-        isError = baseUrl.isNotBlank() && !urlOk,
-        modifier = Modifier.fillMaxWidth(),
+    Text(
+        "不确定选哪种？先跳过，进终端后 motd 有同样的说明，随时可配。",
+        fontSize = 11.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    OutlinedTextField(
-        value = model,
-        onValueChange = { model = it },
-        label = { Text("模型 ID（端点实际服务的模型名，可留空）") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = contextWindow,
-        onValueChange = { contextWindow = it.filter { c -> c.isDigit() } },
-        label = { Text("上下文窗口 token 数（可选；OpenCode 生效，pi 暂不支持）") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = apiKey,
-        onValueChange = { apiKey = it },
-        label = { Text("API Key") },
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Button(
-        enabled = formOk,
-        onClick = {
-            EndpointStore.save(context, protocol, baseUrl, model, contextWindow)
-            KeyVault.saveDefault(context, apiKey)
-            onNext()
-        },
-    ) { Text("保存并下一步") }
-    OutlinedButton(onClick = onSkip) { Text("跳过此步（稍后在终端里自己配）") }
+    Button(onClick = onNext) { Text("下一步") }
+    OutlinedButton(onClick = onSkip) { Text("跳过此步") }
 }
 
 /** 步骤③配方：OpenCode / pi / 暂不安装。 */
@@ -299,7 +242,7 @@ private fun RecipeStep(
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    listOf(RecipeManager.OPENCODE, RecipeManager.PI, null).forEach { r ->
+    listOf(RecipeManager.OPENCODE, RecipeManager.PI, RecipeManager.DSH, null).forEach { r ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -320,6 +263,6 @@ private fun RecipeStep(
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(onClick = onFinish) { Text("打开终端") }
+        Button(onClick = onFinish) { Text("进入终端") }
     }
 }

@@ -36,8 +36,9 @@ async def press_enter(ws, i):
 async def main():
     # 按字面 "\n"（反斜杠+n 两字符）切分；不做 unicode_escape，保中文原样
     lines = sys.argv[1].split("\\n")
-    pages = json.load(urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5))
-    page = next((p for p in pages if "127.0.0.1" in p.get("url", "")), pages[0])
+    sys.path.insert(0, __file__.rsplit("/", 1)[0])
+    from cdp_common import pick_page
+    page = pick_page()
     async with websockets.connect(page["webSocketDebuggerUrl"], max_size=2**22) as ws:
         i = 0
         n = 0

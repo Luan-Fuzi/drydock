@@ -1,13 +1,17 @@
 package dev.drydock.prototype
 
 import android.content.Context
+import java.io.File
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 配方系统（D25：宿主不绑定 agent，安装以配方提供——安装脚本 + 端点注入 + 模型配置）。
  * 默认引导只含开源配方（OpenCode、pi，均 MIT）；Claude Code 不进默认引导（用户自行安装）。
- * 端点零预置：协议三类映射到各 agent 自己的 provider 配置；key 只经进程环境
- * （DRYDOCK_API_KEY），配置文件用插值引用，环境内文件零明文（I1）。
+ * 端点零预置：协议三类映射到各 agent 自己的 provider 配置；key 走环境变量
+ * （DRYDOCK_API_KEY），配置文件只写引用——值由用户自管（~/.drydock/env.sh 或让
+ * agent 代配，2026-10-05 起宿主不再托管密钥，见 decisions D29）。
  */
 object RecipeManager {
 
@@ -17,7 +21,9 @@ object RecipeManager {
     const val NPM_PRIMARY_SOURCE = "https://registry.npmmirror.com"
     const val NPM_FALLBACK_SOURCE = "https://registry.npmjs.org"
 
-    /** 配方 = npm 包 + 版本 pin（升级 = 改这里 + 重走安装判据，同 RootfsManifest 口径）。 */
+    /** 配方 = npm 包 + 基线参考版本。2026-10-07 用户定调：不 pin 版本，安装走 npm
+     *  latest（opencode 自带 autoupdate 亦随之放行，断链由 BinDoctor 兜底）；version
+     *  仅作展示/文档参考，不参与已装判定与安装。 */
     data class Recipe(
         val id: String,
         val title: String,
@@ -41,7 +47,11 @@ object RecipeManager {
         extraInstallFlags = "--ignore-scripts",
         aptTools = listOf("ripgrep", "fd-find"),
     )
-    val ALL = listOf(OPENCODE, PI)
+    val DSH = Recipe(
+        id = "dsh", title = "DSH（DeepSeek Harness）",
+        npmPackage = "@deepseek-ai/dsh", version = "0.2.0-rc.2", bin = "dsh",
+    )
+    val ALL = listOf(OPENCODE, PI, DSH)
 
     fun byId(id: String): Recipe? = ALL.firstOrNull { it.id.equals(id.trim(), ignoreCase = true) }
 
@@ -57,7 +67,7 @@ object RecipeManager {
             .edit().putString("recipes_installed", cur.joinToString(",")).apply()
     }
 
-    /** 已安装且版本匹配的配方 id 列表（读环境，不动手）。 */
+    /** 已安装配方 id 列表（读环境不动手；bin 在即算，基线版本不符记 id:other 不影响判定）。 */
     fun installed(context: Context): List<String> {
         val checks = ALL.joinToString(" ") { r ->
             "command -v ${r.bin} >/dev/null 2>&1 && ${r.bin} --version 2>/dev/null | grep -q '${r.version}' && echo ${r.id}" +
@@ -73,7 +83,7 @@ object RecipeManager {
         if (!node.output.contains("NODE_RC=0")) {
             return RootfsManager.ExecResult(1, "Node 层失败：${node.output.takeLast(300)}")
         }
-        onLog("安装 ${recipe.title} ${recipe.version}…")
+        onLog("安装 ${recipe.title}（npm 最新版）…")
         val toolsSh = if (recipe.aptTools.isEmpty()) "" else """
             TOOLS_RC=0
             command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || {
@@ -92,13 +102,13 @@ object RecipeManager {
             NPM_REG="${'$'}{DRYDOCK_NPM_REGISTRY:-$NPM_PRIMARY_SOURCE}"
             echo NPM_REG=${'$'}NPM_REG
             $toolsSh
-            command -v ${recipe.bin} >/dev/null 2>&1 && ${recipe.bin} --version 2>/dev/null | grep -q '${recipe.version}' \
+            command -v ${recipe.bin} >/dev/null 2>&1 \
               && { echo RECIPE_ALREADY; echo RECIPE_RC=0; exit 0; }
-            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=${'$'}NPM_REG ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=${'$'}NPM_REG ${recipe.npmPackage}@latest 2>&1 | tail -3
             NPM_RC=${'$'}{PIPESTATUS[0]}
             if [ ${'$'}NPM_RC -ne 0 ]; then
               echo "首选源失败，换官方 npmjs 源重试…"
-              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=$NPM_FALLBACK_SOURCE ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=$NPM_FALLBACK_SOURCE ${recipe.npmPackage}@latest 2>&1 | tail -3
               NPM_RC=${'$'}{PIPESTATUS[0]}
             fi
             ${recipe.bin} --version 2>/dev/null; BIN_RC=${'$'}?
@@ -110,36 +120,83 @@ object RecipeManager {
     }
 
     /**
-     * 把 EndpointStore 的协议/Base URL/模型写进各已装 agent 的 provider 配置
-     * （OpenCode: ~/.config/opencode/opencode.json；pi: ~/.pi/agent/models.json），
-     * key 以插值引用 DRYDOCK_API_KEY。未配置端点则跳过；顺带写 motd 与
-     * ~/.drydock-endpoint（不含 key——「agent 是配置器」的可读信息面）。
+     * 把 EndpointStore 端点列表重算进各已装 agent 的 provider 配置（D30 终版）。
+     * 只管理列表内的 provider 名：opencode.json 的 provider 对象按 key 合并（列表外
+     * 的手写段原样保留）、pi models.json 的 providers 数组按 provider 名替换。
+     * 列表为空且无旧数据时不动配置文件，只顺带写 motd 与 env.sh/mirrors 模板。
      */
     fun applyEndpointConfig(context: Context): RootfsManager.ExecResult {
         ensureMotd(context)
-        val protocol = EndpointStore.protocol(context)
-        val baseUrl = EndpointStore.baseUrl(context)
-        val model = EndpointStore.model(context) ?: ""
-        val hasEndpoint = protocol != null && !baseUrl.isNullOrBlank()
-        if (hasEndpoint && baseUrl != null && protocol != null) {
-            // 占位：下方脚本内联使用（避免智能转换拆分）
-        }
-        val opencodeJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            opencodeConfig(protocol, baseUrl, model, EndpointStore.contextWindow(context))
-        } else ""
-        val piJson = if (hasEndpoint && baseUrl != null && protocol != null) {
-            piConfig(protocol, baseUrl, model)
-        } else ""
-        val endpointInfo = "protocol=${protocol?.name ?: "-"}\nbase_url=${baseUrl ?: "-"}\nmodel=$model\ncontext=${EndpointStore.contextWindow(context) ?: "-"}\n# API key 不落文件：经环境变量 DRYDOCK_API_KEY 注入（改配置请用 EndpointStore 或让 agent 改本文件旁的说明）\n"
-        val envBlock = if (hasEndpoint && baseUrl != null) """
+        val endpoints = EndpointStore.all(context)
+        val envBlock = endpoints.firstOrNull()?.let { e ->
+            """
             cat > /etc/profile.d/drydock-env.sh <<ENVEOF
-export DRYDOCK_BASE_URL='$baseUrl'
-export DRYDOCK_MODEL='$model'
-export DRYDOCK_PROTOCOL='${protocol!!.name}'
+export DRYDOCK_BASE_URL='${e.baseUrl}'
+export DRYDOCK_MODEL='${e.model}'
+export DRYDOCK_PROTOCOL='${e.protocol.name}'
 # 用户自定义环境变量挂载点（让 agent 帮你加也行）
 [ -f /root/.drydock/env.sh ] && . /root/.drydock/env.sh
 ENVEOF
-        """ else ""
+            """.trimIndent()
+        } ?: ""
+        val endpointInfo = if (endpoints.isEmpty()) "# 尚未添加自定义端点（设置 → Coding 端点）\n" else
+            endpoints.joinToString("\n") { e ->
+                "provider=${e.providerId}\nprotocol=${e.protocol.name}\nbase_url=${e.baseUrl}\nmodel=${e.model}\ncontext=${e.contextWindow ?: "-"}\nkey_env=${e.envVar}\n---"
+            } + "\n# API key 走环境变量（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
+        // 合并脚本固定在 assets/dd-merge.js（不随端点变化）；端点数据经 JSON 注入 argv——
+        // 消灭 Kotlin 字符串拼 JS 的多层转义（D30 三轮 bug 的根源）
+        fun ocEntry(e: EndpointStore.Endpoint): JSONObject {
+            val apiNpm = when (e.protocol) {
+                EndpointStore.Protocol.CHAT_COMPLETIONS -> "@ai-sdk/openai-compatible"
+                EndpointStore.Protocol.RESPONSES -> "@ai-sdk/openai"
+                EndpointStore.Protocol.ANTHROPIC -> "@ai-sdk/anthropic"
+            }
+            val limit = e.contextWindow?.let { w ->
+                val out = minOf(w, 131_072L)
+                ",\"limit\":{\"context\":$w,\"output\":$out}"
+            } ?: ""
+            val models = JSONObject()
+            if (e.model.isNotBlank()) {
+                models.put(e.model, JSONObject().put("name", e.model).apply {
+                    e.contextWindow?.let { w ->
+                        put("limit", JSONObject().put("context", w).put("output", minOf(w, 131_072L)))
+                    }
+                })
+            }
+            return JSONObject()
+                .put("npm", apiNpm)
+                .put("name", e.providerId)
+                .put("options", JSONObject()
+                    .put("baseURL", e.baseUrl)
+                    .put("apiKey", "{env:${e.envVar}}"))
+                .put("models", models)
+        }
+        fun piEntry(e: EndpointStore.Endpoint): JSONObject {
+            val api = when (e.protocol) {
+                EndpointStore.Protocol.CHAT_COMPLETIONS -> "openai-completions"
+                EndpointStore.Protocol.RESPONSES -> "openai-responses"
+                EndpointStore.Protocol.ANTHROPIC -> "anthropic-messages"
+            }
+            val models = JSONArray()
+            if (e.model.isNotBlank()) {
+                val m = JSONObject().put("id", e.model)
+                e.contextWindow?.let { w ->
+                    m.put("contextWindow", w).put("maxTokens", minOf(w, 131_072L))
+                }
+                models.put(m)
+            }
+            return JSONObject()
+                .put("providerId", e.providerId)
+                .put("baseUrl", e.baseUrl)
+                .put("api", api)
+                .put("apiKey", "$" + e.envVar)
+                .put("models", models)
+        }
+        val ocJson = JSONObject()
+        endpoints.forEach { e -> ocJson.put(e.providerId, ocEntry(e)) }
+        val piJson = JSONArray()
+        endpoints.forEach { piJson.put(piEntry(it)) }
+        val mergeJs = assetsJs(context, "dd-merge.js")
         val cmd = """
             . /root/.drydock/mirrors 2>/dev/null || true
             printf '%s\n' '${endpointInfo.replace("'", "'\\''")}' > /root/.drydock-endpoint
@@ -151,62 +208,42 @@ ENVEOF
               sed -i "s|^[[:space:]]*URIs:.*|        URIs: ${'$'}DRYDOCK_APT_MIRROR|; /^           /d" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null
               echo APT_MIRROR_APPLIED
             fi
-            if command -v opencode >/dev/null 2>&1; then
-              mkdir -p /root/.config/opencode
-              cat > /root/.config/opencode/opencode.json <<'OCJSON'
-$opencodeJson
-OCJSON
-              echo OPENCODE_CFG_WRITTEN
-            fi
-            if command -v pi >/dev/null 2>&1; then
-              mkdir -p /root/.pi/agent
-              cat > /root/.pi/agent/models.json <<'PIJSON'
-$piJson
-PIJSON
-              echo PI_CFG_WRITTEN
-            fi
+            command -v node >/dev/null 2>&1 || { echo CFG_RC=1 NO_NODE; exit 0; }
+            node $mergeJs '${ocJson}' '${piJson}'
             echo CFG_RC=0
         """.trimIndent()
         return RootfsManager.runInEnv(context, cmd)
     }
 
-    /** headless 冒烟：出第一句话即止（短 prompt、小输出）。判定标记 SMOKE_RC=0。 */
+    /** assets 脚本落盘到 rootfs 的 /tmp（proot 内可见），返回环境内路径。 */
+    private fun assetsJs(context: Context, name: String): String {
+        val f = File(RootfsManager.rootfsDir(context), "tmp/$name")
+        context.assets.open(name).use { input -> f.outputStream().use { input.copyTo(it) } }
+        return "/tmp/$name"
+    }
+
+    /** headless 冒烟：对列表第一个端点出第一句话即止。判定标记 SMOKE_RC=0。 */
     fun smoke(context: Context, recipe: Recipe): RootfsManager.ExecResult {
-        val protocol = EndpointStore.protocol(context) ?: return RootfsManager.ExecResult(2, "SMOKE_RC=2 no endpoint")
-        val model = EndpointStore.model(context).takeUnless { it.isNullOrBlank() } ?: "drydock-default"
-        val providerId = if (recipe.id == "opencode" && protocol == EndpointStore.Protocol.ANTHROPIC) "anthropic" else "drydock"
+        val e = EndpointStore.all(context).firstOrNull()
+            ?: return RootfsManager.ExecResult(2, "SMOKE_RC=2 no endpoint")
         val prompt = "只回复四个字符：OK 了"
         val cmd = when (recipe.id) {
             "opencode" -> """
-                cd /root && timeout 180 opencode run --model $providerId/$model '$prompt' < /dev/null 2>&1 | tail -5
+                cd /root && timeout 180 opencode run --model ${e.providerId}/${e.model} '$prompt' < /dev/null 2>&1 | tail -5
                 echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
             """.trimIndent()
             "pi" -> """
-                cd /root && timeout 180 pi --print --provider drydock --model drydock/$model '$prompt' < /dev/null 2>&1 | tail -5
+                cd /root && timeout 180 pi --print --provider ${e.providerId} --model ${e.providerId}/${e.model} '$prompt' < /dev/null 2>&1 | tail -5
+                echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
+            """.trimIndent()
+            "dsh" -> """
+                cd /root && timeout 180 dsh --profile headless '$prompt' < /dev/null 2>&1 | tail -5
                 echo SMOKE_RC=${'$'}{PIPESTATUS[0]}
             """.trimIndent()
             else -> return RootfsManager.ExecResult(2, "unknown recipe")
         }
-        val env = sessionEnv(context)
-        return RootfsManager.runInEnv(context, cmd, extraEnv = env)
-    }
-
-    /** 会话/冒烟共用的注入环境。keyId 语义：null=默认 key（未配置端点回落 AV3 仪器注入，
-     *  向后兼容）；""=显式不注入（「部分密钥不想让环境拿到」）；其余=指定条目。 */
-    fun sessionEnv(context: Context, keyId: String? = null): Map<String, String> {
-        if (keyId != null) {
-            val k = keyId.takeIf { it.isNotBlank() }?.let { KeyVault.load(context, it) } ?: return emptyMap()
-            val env = mutableMapOf("DRYDOCK_API_KEY" to k)
-            EndpointStore.baseUrl(context)?.let { env["DRYDOCK_BASE_URL"] = it }
-            return env
-        }
-        if (EndpointStore.configured(context)) {
-            return mapOf(
-                "DRYDOCK_API_KEY" to (KeyVault.defaultKey(context) ?: ""),
-                "DRYDOCK_BASE_URL" to (EndpointStore.baseUrl(context) ?: ""),
-            )
-        }
-        return AgentManager.agentEnv(context)
+        // key 住 ~/.drydock/env.sh（runInEnv 已统一 source）；没配 key 时由端点返回 401，如实透传
+        return RootfsManager.runInEnv(context, cmd)
     }
 
     /** 镜像源 GUI 落地（D27）：写 ~/.drydock/mirrors（清空即回默认回退链）；
@@ -247,88 +284,14 @@ ${if (lines.isBlank()) "# 默认回退链（覆盖已清空）\n" else lines}MEO
             cat > /etc/profile.d/zz-drydock.sh <<'MOTD'
             # Drydock 引导（改本文件即改启动提示）
             echo "Drydock：agent 已就绪。直接运行 opencode 或 pi 开始；"
-            echo "端点/模型配置见 ~/.drydock-endpoint（key 不落盘）；"
-            echo "模型元数据（上下文窗口等）在 ~/.config/opencode/opencode.json 与 ~/.pi/agent/models.json——直接让 agent 帮你改；"
-            echo "想改启动项或装更多工具，也让 agent 帮你配。"
+            echo "API key 走环境变量（~/.drydock/env.sh，新会话生效）——发给 agent 代写或自己编辑；"
+            echo "内置目录厂商（DeepSeek/智谱 GLM/OpenAI 等）放标准变量名即自动识别——GLM Coding Plan 用 ZHIPU_API_KEY，";
+            echo "自定义端点配置在 opencode.json / models.json，让 agent 帮你改；DSH 用户：dsh web 起服务，"
+echo "把日志里带 token 的网址复制到浏览器打开；key 放 DEEPSEEK_API_KEY（env.sh）。";
+            echo "模型列表空 = 先查 env.sh 里的 key 变量名对不对。"
             MOTD
             echo MOTD_RC=${'$'}?
         """.trimIndent()
         return RootfsManager.runInEnv(context, motd)
-    }
-
-    /** OpenCode provider 配置：协议 → @ai-sdk 适配包；Anthropic 走内置 provider 的 baseURL 覆盖（免运行时拉包）。
-     *  contextWindow 可选写入 limit.context（自定义 provider 的上下文元数据 OpenCode 不会自动识别，
-     *  真机实测默认显示 128k；用户在向导里填了才写）。 */
-    private fun opencodeConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String, contextWindow: Long?): String {
-        val modelEntry = buildString {
-            if (model.isNotBlank()) {
-                append("\"$model\": {\"name\": \"$model\"")
-                contextWindow?.let { append(", \"limit\": {\"context\": $it}") }
-                append("},")
-            }
-        }
-        val models = modelEntry
-        return when (protocol) {
-            EndpointStore.Protocol.CHAT_COMPLETIONS -> """
-                {
-                  "${'$'}schema": "https://opencode.ai/config.json",
-                  "provider": {
-                    "drydock": {
-                      "npm": "@ai-sdk/openai-compatible",
-                      "name": "Drydock Endpoint",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:DRYDOCK_API_KEY}" },
-                      "models": { $models "drydock-default": {"name": "Drydock Endpoint 默认"} }
-                    }
-                  }
-                }
-            """.trimIndent()
-            EndpointStore.Protocol.RESPONSES -> """
-                {
-                  "${'$'}schema": "https://opencode.ai/config.json",
-                  "provider": {
-                    "drydock": {
-                      "npm": "@ai-sdk/openai",
-                      "name": "Drydock Endpoint",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:DRYDOCK_API_KEY}" },
-                      "models": { $models "drydock-default": {"name": "Drydock Endpoint 默认"} }
-                    }
-                  }
-                }
-            """.trimIndent()
-            EndpointStore.Protocol.ANTHROPIC -> """
-                {
-                  "${'$'}schema": "https://opencode.ai/config.json",
-                  "provider": {
-                    "anthropic": {
-                      "name": "Anthropic 兼容端点",
-                      "options": { "baseURL": "$baseUrl", "apiKey": "{env:DRYDOCK_API_KEY}" },
-                      "models": { $models "drydock-default": {"name": "Drydock Endpoint 默认"} }
-                    }
-                  }
-                }
-            """.trimIndent()
-        }
-    }
-
-    /** pi provider 配置：api 字段映射协议（openai-completions / openai-responses / anthropic-messages）。 */
-    private fun piConfig(protocol: EndpointStore.Protocol, baseUrl: String, model: String): String {
-        val api = when (protocol) {
-            EndpointStore.Protocol.CHAT_COMPLETIONS -> "openai-completions"
-            EndpointStore.Protocol.RESPONSES -> "openai-responses"
-            EndpointStore.Protocol.ANTHROPIC -> "anthropic-messages"
-        }
-        val models = if (model.isBlank()) "" else "{\"id\": \"$model\"},"
-        return """
-            {
-              "providers": {
-                "drydock": {
-                  "baseUrl": "$baseUrl",
-                  "api": "$api",
-                  "apiKey": "${'$'}DRYDOCK_API_KEY",
-                  "models": [ $models {"id": "drydock-default"} ]
-                }
-              }
-            }
-        """.trimIndent()
     }
 }

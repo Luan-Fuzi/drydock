@@ -31,6 +31,22 @@ object RootfsManager {
 
     fun rootfsDir(context: Context): File = File(context.filesDir, "ubuntu-rootfs")
 
+    /** 用户环境变量文件（D27 引入 / D29 起也是 key 的住址）：登录 shell 经 profile.d
+     *  source，runInEnv 统一 source；设置页编辑器直接读写（app 与 rootfs 同 uid）。 */
+    fun envShFile(context: Context): File {
+        val f = File(rootfsDir(context), "root/.drydock/env.sh")
+        if (!f.exists()) {
+            f.parentFile?.mkdirs()
+            f.writeText(
+                "# 用户自定义环境变量，每个新会话生效；例如：\n" +
+                    "# export HTTP_PROXY=http://127.0.0.1:7890\n" +
+                    "# API key（opencode/pi 的配置已引用 DRYDOCK_API_KEY）：\n" +
+                    "# export DRYDOCK_API_KEY=sk-xxxx\n",
+            )
+        }
+        return f
+    }
+
     /**
      * link2symlink 自绑定（步骤 4 实测教训）：--link2symlink 把 link() 落成 .l2s 符号
      * 链接，目标是宿主绝对路径（realpath 规范化后的 /data/data 拼写）。不自绑定进
@@ -234,7 +250,10 @@ object RootfsManager {
         ) + BindStore.binds(context).flatMap { listOf("-b", it) } + extraBinds.flatMap { listOf("-b", it) }
         val argv = baseArgv + listOf(
             "-w", "/root",
-            "/bin/bash", "-c", command,
+            // 非登录 shell：显式 source 用户环境变量（~/.drydock/env.sh，D27），与
+            // 登录 shell 的 profile.d 同口径；密钥自 2026-10-05 起也住这里（D29）
+            "/bin/bash", "-c",
+            ". /root/.drydock/env.sh 2>/dev/null || true; $command",
         )
         Log.i(TAG, "exec: ${argv.joinToString(" ").dropLast(command.length)}…")
         val p = ProcessBuilder(argv).redirectErrorStream(true).apply {

@@ -1,28 +1,183 @@
 package dev.drydock.prototype
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Color
+import android.graphics.Insets
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.WindowInsets
-import android.webkit.JavascriptInterface
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import java.io.File
+import kotlin.math.abs
 
 /** 容器 padding 区背景，取 ttyd 页面终端底色（视觉批次校准值）。 */
 private const val TERM_BG = 0xFF2B2B2B.toInt()
+
+/** ime insets 增长被认定源自用户点按的背书窗口（键盘动画 <1s，留足余量）。 */
+private const val IME_INTENT_GRACE_MS = 10_000L
+
+/**
+ * 终端触摸拦截层：在 Chromium 手势管线之前拿全 MotionEvent 流。
+ * （2026-10-04 真机实证：页面级监听对合成手势全量到达、对真手指每手势仅 ~1 个
+ * move——合成器认领拖动后页面拿不到轨迹，输入必须在 View 层接管。）
+ * 滚动物理按平台惯例：拖动 1:1 直接操纵，松手按末速进惯性（指数衰减）——
+ * 对应 Android OverScroller.fling / iOS decelerationRate 的通用形态。
+ * 点按（未过 slop）不拦截：聚焦/IME 走 WebView 原路；拖动与甩动按帧把位移
+ * （CSS px，>0=看新内容）经 __dkScroll 打给页面，由 xterm 按当前 buffer 语义
+ * 转 wheel。
+ */
+private class TerminalTouchLayout(
+    context: Context,
+    private val onFirstTouch: () -> Unit,
+    private val emit: (dyCss: Float) -> Unit,
+) : FrameLayout(context) {
+
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val density = resources.displayMetrics.density
+    private val pressGuardMs = 400L     // 按住超过此时长才过 slop = 选区手势，放行
+    private val gainMinSpeed = 0.5f     // px/ms：低于此 1:1
+    private val gainMaxSpeed = 2.0f
+    private val gainMax = 3.0f
+    private val velTakeoff = 0.3f       // px/ms：起惯性的末速度阈值
+    private val velStop = 0.06f
+
+    private var downY = 0f
+    private var downT = 0L
+    private var lastY = 0f
+    private var lastMoveT = 0L
+    private var velocity = 0f          // px/ms，平滑
+    private var dragging = false
+    private var suppressed = false     // 本手势判为选区，全程放行
+
+    // 发射侧：帧内累计，按显示帧率整流
+    private var pendingCss = 0f
+    private var flushScheduled = false
+
+    // 吞掉 WebView 的「禁止父层拦截」请求：快速甩动时 Chromium 会在 slop 之前
+    // requestDisallowInterceptTouchEvent(true) 截走轨迹（2026-10-04 AVD 实测快甩
+    // 0 帧到达本层）。拖动所有权归本层；点按与横向键条滚动不经此路径不受影响，
+    // 长按选区由 pressGuard 放行。不向上传递。
+    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+        // 有意不调 super（吞掉请求）：拖动所有权归本层；点按与横向键条滚动不经此
+        // 路径不受影响，长按选区由 pressGuard 放行。
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downY = ev.y
+                lastY = ev.y
+                downT = SystemClock.uptimeMillis()
+                lastMoveT = downT
+                velocity = 0f
+                dragging = false
+                suppressed = false
+                // DOWN 必经本层：给 ime insets 门控记点按背书（用户点终端=可能要拉键盘）
+                onFirstTouch()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (dragging) return true
+                if (suppressed) return false
+                if (abs(ev.y - downY) < slop) return false
+                if (SystemClock.uptimeMillis() - downT > pressGuardMs) {
+                    suppressed = true
+                    return false
+                }
+                dragging = true
+                lastY = ev.y
+                return true
+            }
+        }
+        return false
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                if (!dragging) return false
+                val now = SystemClock.uptimeMillis()
+                val d = lastY - ev.y // >0：手指上移 = 看更新的内容
+                val dt = (now - lastMoveT).coerceAtLeast(1L)
+                velocity = 0.7f * velocity + 0.3f * (d / dt)
+                lastY = ev.y
+                lastMoveT = now
+                pendingCss += d / density
+                scheduleFlush()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (!dragging) return false
+                dragging = false
+                if (ev.actionMasked == MotionEvent.ACTION_UP && abs(velocity) >= velTakeoff) {
+                    fling(velocity)
+                }
+            }
+        }
+        return true
+    }
+
+    /** 惯性：指数衰减（每帧 95%），帧间隔按 16.7ms 归一。
+     *  2 px/ms 的甩动滑行约 670 CSS px（≈1/3 屏）——「一点点」的量级。 */
+    private fun fling(v0: Float) {
+        var v = v0
+        var prev = SystemClock.uptimeMillis()
+        postOnAnimation(object : Runnable {
+            override fun run() {
+                val now = SystemClock.uptimeMillis()
+                val dt = (now - prev).coerceAtMost(48L)
+                prev = now
+                v *= Math.pow(0.95, dt / 16.7).toFloat()
+                pendingCss += v * dt / density
+                scheduleFlush()
+                if (abs(v) > velStop) postOnAnimation(this)
+            }
+        })
+    }
+
+    private fun scheduleFlush() {
+        if (flushScheduled) return
+        flushScheduled = true
+        postOnAnimation {
+            flushScheduled = false
+            if (pendingCss != 0f) {
+                emit(pendingCss)
+                pendingCss = 0f
+            }
+        }
+    }
+}
 
 /**
  * 终端页：WebView 直连 127.0.0.1 上由宿主 spawn 的 ttyd（同源页面，凭据经
  * onReceivedHttpAuthRequest 注入，同源 ws 复用凭据）。页面加载后注入
  * terminal-overlay.js：虚拟键条 + AV2 观测桥（terminal 文本变化经 console 转发 logcat）。
+ * 触摸由 TerminalTouchLayout 在 View 层接管（见其注释）。
  */
 class TerminalActivity : ComponentActivity() {
+
+    /** singleTask 复用：切会话走 onNewIntent 换 URL，全程只有一个 WebView/页面。
+     * （2026-10-04 真机实锤：standard 模式下会话切换泄漏出同会话双 WebView，
+     * 前台旧页面带着过期终端模式，滚动滚的是重放假历史。） */
+    private var webView: WebView? = null
+    private var session: TerminalManager.Session? = null
+
+    // ime insets 门控（2026-10-05 真机实锤）：WeType 在键盘未显示时可持幻影 touchable
+    // region 吞掉下半屏手势，并向 app 派发 ime insets 把终端压半高（无键盘可见）。
+    // insets 增长只有近期真实点按背书才落 padding；无背书的增长视为幻影——不落 padding
+    // 并探钉 hideSoftInput 顶掉幻影窗口（region 是否放行由系统侧决定，高度确定性保住）。
+    private var lastTerminalTouchAt = 0L
+    private var appliedImePad = 0
+    private var lastImeNudgeAt = 0L
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,12 +186,9 @@ class TerminalActivity : ComponentActivity() {
         // 任务期 FLAG_KEEP_SCREEN_ON 是产品正解（D23"亮着屏用"工况）
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val name = intent.getStringExtra("session") ?: TerminalManager.MAIN
-        val session = TerminalManager.readSessions(this)
-            .firstOrNull { it.name == name }
-            ?: TerminalManager.readSessions(this).firstOrNull()
-        if (session == null) {
-            Log.e("DrydockAv2", "终端会话未启动（$name）")
+        val initial = resolveSession(intent.getStringExtra("session"))
+        if (initial == null) {
+            Log.e("DrydockAv2", "终端会话未启动（${intent.getStringExtra("session")}）")
             finish()
             return
         }
@@ -44,6 +196,7 @@ class TerminalActivity : ComponentActivity() {
         WebView.setWebContentsDebuggingEnabled(true)
 
         val webView = WebView(this)
+        this.webView = webView
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -55,16 +208,20 @@ class TerminalActivity : ComponentActivity() {
                 host: String?,
                 realm: String?,
             ) {
-                handler.proceed("drydock", session.token)
+                val token = session?.token
+                if (token != null) handler.proceed("drydock", token)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                val token = session?.token ?: return
                 val cred = android.util.Base64.encodeToString(
-                    "drydock:${session.token}".toByteArray(),
+                    "drydock:$token".toByteArray(),
                     android.util.Base64.NO_WRAP,
                 )
                 view?.evaluateJavascript(
-                    "window.__DRYDOCK_CRED='$cred';",
+                    // 凭据 + 终端显示配置（字号/回滚，overlay 落地 xterm options）
+                    "window.__DRYDOCK_CRED='$cred';" +
+                        "window.__DK_CFG={fontSize:${TermPrefs.fontSize(this@TerminalActivity)},scrollback:${TermPrefs.scrollback(this@TerminalActivity)}};",
                     android.webkit.ValueCallback<String> {
                         val overlay = assets.open("terminal-overlay.js").bufferedReader().readText()
                         view.evaluateJavascript(overlay, null)
@@ -78,31 +235,97 @@ class TerminalActivity : ComponentActivity() {
                 Log.i("DrydockAv2", msg.message())
                 return true
             }
+
+            // 单 WebView 切会话（onNewIntent 换 URL）撞上 ttyd 页面的 beforeunload，
+            // 默认弹「Confirm Navigation」阻塞切换——切换是用户显式动作，直接放行。
+            override fun onJsBeforeUnload(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: android.webkit.JsResult?,
+            ): Boolean {
+                result?.confirm()
+                return true
+            }
         }
-        webView.addJavascriptInterface(Av2Bridge(), "Drydock")
 
         // targetSdk 35+ 强制 edge-to-edge，window 不再避让系统栏，adjustResize 也随之失效；
-        // 状态栏/cutout/软键盘 insets 一律以容器 padding 落地，IME 弹出时 WebView 收缩、
-        // xterm.js 随尺寸 refit。padding 区背景与 ttyd 终端底色一致（TERM_BG）。
+        // 状态栏/cutout insets 以容器 padding 落地。ime insets 走点按背书包络（见字段注释）：
+        // 收起总是接受；增长须 10s 内有终端区触摸背书；等值重放维持既有决定。
         val root = FrameLayout(this).apply {
             setBackgroundColor(TERM_BG)
             setOnApplyWindowInsetsListener { v, insets ->
-                val pad = if (Build.VERSION.SDK_INT >= 30) {
-                    insets.getInsets(
-                        WindowInsets.Type.systemBars() or
-                            WindowInsets.Type.displayCutout() or
-                            WindowInsets.Type.ime()
-                    )
+                if (Build.VERSION.SDK_INT >= 30) {
+                    val sys = insets.getInsets(
+                        WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                    val ime = insets.getInsets(WindowInsets.Type.ime())
+                    val imeNow = ime.bottom
+                    val pad = when {
+                        imeNow == appliedImePad ->
+                            if (appliedImePad > 0) Insets.max(sys, ime) else sys
+                        imeNow < appliedImePad -> {
+                            appliedImePad = imeNow
+                            nudgeHideIme() // 收起时补一记 hide：WeType 自带折叠键可能留幻影窗口
+                            sys
+                        }
+                        SystemClock.uptimeMillis() - lastTerminalTouchAt < IME_INTENT_GRACE_MS -> {
+                            appliedImePad = imeNow
+                            Insets.max(sys, ime)
+                        }
+                        else -> {
+                            nudgeHideIme()
+                            sys
+                        }
+                    }
+                    v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
                 } else {
                     @Suppress("DEPRECATION")
-                    insets.systemWindowInsets
+                    val pad = insets.systemWindowInsets
+                    v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
                 }
-                v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
                 WindowInsets.CONSUMED
             }
         }
-        root.addView(
+        // 触摸拦截层只包 WebView：终端区拖动/甩动在 View 层接管，点按透传。
+        // 原生键条在 WebView 之外——键条起手的手势不进终端触摸层（用户实锤：
+        // 页内键条时代按住键条上滑会带动终端滚动），触摸分流由视图结构天然完成。
+        // 滚动 = 1:1 直接操纵 + 松手惯性（平台惯例，见 TerminalTouchLayout 注释）；
+        // 曾用的 1-3x 速度增益按用户反馈移除（2026-10-07）：与 TUI 单事件大步长
+        // 相乘，高速拖动直接窜到头。
+        val touch = TerminalTouchLayout(
+            this,
+            { lastTerminalTouchAt = SystemClock.uptimeMillis() },
+        ) { dyCss ->
+            val dy = Math.round(dyCss * 10) / 10.0
+            webView.evaluateJavascript("window.__dkScroll&&window.__dkScroll($dy)", null)
+        }
+        touch.addView(
             webView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+        }
+        content.addView(
+            touch,
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ),
+        )
+        content.addView(
+            buildKeyBar(webView),
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        root.addView(
+            content,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -126,30 +349,220 @@ class TerminalActivity : ComponentActivity() {
             ).apply { topMargin = 24; rightMargin = 24 },
         )
         setContentView(root)
-        webView.loadUrl("http://127.0.0.1:${session.port}/")
-        Log.i("DrydockAv2", "loadUrl http://127.0.0.1:${session.port}/ token=${session.token.take(4)}…")
+        loadSession(initial)
     }
 
-    /** 终端页内会话菜单：列表切换（含各自端口）、新建（默认密钥）、回主页。 */
+    /** 原生虚拟键条（2026-10-04 从页面 DOM 迁移）：两行等权重、不溢出不横向滚动——
+     * 上行导航（PgUp/PgDn/方向），下行修饰与动作（Ctrl 粘滞/Esc/Tab/⇧Tab/回车）。
+     * 键位经页面 __dk.sendKey 合成（与 IME 同链路）；Ctrl 粘滞状态与 overlay 的
+     * 字母拦截逻辑（armCtrl）共用。 */
+    private fun buildKeyBar(webView: WebView): android.view.View {
+        fun send(js: String) = webView.evaluateJavascript("window.__dk&&window.__dk.sendKey($js)", null)
+
+        data class Key(val label: String, val js: String)
+        val esc = "{key:'Escape',code:'Escape',keyCode:27,which:27}"
+        val tab = "{key:'Tab',code:'Tab',keyCode:9,which:9}"
+        val nav = listOf(
+            Key("PgUp", "{key:'PageUp',code:'PageUp',keyCode:33,which:33}"),
+            Key("PgDn", "{key:'PageDown',code:'PageDown',keyCode:34,which:34}"),
+            Key("←", "{key:'ArrowLeft',code:'ArrowLeft',keyCode:37,which:37}"),
+            Key("↑", "{key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38}"),
+            Key("↓", "{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40}"),
+            Key("→", "{key:'ArrowRight',code:'ArrowRight',keyCode:39,which:39}"),
+        )
+        val actions = listOf(
+            Key("Esc", esc),
+            Key("Tab", tab),
+            Key("⇧Tab", "$tab,shiftKey:true"),
+            Key("↵", "{key:'Enter',code:'Enter',keyCode:13,which:13}"),
+        )
+
+        fun keyButton(label: String, onClick: android.view.View.OnClickListener): android.widget.Button =
+            android.widget.Button(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(0xFFDDDDDD.toInt())
+                setBackgroundColor(0xFF2E2E2E.toInt())
+                setPadding(0, 0, 0, 0)
+                minHeight = 0
+                minWidth = 0
+                setOnClickListener(onClick)
+            }
+
+        fun row(buttons: List<android.widget.Button>) = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF141414.toInt())
+            val lp = android.widget.LinearLayout.LayoutParams(0, 46.dp(), 1f)
+            lp.setMargins(2, 2, 2, 2)
+            buttons.forEach { addView(it, android.widget.LinearLayout.LayoutParams(lp)) }
+        }
+
+        val navRow = row(nav.map { k -> keyButton(k.label) { send(k.js) } })
+        val ctrlBtn = keyButton("Ctrl") { }
+        ctrlBtn.setOnClickListener {
+            val armed = !it.isSelected
+            it.isSelected = armed
+            it.setBackgroundColor(if (armed) 0xFF166534.toInt() else 0xFF2E2E2E.toInt())
+            webView.evaluateJavascript(
+                "window.__dk&&window.__dk.armCtrl($armed)", null,
+            )
+        }
+        val actionRow = row(listOf(ctrlBtn) + actions.map { k -> keyButton(k.label) { send(k.js) } })
+
+        return android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(navRow, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+            addView(actionRow, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+    }
+
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+
+    /** 设置页改字号/回滚后回到本页即套用（window.__dk.applyCfg 由 overlay 提供；
+     *  首次进入时页面未就绪则静默跳过——首载配置走 __DK_CFG 注入）。 */
+    override fun onResume() {
+        super.onResume()
+        webView?.evaluateJavascript(
+            "window.__dk&&window.__dk.applyCfg&&window.__dk.applyCfg(" +
+                "{fontSize:${TermPrefs.fontSize(this)},scrollback:${TermPrefs.scrollback(this)}})",
+            null,
+        )
+    }
+
+    /** singleTask：切会话不经重建，本实例内换 URL（旧页面卸载=旧 ws 客户端断开）。 */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val target = resolveSession(intent.getStringExtra("session")) ?: return
+        if (target.name != session?.name || target.port != session?.port) {
+            loadSession(target)
+        }
+    }
+
+    private fun resolveSession(name: String?): TerminalManager.Session? {
+        val sessions = TerminalManager.readSessions(this)
+        return sessions.firstOrNull { it.name == name } ?: sessions.firstOrNull()
+    }
+
+    /** DSH Web：环境内起 dsh web（后台），从日志读带 token 的 URL 拉起系统浏览器。
+     *  不走 runInEnv——后台服务的 stdout 即使重定向，proot 管线仍会让 ProcessBuilder
+     *  的 readText() 等到服务退出（env-run.sh 同款教训），这里用 spawn 不等待。 */
+    private fun launchDshWeb() {
+        Thread {
+            val rootfs = RootfsManager.rootfsDir(this)
+            val log = File(rootfs, "tmp/dsh-web.log")
+            if (!log.exists() || System.currentTimeMillis() - log.lastModified() > 60_000) {
+                val nativeDir = applicationInfo.nativeLibraryDir
+                val argv = listOf(
+                    File(nativeDir, "libproot.so").absolutePath,
+                    "-0", "--link2symlink",
+                    "-r", rootfs.absolutePath,
+                    "-b", "/dev", "-b", "/proc", "-b", "/sys",
+                    "-b", RootfsManager.l2sSelfBind(this),
+                    "-w", "/root",
+                    "/usr/bin/dtach", "-n", "/root/dsh-web.sock",
+                    "/bin/bash", "-c",
+                    "export DEEPSEEK_API_KEY=\"\${DEEPSEEK_API_KEY:-}\"; " +
+                        "dsh web --no-open > /tmp/dsh-web.log 2>&1",
+                )
+                try {
+                    ProcessBuilder(argv).apply {
+                        redirectErrorStream(true)
+                        environment().apply {
+                            put("PROOT_LOADER", File(nativeDir, "libproot-loader.so").absolutePath)
+                            put("PROOT_TMP_DIR", cacheDir.absolutePath)
+                            put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+                            put("HOME", "/root")
+                            put("TERM", "xterm-256color")
+                            put("LANG", "C.UTF-8")
+                        }
+                        // stdout 重定向到文件：主线程不读不等待（服务常驻）
+                        redirectOutput(File(cacheDir, "dsh-web-host.log"))
+                    }.start()
+                } catch (e: Exception) {
+                    Log.e("DrydockAv2", "dsh web spawn 失败", e)
+                }
+            }
+            // 等日志出现 token URL（服务冷启 ~8s；已有实例则立即可读）
+            var url: String? = null
+            repeat(20) {
+                url = runCatching {
+                    log.takeIf { it.exists() }?.readText()?.lineSequence()?.lastOrNull { "token=" in it }
+                }.getOrNull()
+                if (url != null) return@repeat
+                Thread.sleep(1000)
+            }
+            Log.i("DrydockAv2", "dsh web url=$url")
+            runOnUiThread {
+                if (url.isNullOrBlank()) {
+                    android.widget.Toast.makeText(this, "DSH Web 未就绪（先装 DSH 配方）", android.widget.Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                val clean = url!!.substringAfter("http://", "").let { if (it.isBlank()) url.trim() else "http://" + it }
+                startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(clean)))
+            }
+        }.start()
+    }
+
+    private fun loadSession(s: TerminalManager.Session) {
+        session = s
+        webView?.loadUrl("http://127.0.0.1:${s.port}/")
+        Log.i("DrydockAv2", "loadUrl http://127.0.0.1:${s.port}/ token=${s.token.take(4)}…")
+    }
+
+    /** 幻影 IME 探钉：对没被用户点按背书的 ime 状态发 hideSoftInput，促 IME 释放
+     *  幻影窗口（含吞手势的 touchable region）。隐藏态下调用是廉价 no-op，1.5s 节流。 */
+    private fun nudgeHideIme() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastImeNudgeAt < 1500) return
+        lastImeNudgeAt = now
+        Log.i("DrydockAv2", "ime insets 无点按背书（幻影）：hideSoftInput 探钉")
+        val token = webView?.windowToken ?: return
+        getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(token, 0)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || Build.VERSION.SDK_INT < 30) return
+        val ime = window.decorView.rootWindowInsets?.getInsets(WindowInsets.Type.ime()) ?: return
+        // 回前台时 ime 仍悬着且无点按背书：与 insets 监听同一幻影判据，探钉清场
+        if (ime.bottom > appliedImePad &&
+            SystemClock.uptimeMillis() - lastTerminalTouchAt >= IME_INTENT_GRACE_MS
+        ) nudgeHideIme()
+    }
+
+    /** 终端页内会话菜单：列表切换（显示名 + 各自端口）、新建、回主页。 */
     private fun showSessionMenu() {
         val sessions = TerminalManager.readSessions(this)
-        val labels = sessions.map { if (it.name == TerminalManager.MAIN) "主终端 :${it.port}" else "${it.name} :${it.port}" } +
-            listOf("＋ 新建会话（默认密钥）", "← 回主页")
+        val dshInstalled = RecipeManager.installedIds(this).contains("dsh")
+        val labels = sessions.map { "${SessionNames.get(this, it.name)} :${it.port}" } +
+            (if (dshInstalled) listOf("🌐 DSH Web（浏览器打开）") else emptyList()) +
+            listOf("＋ 新建会话", "← 回主页")
+        val dshIndex = if (dshInstalled) sessions.size else -1
         android.app.AlertDialog.Builder(this)
             .setTitle("会话")
             .setItems(labels.toTypedArray()) { _, which ->
                 when {
+                    which == dshIndex -> launchDshWeb()
                     which < sessions.size && sessions.isNotEmpty() -> {
-                        if (sessions[which].name != intent.getStringExtra("session")) {
+                        if (sessions[which].name != session?.name) {
+                            // singleTask：路由回本实例 onNewIntent，同一 WebView 换 URL
                             startActivity(
                                 android.content.Intent(this, TerminalActivity::class.java)
                                     .putExtra("session", sessions[which].name),
                             )
-                            finish()
                         }
                     }
                     which == labels.size - 2 -> {
                         val name = TerminalManager.newSessionName(this)
+                        // 菜单快建不弹对话框：默认名「会话 N」，主页可改名
+                        SessionNames.set(this, name, "会话 ${sessions.size + 1}")
                         startForegroundService(
                             android.content.Intent(this, EnvService::class.java).putExtra("new_session", name),
                         )
@@ -167,7 +580,6 @@ class TerminalActivity : ComponentActivity() {
                                         android.content.Intent(this, TerminalActivity::class.java)
                                             .putExtra("session", name),
                                     )
-                                    finish()
                                 }
                             }
                         }.start()
@@ -187,16 +599,13 @@ class TerminalActivity : ComponentActivity() {
             .show()
     }
 
-    /** JS → Android 桥（预留；当前观测走 console→logcat）。 */
-    inner class Av2Bridge {
-        @JavascriptInterface
-        fun report(s: String) {
-            Log.i("DrydockAv2", "bridge: $s")
-        }
-    }
-
     override fun onDestroy() {
-        // 注意：不 stop()——杀宿主后 tmux 会话存活正是 AV2/S2 要验证的行为
+        // 不 stop() 会话——杀宿主后 dtach 会话存活正是 AV2/S2 要验证的行为。
+        // WebView 必须显式 destroy：Activity 销毁后 native 实例与 devtools 页面
+        // 不会随之释放（2026-10-04 实锤：僵尸 WebView 在 devtools 冒充真页面、
+        // 挂着旧 ws 客户端，毒化诊断与 ttyd 多客户端状态）。
+        webView?.destroy()
+        webView = null
         super.onDestroy()
     }
 }

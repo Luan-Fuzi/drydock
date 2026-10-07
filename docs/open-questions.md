@@ -43,6 +43,7 @@ Drydock 暂定：GitHub 同名仓库 232 个（无本领域冲突）、npm `dryd
 ## Q8：环境救援通道设计
 
 ttyd 住在环境内：rootfs 损坏（依赖冲突、误删、升级失败）时环境内没有终端可自救——这是 proot 方案相对 Termux（外壳永远活着）的结构性缺陷。候选方向：宿主提供绕过 ttyd 的最小救援通道（直接 spawn proot + 最简 PTY，跑 rootfs 内 /bin/sh）；rootfs 完整性校验失败时自动引导修复或重装；快照回滚兜底。与 D7 环境生命周期设计合并考虑。不阻塞 Q1/Q2。
+**2026-10-07 首个真实实例（npm 升级 × link2symlink 断链）**：用户在环境内把 opencode-ai 升到 1.18.35，npm 的「删旧建新」链接序列经 proot l2s 翻译后清掉了 185MB 平台真身（`.l2s.opencode0001`），三层符号链接完好但指向不存在——bash 报 command not found。旧进程活在内存里掩盖数小时，宿主 APK 重启后才暴露。**宿主侧救援实测成立**：断链自身携带修复所需的全部信息（链接路径指向的平台包目录 + package.json 仍在），从 npmmirror 拉平台 tarball 解出真身放回原位即修好（无需进环境、无需 npm）。同类风险面：npm 装的带原生二进制的包（esbuild/sharp/swc 形态）升级时都可能触发；pip（wheel 解压复制）与 apt（dpkg unpack+rename）未观察到同类问题。既有配方层的版本校验（command -v + --version）能发现断链但只会触发按钉死版本重装（降级）；待产品化：bin 健康检查（解引用+可执行测试）进环境 ensure/夜间自检，断链自愈脚本化（解析链路→读平台包 package.json→镜像源补真身），白名单外至少报告。
 
 ## 转向预案
 

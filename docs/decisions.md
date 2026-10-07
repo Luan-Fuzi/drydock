@@ -4,9 +4,9 @@
 
 ## 产品定位
 
-### D1 产品定义：手机上的 agent host
-agent 宿主 = 环境生命周期管理 + 任务调度 + 密钥保管 + 文件落点四件管家事务，底下跑各家官方 agent。
-理由：这是 Termux（终端模拟器 + 包管理器，不是工作负载管理器）结构上不做、云端沙箱物理上做不到的位置；四件事均被 ZeroTermux（备份恢复）、Happy/Omnara（投影 GUI）等单点产品部分验证。
+### D1 产品定义：手机上的 agent host（2026-10-05 修订：四事务 → 三事务）
+agent 宿主 = **环境生命周期管理 + 任务调度 + 文件落点**三件管家事务，底下跑各家官方 agent。（原第四件「密钥保管」经 D29 删除：key 走环境变量由用户自管，编辑器与 agent 代配是宿主的界面，保管不是宿主的职责——见 D29。）
+理由：这是 Termux（终端模拟器 + 包管理器，不是工作负载管理器）结构上不做、云端沙箱物理上做不到的位置；三件事均被 ZeroTermux（备份恢复）、Happy/Omnara（投影 GUI）等单点产品部分验证。
 被否：①"更好的 Termux"（直接和十年社区竞争，且夹缝悖论无解）；②自建云端沙箱（零服务器成本优势没了，正面对撞 Anthropic/OpenAI）。
 
 ### D2 与两个假想敌的关系
@@ -104,6 +104,31 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 2. **多会话 = 每会话一对 holder+ttyd**（dtach 无 server 复用，名字进注册表 terminal-sessions.json，:env 启动时全量重建死会话=空 shell）；UI 会话名经 Intent extra 传给终端页。
 3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
+
+**D31 增补（同日，DSH 真机打通）**：真机补装 dsh 0.2.0-rc.2，实测它**不是多协议工具**——内嵌 @anthropic-ai/sdk 走 Anthropic /messages 协议（OpenAI 兼容端点 404）。用 GLM coding plan 驱动它的完整路径：`DEEPSEEK_API_KEY`+`/root/.dsh/cordis.patch.yml` 覆盖 llm-deepseek 插件（baseURL=https://open.bigmodel.cn/api/anthropic、maxTokens=131072——默认 256000 超 GLM 上限报 1210、apiKeyEnv=ZAI_CODING_CN_API_KEY）+ agent-default-model（model=glm-5.3-flash）→ headless 出话；终端页菜单「DSH Web」真机实测拉起系统浏览器进入 Web UI。三工具现状：env.sh 一把 key 通用（opencode/pi 内置识别、dsh 经 patch 接线），GLM 额度覆盖全部三家。
+
+### D32 嵌入式运行时的两个生态缺陷：xterm Android IME 回车丢尾字 + npm×l2s 断链自愈层（2026-10-07，用户真机实锤驱动）
+
+**① xterm.js 5.3.0（ttyd 1.7.4 内嵌）Android 输入链丢尾字**。现象：WeType 打「你好」回车发送只剩「你」、「今天几号」只剩「今天几」——输入框显示完整、发送瞬间少最后一个字。根因（真机 xterm 实例 dry-run 三角合成实锤）：Android 所有 IME 提交被 Chromium 包在 `keydown(229)/keyup` 之间，xterm 5.3.0 的 `_inputEvent` 门控 `(!composed || !_keyDownSeen)` 在包裹期恒关，实际发送靠 229-keydown 快照 + `setTimeout(0)` 差分且发完不清 textarea——微信输入法换行键会先清理 IME 编辑状态（textarea 残留被清空=值变短），差分逻辑误译成一个 DEL 发给终端，回车发送前最后一字被删；自家键条 ↵ 走 keydown(13)（顺带清 textarea）无此问题。修法：terminal-overlay.js 运行时替换 `_handleAnyTextareaChanges`——值变短不再立即发 DEL（整段清空≥2 字直接判换行清理丢弃；其余挂起 40ms 内有回车随行即丢、无则如期补发，真退格通道不变）。已知残留：单字+超窗慢回车理论漏一个 DEL（观察期）。**关键认知**：WeType 在 Android WebView 上完全不走 composition 事件（拼音预编辑在键盘内部、上屏单批 insertText）——与桌面浏览器 IME 行为模型不同，照搬桌面 composition 竞态假设会诊断错方向（本次第一轮即因此走偏）；且 ttyd/xterm 升级前必须重跑 IME 场景矩阵（draft/ime-patch-verify.py 八场景，合成事件须同任务内 dispatch——CDP 逐条往返的人为时序会制造假阳性全丢）。
+
+**② npm 升级 × proot link2symlink 断链（Q8 首个真实实例，生态级已知问题）**。用户环境内升级 opencode-ai 1.18.34→1.18.35，npm「删旧建新」链接序列经 l2s 翻译后清掉 185MB 平台真身（`.l2s.opencode0001`），三层符号链接完好但指向不存在=bash command not found；**旧进程活在内存里掩盖数小时，宿主重启才暴露**。生态证据：AgentNet #116 做到 syscall 级——proot 的 `link()` 在 untrusted_app 域**假成功**（返回 0 但文件从未落盘），git 默认用 link() 写 loose object 会静默丢对象；proot 上游 14 个 l2s 相关 issue。风险面：npm 带原生二进制的包（esbuild/sharp/swc 形态）升级时都可能断；pnpm 架构性依赖 link/symlink 最重（环境内暂不建议用）；pip（wheel 解压复制）/apt（dpkg unpack+rename）/go install（编译直写）/gem 安全。落地：BinDoctor 自愈层（scan 解析断链自带修复信息→宿主 npmmirror/npmjs 拉平台 tarball→环境内解压落位，断链成串按 target 深度降序防中间层链接实体化、fix 内 SKIP 传导修复，只新增文件幂等可重试，修不了如实 FAIL）+ `/etc/gitconfig` 幂等写 `core.createObject=rename` 预防 git 假成功。AVD 实证删真身复刻故障→自动修复→`opencode --version` 端到端恢复。
+
+**方法论教训（无视觉模型诊断真机问题的可复用工作流）**：只读取证（CDP 读 term buffer/body.innerText，比截图可断言）→ 事件流 hook（textarea 的 composition/input/keydown + 包装 `triggerDataEvent` 记录 xterm 实际外发）→ 真键盘抓取定位真实事件序列（用户配合一次）→ 合成事件在同任务内 dispatch 复现（精确控制时序交错）→ dry-run 替换 triggerDataEvent 做无损实验（不污染用户会话）→ 修复后合成场景矩阵全绿再上真机人测。两条元教训：「坏了不立刻知道」类缺陷（内存进程掩盖/断链掩盖）的验收必须含重启后首启路径；断链类故障的结构往往自描述（链接路径自带包名/版本/位置），宿主同 uid 直修 rootfs 的救援模式成本极低——凡「环境坏了」先查结构里有没有自带修复信息，再考虑重装。
+
+### D31 GLM Coding Plan 走内置 provider：手写段退役（2026-10-06，用户质疑触发核实）
+**用户质疑「π 读图不工作 + 上下文 128K」→ 核实出双层错误**：①contextWindow 被写成 131072（D30 重构注入时把 maxTokens 钳制思维错用到 context 值上）；②更根本——pi 内置目录本就有 `zai-coding-cn` provider（baseUrl 恰为 coding plan 端点，glm-5.3-flash 条目自带 input:["text","image"]、1M 上下文、官方 compat 配置），opencode 侧 models.dev 注册表有 4 个智谱系 provider（env 统一 `ZHIPU_API_KEY`，含 zhipuai-coding-plan/zai-coding-plan 两个 coding 专用条目）。**手写自定义 provider 段把内置识别整个屏蔽了**——多模态「不工作」是手写条目缺 input 声明的衍生症状，不是模型或工具的问题。
+**终版接入**：env.sh 放 `ZHIPU_API_KEY`（opencode 约定，设一各点亮 4 provider，用 disabled_providers 收敛到 coding-plan 两家防误选通用端点扣余额）+ `ZAI_CODING_CN_API_KEY`（pi 约定，变量名精确匹配大小写敏感）；两个工具的手写段删除；`opencode models` 自动出现（56→收敛后 coding-plan 两家）、`pi --list-models` 自动出现 4 模型（glm-5.3-flash 标 images=yes、1M）。**教训**：接一家新厂商前先查工具内置目录（pi `--list-models`、opencode `opencode models`、models.dev api.json）——「零配置识别 + 官方维护元数据」几乎总是优于手写段；自定义端点机制只服务真正的目录外长尾。
+**核实来源**：pi-ai 1.0.0/1.0.4 发布包 zai-coding-cn.json（4 模型含 glm-5.3-flash text+image）；models.dev api.json（4 provider 全含 glm-5.3-flash，modalities 含 image/video/pdf）；智谱官方 docs.bigmodel.cn coding-plan/tool/pi 与 /opencode 页；opencode v1.18.34 源码 provider.ts env 识别逻辑。
+
+### D30 端点列表化### D30 端点列表化：向导只引导，设置页表单追加（2026-10-06，用户三轮修正后定稿）
+**向导端点步退化为纯引导**（可跳过）：只讲两件事——内置目录厂商往 env.sh 放标准变量名即自动识别（opencode 经 models.dev、pi 经内置 catalog，元数据全带，实测核实）；自定义端点去「设置 → Coding 端点」填表。**设置页承载配置**：已添加端点列表（provider 名/baseUrl/模型/key 变量名可见、逐条删除）+ 追加表单（协议/Base URL/模型 ID/上下文可选/key 变量名/provider 名可留空自动生成）。**写入语义 = 列表重算**：opencode.json 的 provider 对象按名合并、pi models.json 的 providers 按名替换——只动列表内名字，agent/用户手写的其他段原样保留（AVD 实证：预放手写段三轮重算后完好）。
+**演化过程如实记录**：第一版预设表（GLM 两条）被用户否——「一开始选择够多是抱薪救火」；第二版「退役生成器全靠 agent 代配」被用户否——鸡生蛋（agent 没模型前没法让 agent 配）；第三版「向导预设」再被否——不能每换一家模型就写一遍，正确引导是「key 用标准名 + 自定义 URL 用户自己配」；终版 = 引导 + 表单追加，宿主从「生成器」退到「表单 → 两个工具同构 JSON 的搬运工」（映射固定，不跟工具版本赛跑）。**教训入册：配置 UI 的每次扩张都要先问「这表/这预设会不会变成永远追不上现实的维护负债」。**
+**技术细节**：pi 的 maxTokens 会作为 max_tokens 发给 API，GLM 端点限制 ≤131072（1210 实锤）——上下文出处值钳制 128k；合并用环境内 node（ubuntu-base 无 python3，apt 装有 dpkg 卡死风险，配方已带 node）；Kotlin raw string 与 JS/JSON 花括号转义踩坑三轮（${'$'} 字面量在转义拼接字符串里不插值），终版用普通字符串拼接 "$" + e.envVar。provider 真名/去 drydock-default/knownModels 退役沿用第一版结论。
+### D29 删除密钥托管层：key 交还用户环境变量（2026-10-05，用户拍板，推翻 I1/D27 密钥两层制）
+**宿主不再保管密钥**：SecretStore（Keystore）与 KeyVault（多 key/会话级注入）整体删除；API key 由用户写进 `~/.drydock/env.sh`（变量名 DRYDOCK_API_KEY，新会话生效），或把 key 发给终端里的 agent 让它代写。生成的工具配置不变（仍引用 `{env:DRYDOCK_API_KEY}` / `$DRYDOCK_API_KEY`），只换了值的来源。runInEnv 统一先 source env.sh（非登录 shell 与登录 shell 的 profile.d 同口径），smoke/AV3 仪器随之续命。
+**决策理由（用户三轮推演）**：①工具生态本来就是 env-var 原生（Claude Code/Codex/各家 CLI 全读环境变量），一个通用的环境变量入口覆盖所有工具的所有变量，而 Keystore 只覆盖我们自己想到的那一个——「不可能用有限的努力对抗无穷的变量，把窗口做好」；②单变量注入确实覆盖不了多端点/多模型并存（配置层多 provider 引用各自的变量名即可解）；③明文凭据文件是生态常态（~/.ssh、~/.aws、opencode/pi 的 auth.json 全是明文），文件浏览器可见自己的文件是普遍接受的边界——宿主不必比全行业更圣洁；④防误不防恶的定位下，托管防住的面（误分享/误导出）改为在导出说明里明示「env.sh 含用户自行存放的 key」。
+**代价（如实入册）**：会话级「不注入」能力消失（env.sh 对所有会话生效）；key 明文落 env.sh，随导出 tar 走；env.sh 在 /root 下，rootfs 重装会抹掉（重装后需重新配置）。被否：保留 Keystore 作为新手默认路径（用户定调「做得干净点」，两套机制并存徒增心智负担）；KeyVault 泛化为「命名密钥→命名变量注入」（在 env.sh 已覆盖该需求的前提下属于重复建设）。迁移：装新包前从存活 holder 的 environ 提取现役 key 写入 env.sh，用户无感。
+**后续**：设置页「API key 与环境变量」指引（编辑器 GUI 暂缓，env.sh + agent 代配已可用）；motd/向导文案同步；night-b t8（多密钥会话级注入）随功能删除，t7 向导步骤更名「端点与模型」。
 
 ### D28 夜批补全：导出口径、多密钥形态、直通绑定最小版与五处实锤缺陷（2026-10-04，AVD 全实证）
 一夜跑完 B 类测试清账与 A 类缺口补全（verdict：`draft/night-b-verdict.json`，t1–t11 全绿；剧本 `scripts/night-b.py` 可复跑）。四项口径定稿：

@@ -1,11 +1,15 @@
 package dev.drydock.prototype
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
- * 端点配置存储（D25：零预置厂商，用户先选协议再配 Base URL 与 API Key）。
- * 协议与 Base URL 进 SharedPreferences；API Key 只进 Keystore（I1：永不落文件）。
- * 模型 id 是端点实际服务的模型名（如 glm-4.7），两个 agent 的配置都以它为键。
+ * 自定义端点列表（D30 终版）：设置页表单追加、列表可见、逐条删除。
+ * 每条 = 两个工具配置文件里的一个 provider 段（同构 JSON 的两种拼写，RecipeManager
+ * 负责映射写入——只管理本列表的 provider 名，agent/用户手写的其他段不碰）。
+ * 内置目录厂商（DeepSeek/OpenAI 等）不进列表：往 env.sh 放标准变量名即可自动识别。
+ * API key 不经本类——值在 ~/.drydock/env.sh（D29），条目只存变量名引用。
  */
 object EndpointStore {
 
@@ -15,50 +19,102 @@ object EndpointStore {
         ANTHROPIC("Anthropic Messages"),
     }
 
-    /** Keystore 键名（与 AgentManager 的 glm_api_key 分开：那是 AV3 验收仪器，这是产品路径）。 */
-    const val KEY_NAME = "drydock_api_key"
+    data class Endpoint(
+        val providerId: String,
+        val protocol: Protocol,
+        val baseUrl: String,
+        val model: String,
+        val contextWindow: Long?,   // 可选；不填走工具默认
+        val envVar: String,
+    )
 
     private fun prefs(context: Context) =
         context.getSharedPreferences("drydock", Context.MODE_PRIVATE)
 
-    fun save(context: Context, protocol: Protocol, baseUrl: String, model: String, contextWindow: String = "") {
-        prefs(context).edit()
-            .putString("endpoint_protocol", protocol.name)
-            .putString("endpoint_base_url", baseUrl.trim().trimEnd('/'))
-            .putString("endpoint_model", model.trim())
-            .putString("endpoint_context", contextWindow.trim())
-            .apply()
+    fun list(context: Context): List<Endpoint> = try {
+        val txt = prefs(context).getString("endpoints", null) ?: "[]"
+        val arr = JSONArray(txt)
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            Endpoint(
+                providerId = o.getString("providerId"),
+                protocol = Protocol.valueOf(o.getString("protocol")),
+                baseUrl = o.getString("baseUrl"),
+                model = o.getString("model"),
+                contextWindow = if (o.isNull("contextWindow")) null else o.getLong("contextWindow"),
+                envVar = o.getString("envVar"),
+            )
+        }
+    } catch (_: Exception) {
+        emptyList()
     }
 
-    fun clear(context: Context) {
-        prefs(context).edit()
-            .remove("endpoint_protocol").remove("endpoint_base_url").remove("endpoint_model")
-            .remove("endpoint_context")
-            .apply()
+    private fun persist(context: Context, items: List<Endpoint>) {
+        val arr = JSONArray()
+        items.forEach { e ->
+            arr.put(JSONObject()
+                .put("providerId", e.providerId)
+                .put("protocol", e.protocol.name)
+                .put("baseUrl", e.baseUrl)
+                .put("model", e.model)
+                .put("contextWindow", e.contextWindow ?: JSONObject.NULL)
+                .put("envVar", e.envVar))
+        }
+        prefs(context).edit().putString("endpoints", arr.toString()).apply()
     }
 
-    fun protocol(context: Context): Protocol? =
-        prefs(context).getString("endpoint_protocol", null)?.let { runCatching { Protocol.valueOf(it) }.getOrNull() }
+    /** 追加一条（表单提交）。providerId 留空按 baseUrl 主机名推（如 open.bigmodel.cn → bigmodel-cn）。 */
+    fun add(
+        context: Context,
+        protocol: Protocol,
+        baseUrl: String,
+        model: String,
+        contextWindow: Long?,
+        envVar: String,
+        providerId: String = "",
+    ): Endpoint {
+        val id = providerId.trim().ifBlank {
+            baseUrl.trim().trimEnd('/').substringAfter("://").substringBefore('/')
+                .split(".").takeLast(2).joinToString("-")
+                .replace(Regex("[^a-zA-Z0-9_-]"), "-").ifBlank { "custom" }
+        }
+        val e = Endpoint(
+            providerId = id,
+            protocol = protocol,
+            baseUrl = baseUrl.trim().trimEnd('/'),
+            model = model.trim(),
+            contextWindow = contextWindow,
+            envVar = envVar.trim().ifBlank { "DRYDOCK_API_KEY" },
+        )
+        // 同 providerId 覆盖（重复添加 = 更新），列表语义是「每家端点一条」
+        persist(context, list(context).filterNot { it.providerId == e.providerId } + e)
+        return e
+    }
 
-    fun baseUrl(context: Context): String? =
-        prefs(context).getString("endpoint_base_url", null)?.takeIf { it.isNotBlank() }
+    fun remove(context: Context, providerId: String) {
+        persist(context, list(context).filterNot { it.providerId == providerId })
+    }
 
-    fun model(context: Context): String? =
-        prefs(context).getString("endpoint_model", null)?.takeIf { it.isNotBlank() }
+    // ---------- 旧单端点字段（D25-D30 初版遗留）的兼容读：列表为空时回落 ----------
 
-    /** 上下文窗口（token 数，可选）：OpenCode 的 limit.context；pi 无此字段（上游限制，
-     *  自定义 provider 固定默认显示），仅在配置信息文件里展示。 */
-    fun contextWindow(context: Context): Long? =
-        prefs(context).getString("endpoint_context", null)?.trim()?.toLongOrNull()
+    fun legacyEndpoint(context: Context): Endpoint? {
+        val protocol = prefs(context).getString("endpoint_protocol", null)
+            ?.let { runCatching { Protocol.valueOf(it) }.getOrNull() } ?: return null
+        val baseUrl = prefs(context).getString("endpoint_base_url", null)?.takeIf { it.isNotBlank() } ?: return null
+        return Endpoint(
+            providerId = prefs(context).getString("endpoint_provider_id", null)?.takeIf { it.isNotBlank() }
+                ?: "custom",
+            protocol = protocol,
+            baseUrl = baseUrl,
+            model = prefs(context).getString("endpoint_model", null) ?: "",
+            contextWindow = prefs(context).getString("endpoint_context", null)?.trim()?.toLongOrNull(),
+            envVar = prefs(context).getString("endpoint_env_var", null)?.takeIf { it.isNotBlank() }
+                ?: "DRYDOCK_API_KEY",
+        )
+    }
 
-    fun keyReady(context: Context): Boolean = KeyVault.defaultKey(context) != null
-
-    /** 三要素齐（协议 + Base URL + key）才算已配置；模型可空（agent 端有各自的默认选择）。 */
-    fun configured(context: Context): Boolean =
-        protocol(context) != null && !baseUrl(context).isNullOrBlank() && keyReady(context)
-
-    fun summary(context: Context): String =
-        if (configured(context)) "${protocol(context)!!.label} · ${baseUrl(context)}" else "未配置"
+    fun all(context: Context): List<Endpoint> =
+        list(context).ifEmpty { legacyEndpoint(context)?.let { listOf(it) } ?: emptyList() }
 
     fun wizardDone(context: Context): Boolean = prefs(context).getBoolean("wizard_done", false)
 

@@ -22,8 +22,7 @@ object TerminalManager {
     private const val TAG = "DrydockTerminal"
     const val MAIN = "main"
 
-    /** keyId：null=默认密钥；""=不注入；其余=KeyVault 条目 id（D27 密钥两层制第②层）。 */
-    data class Session(val name: String, val port: Int, val token: String, val keyId: String? = null)
+    data class Session(val name: String, val port: Int, val token: String)
 
     /** L1 心跳样本：alive=holder 存活；rchar=holder /proc/io 读字节（PTY 输出代理）。 */
     data class Heartbeat(val name: String, val alive: Boolean, val rchar: Long, val silentMin: Long)
@@ -36,13 +35,23 @@ object TerminalManager {
 
     fun registryFile(context: Context) = File(context.filesDir, "terminal-sessions.json")
 
-    /** 幂等安装 ttyd + dtach（走 apt，http 源）。tmux 因 proot ptrace 冲突暂缓，见 D18。 */
+    /** 幂等安装终端基础层（走 apt，http 源）。rootfs 是 ubuntu-base 裸底盘（30MB），
+     *  基础层从完整安装里按 agent 刚需取回（2026-10-07 用户定调），下载合计 ~10MB：
+     *  终端链路 ttyd+dtach；git 全家（git+ca-certificates+less 分页器）；搜索
+     *  ripgrep+fd-find（pi 缺它会转 GitHub 下载在国内网络挂死；Ubuntu 包名 fd-find
+     *  二进制 fdfind，补 fd 符号链接）；网络 curl+wget；压缩 zip/unzip/xz-utils/
+     *  bzip2（源码包常见格式）；文本/系统 jq（JSON 处理高频）+file+procps（ps/top）；远端 openssh-client（ssh/scp，
+     *  纯客户端无监听面，key 走惯例 ~/.ssh 用户自理）。
+     *  python3（~60MB）/build-essential（数百 MB）/vim（编辑器偏好）不进默认，按需
+     *  apt 装。tmux 因 proot ptrace 冲突暂缓（D18）。EnvService 会话 ensure 后异步
+     *  补跑，存量环境缺包自动补齐。 */
     fun ensureTerminalLayer(context: Context): RootfsManager.ExecResult {
         val cmd = (
-            "dpkg -s ttyd >/dev/null 2>&1 && dpkg -s dtach >/dev/null 2>&1 && echo LAYER_ALREADY " +
+            "dpkg -s ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less >/dev/null 2>&1 && echo LAYER_ALREADY " +
                 "|| (apt-get update -o Acquire::Retries=2 >/dev/null 2>&1; " +
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach 2>&1 | tail -3); " +
-                "command -v ttyd dtach; echo LAYER_RC=\$?"
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less 2>&1 | tail -3); " +
+                "[ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }; " +
+                "command -v ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; echo LAYER_RC=\$?"
             )
         return RootfsManager.runInEnv(context, cmd)
     }
@@ -53,8 +62,8 @@ object TerminalManager {
         else JSONArray(txt).let { arr ->
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
-                Session(o.getString("name"), o.getInt("port"), o.getString("token"),
-                    if (o.has("key_id")) o.getString("key_id") else null)
+                Session(o.getString("name"), o.getInt("port"), o.getString("token"))
+                // 旧注册表里的 key_id 字段（D27 密钥两层制遗留）直接忽略
             }
         }
     } catch (_: Exception) {
@@ -64,11 +73,11 @@ object TerminalManager {
     /** main 会话（默认入口）。 */
     fun current(context: Context): Session? = readSessions(context).firstOrNull { it.name == MAIN }
 
-    /** 服务重启后恢复注册表内全部会话（含各自的 keyId）；空表则起 main。 */
+    /** 服务重启后恢复注册表内全部会话；空表则起 main。 */
     fun ensureAll(context: Context): List<Session> {
         val existing = readSessions(context)
         val names = existing.map { it.name }.ifEmpty { listOf(MAIN) }
-        return names.mapNotNull { n -> start(context, n, existing.firstOrNull { it.name == n }?.keyId) }
+        return names.mapNotNull { n -> start(context, n) }
     }
 
     fun newSessionName(context: Context): String {
@@ -78,10 +87,34 @@ object TerminalManager {
         return "s$i"
     }
 
+    /** 关闭会话：杀 holder/ttyd 并移出注册表。dtach 无 server，会话内容随 holder
+     *  丢失（重新打开 = 全新 shell）；全部关完后由 ensureAll 的空表回退在下次
+     *  打开时重建 main。必须在 :env 进程调用（Process 句柄在服务进程内存里）。
+     *  destroy() 只杀直接子进程，ptrace 下的 dtach/bash 可能存活——先按 sock 名
+     *  清点幸存者逐个 SIGKILL（同 uid，ps 可见）。 */
+    @Synchronized
+    fun stop(context: Context, name: String): Boolean {
+        runCatching {
+            val ps = ProcessBuilder("ps", "-A", "-o", "PID,ARGS").start()
+                .inputStream.bufferedReader().readText()
+            ps.lineSequence()
+                .filter { "/root/$name.sock" in it }
+                .map { it.trim().split(Regex("\\s+"))[0] }
+                .filter { it.toIntOrNull() != null && it.toInt() != android.os.Process.myPid() }
+                .forEach { runCatching { android.os.Process.killProcess(it.toInt()) } }
+        }
+        holders.remove(name)?.destroy()
+        ttyds.remove(name)?.destroy()
+        val removed = sessions.remove(name) != null
+        persist(context)
+        Log.i(TAG, "会话 $name 已关闭（剩 ${sessions.size} 个）")
+        return removed
+    }
+
     /** 启动（或复用）指定会话。dtach 无 server：holder 死 = 会话内容丢，
      *  探活失败即重建全新 shell（session_recreated 入时间线）。 */
     @Synchronized
-    fun start(context: Context, name: String = MAIN, keyId: String? = null): Session? {
+    fun start(context: Context, name: String = MAIN): Session? {
         val rootfs = RootfsManager.rootfsDir(context)
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val sockHost = File(rootfs, "root/$name.sock")
@@ -89,7 +122,7 @@ object TerminalManager {
         if (holders[name]?.isAlive != true && !unixSocketAlive(sockHost)) {
             sockHost.delete()
             val existed = readSessions(context).any { it.name == name }
-            val holder = spawnHolder(context, name, sockHost, keyId) ?: return null
+            val holder = spawnHolder(context, name, sockHost) ?: return null
             holders[name] = holder
             monitorExit(context, "holder:$name", holder)
             if (existed) {
@@ -105,7 +138,7 @@ object TerminalManager {
             }.toString()
             val ttyd = spawnTtyd(context, sockHost, port, token) ?: return null
             ttyds[name] = ttyd
-            sessions[name] = Session(name, port, token, keyId)
+            sessions[name] = Session(name, port, token)
             monitorExit(context, "ttyd:$name", ttyd)
         }
 
@@ -186,9 +219,7 @@ object TerminalManager {
             registryFile(context).writeText(
                 JSONArray().apply {
                     sessions.values.forEach {
-                        put(JSONObject().put("name", it.name).put("port", it.port).put("token", it.token).apply {
-                            it.keyId?.let { k -> put("key_id", k) }
-                        })
+                        put(JSONObject().put("name", it.name).put("port", it.port).put("token", it.token))
                     }
                 }.toString(),
             )
@@ -197,7 +228,7 @@ object TerminalManager {
         }
     }
 
-    private fun spawnHolder(context: Context, name: String, sockHost: File, keyId: String? = null): Process? {
+    private fun spawnHolder(context: Context, name: String, sockHost: File): Process? {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val rootfs = RootfsManager.rootfsDir(context)
         val holder = ProcessBuilder(
@@ -222,9 +253,8 @@ object TerminalManager {
                 put("HOME", "/root")
                 put("TERM", "xterm-256color")
                 put("LANG", "C.UTF-8")
-                // I1 + D25 零预置 + D27 按会话选 key：keyId null=默认 / ""=不注入 / 条目 id；
-                // 未配置端点时回落 AV3 仪器的 GLM 注入保持兼容；会话建立后配置变更需重建会话才生效
-                RecipeManager.sessionEnv(context, keyId).forEach { (k, v) -> put(k, v) }
+                // key 自 2026-10-05 起不注入（D29）：登录 shell（bash -l）经 profile.d
+                // source ~/.drydock/env.sh，DRYDOCK_API_KEY 等变量由用户在该文件自管
             }
         }.start()
         val deadline = System.currentTimeMillis() + 15_000

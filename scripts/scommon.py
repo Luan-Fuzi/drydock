@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from adbdev import adb_prefix, online_devices, resolved_serial
 
 PKG = "dev.drydock.prototype"
-MAIN_ACTIVITY = f"{PKG}/.MainActivity"
+MAIN_ACTIVITY = f"{PKG}/.HomeActivity"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DRAFT = os.path.join(ROOT, "draft")
 DUMP = "/data/local/tmp/uitap-ui.xml"
@@ -145,6 +145,28 @@ def wait_text(text, timeout_s, poll=3):
 def swipe_up():
     """页内向下滚动一屏（Compose 列表按钮常被挤到可视区外，uiautomator 只见可视节点）。"""
     shell("input", "swipe", "540", "1600", "540", "500", "300")
+
+
+def wait_focus_activity(name, timeout_s=180, poll=2):
+    """等指定 Activity 出现在前台焦点。"""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        out = shell("dumpsys", "window")
+        for line in out.splitlines():
+            if "mCurrentFocus=" in line and name in line:
+                return True
+        time.sleep(poll)
+    return False
+
+
+def open_terminal_session(timeout_s=180):
+    """主页 → 终端页（2026-10-06 界面：会话卡片即入口，副标题一律含「本地端口」）。
+    空列表走「新建会话」对话框（默认名直接「创建」）。返回 TerminalActivity 是否前台。"""
+    if tap_text("本地端口", 30):
+        return wait_focus_activity("TerminalActivity", timeout_s)
+    if tap_text("新建会话", 30) and tap_text("创建", 30):
+        return wait_focus_activity("TerminalActivity", timeout_s)
+    return False
 
 
 def tap_text(text, timeout_s=180):

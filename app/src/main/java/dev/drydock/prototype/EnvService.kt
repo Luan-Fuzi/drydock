@@ -79,16 +79,31 @@ class EnvService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val app = applicationContext
         val newSession = intent?.getStringExtra("new_session")
-        // key_id：缺省=默认密钥；""=不注入；其余=KeyVault 条目 id（D27 密钥两层制）
-        val keyId = if (intent?.hasExtra("key_id") == true) intent.getStringExtra("key_id") else null
+        val stopSession = intent?.getStringExtra("stop_session")
         Thread {
+            // 关闭会话：只做关闭不跑 ensureAll——否则关掉最后一个会话会被
+            // 空表回退立刻重建 main，等于关不掉
+            if (stopSession != null) {
+                TerminalManager.stop(app, stopSession)
+                Timeline.log(this, "session_closed", mapOf("name" to stopSession))
+                return@Thread
+            }
             // 新会话优先：ensureAll 串行恢复历史会话每个 ~10s，堆多个时会把
-            // 发起方的 60s 轮询耗光（夜批实锤）；先建新会话再恢复其余（幂等）
+            // 发起方的 60s 轮询耗光（夜批实锤）；先建新会话再恢复其余（幂等）。
+            // start() 的 persist 只写本进程内存的会话表——force-stop 后新起的 :env
+            // 内存为空，直接 persist 会把注册表里的历史会话抹掉（2026-10-07 night-b
+            // t11 实锤 main 消失）。先快照旧会话名，建完新会话逐个补回。
             if (newSession != null) {
-                TerminalManager.start(app, newSession, keyId)
+                val preExisting = TerminalManager.readSessions(app).map { it.name }
+                TerminalManager.start(app, newSession)
+                preExisting.filter { it != newSession }.forEach { TerminalManager.start(app, it) }
             }
             TerminalManager.ensureAll(app)
             Timeline.log(this, "sessions_ready", mapOf("names" to TerminalManager.readSessions(app).map { it.name }))
+            // bin 健康检查（Q8：npm×l2s 断链自愈 + gitconfig 预防），异步不阻塞会话
+            BinDoctor.ensureAsync(app)
+            // 终端基础层幂等补装（git 等新增默认包对存量环境的补齐；已装时 dpkg -s 秒过）
+            Thread { runCatching { TerminalManager.ensureTerminalLayer(app) } }.start()
         }.start()
         return START_STICKY
     }
@@ -194,17 +209,18 @@ class EnvService : Service() {
     private fun l1Judge(beats: List<TerminalManager.Heartbeat>) {
         val nm = getSystemService(NotificationManager::class.java)
         for (b in beats) {
+            val shown = SessionNames.get(this, b.name)
             if (!b.alive) {
                 if (b.name !in notifiedDead) {
                     notifiedDead.add(b.name)
                     notifiedSilent.remove(b.name)
-                    alert(nm, "会话 ${b.name} 已退出", "环境进程结束；重开终端会重建会话")
+                    alert(nm, "会话 $shown 已退出", "环境进程结束；重开终端会重建会话")
                 }
             } else {
                 notifiedDead.remove(b.name)
                 if (b.silentMin >= SILENT_ALERT_MIN && b.name !in notifiedSilent) {
                     notifiedSilent.add(b.name)
-                    alert(nm, "会话 ${b.name} 静默 ${b.silentMin} 分钟", "PTY 无输出（可能任务结束或等待输入）")
+                    alert(nm, "会话 $shown 静默 ${b.silentMin} 分钟", "PTY 无输出（可能任务结束或等待输入）")
                 } else if (b.silentMin == 0L) {
                     notifiedSilent.remove(b.name)
                 }
