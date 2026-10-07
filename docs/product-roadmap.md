@@ -27,6 +27,7 @@
 
 **状态（2026-10-03）**：AVD 可验部分全过——配方安装（OpenCode 1.18.34 / pi 1.0.0，npmmirror 直连）、三协议映射配置写入、Chat Completions 双配方 headless 出第一句话（pi 另实证 Anthropic Messages）、向导三步与跳过路径、主页产品面、向导直达终端（verdict：`draft/phase1-avd-verdict.json`）。已知问题：OpenCode × Anthropic 协议组合静默无限重试（适配器内部问题，裸端点全 200），向导引导 OpenCode 用户优先 Chat Completions；Responses 协议无端点可测、留文档口径。真机项（TUI 观感/触控/IME、端到端首话）按协作约定留批次复查。
 **状态增补（2026-10-04 夜批）**：向导 Anthropic × OpenCode 已知问题警示落地（选该协议即显，t7）；上下文窗口字段端到端实证（`limit.context` 落 opencode.json，t3）；npm 首选源默认纠回 npmmirror、假源注入实测 npmmirror→npmjs 回退真实代码路径成立（t5）；「打开终端/新建会话」主链路按钮 AVD 驱动实证（t1，附轮询 60s 与会话列表刷新修复）。
+**状态增补（2026-10-07，向导版式与文案重做，用户定调）**：主题跟随（DrydockTheme，不再锁深色）；版式全居中（步骤圆点指示、图标+居中大标题、引导卡片、居中按钮）；端点步文案面向新手重写——标题改「连接大模型」，先给动作（进终端把 key 发给 agent 代配）再讲两条手动路径（内置目录变量名 / 设置→Coding 端点表单）；agent 步改多选、可不选（零选＝暂不安装，按钮「暂不安装，继续」），文案改「我们预制了几种可用的 Agent，供你下载安装」，不再提及 Claude Code。night-b t7 锚点同步（连接大模型/自动识别/ZHIPU_API_KEY）；AVD 实证：t7 过、零选路径端到端（报告→进入终端→TerminalActivity 前台）；截图 draft/wizard*-*.png 留观感批次。
 
 ## 阶段 2：终端输入
 

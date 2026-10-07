@@ -371,11 +371,13 @@ def t7(r):
         raise RuntimeError("向导未打开（保活步）")
     if not sc.tap_text("下一步", 30):
         raise RuntimeError("保活步过不去（豁免未生效？）")
-    if not wait_text_scroll("API key 与模型", 30):
+    if not wait_text_scroll("连接大模型", 30):
         raise RuntimeError("端点步未出现")
     xml = sc.ui_dump()
-    r["builtin_guide"] = "内置目录厂商" in xml and "DEEPSEEK_API_KEY" in xml
-    r["custom_guide"] = "自定义端点" in xml and "Coding 端点" in xml
+    # 2026-10-07 向导文案重做（面向新手）：内置路径断言「自动识别 + 标准变量名示例」，
+    # 自定义路径断言「自定义服务地址 + Coding 端点」表单指引
+    r["builtin_guide"] = "自动识别" in xml and "ZHIPU_API_KEY" in xml
+    r["custom_guide"] = "自定义服务地址" in xml and "Coding 端点" in xml
     screencap("night-wizard-endpoint-guide.png")
     sc.shell("input", "keyevent", "KEYCODE_BACK")
     r["pass"] = r["builtin_guide"] and r["custom_guide"]

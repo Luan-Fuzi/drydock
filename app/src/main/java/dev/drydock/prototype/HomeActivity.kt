@@ -217,7 +217,8 @@ class HomeActivity : ComponentActivity() {
     }
 }
 
-/** 全 app 主题入口：按 ThemeStore 切换（会话/文件/设置三栏生效；向导与救援页维持深色）。 */
+/** 全 app 主题入口：按 ThemeStore 切换（会话/文件/设置三栏与向导页生效，向导
+ *  2026-10-07 起跟随主题不再锁深色；救援页维持深色）。 */
 @Composable
 fun DrydockTheme(content: @Composable () -> Unit) {
     val dark = when (ThemeStore.mode.value) {
