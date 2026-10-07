@@ -35,13 +35,16 @@ object TerminalManager {
 
     fun registryFile(context: Context) = File(context.filesDir, "terminal-sessions.json")
 
-    /** 幂等安装 ttyd + dtach（走 apt，http 源）。tmux 因 proot ptrace 冲突暂缓，见 D18。 */
+    /** 幂等安装终端基础层（走 apt，http 源）：ttyd + dtach + git（2026-10-07 用户定调
+     *  默认装，agent 刚需；ca-certificates 为 https clone 地基、less 为 git 分页器伴生）。
+     *  tmux 因 proot ptrace 冲突暂缓，见 D18。EnvService 会话 ensure 后亦异步补跑，
+     *  存量环境缺包自动补齐。 */
     fun ensureTerminalLayer(context: Context): RootfsManager.ExecResult {
         val cmd = (
-            "dpkg -s ttyd >/dev/null 2>&1 && dpkg -s dtach >/dev/null 2>&1 && echo LAYER_ALREADY " +
+            "dpkg -s ttyd >/dev/null 2>&1 && dpkg -s dtach >/dev/null 2>&1 && dpkg -s git >/dev/null 2>&1 && echo LAYER_ALREADY " +
                 "|| (apt-get update -o Acquire::Retries=2 >/dev/null 2>&1; " +
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach 2>&1 | tail -3); " +
-                "command -v ttyd dtach; echo LAYER_RC=\$?"
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach git ca-certificates less 2>&1 | tail -3); " +
+                "command -v ttyd dtach git; echo LAYER_RC=\$?"
             )
         return RootfsManager.runInEnv(context, cmd)
     }

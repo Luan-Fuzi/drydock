@@ -102,6 +102,8 @@ class EnvService : Service() {
             Timeline.log(this, "sessions_ready", mapOf("names" to TerminalManager.readSessions(app).map { it.name }))
             // bin 健康检查（Q8：npm×l2s 断链自愈 + gitconfig 预防），异步不阻塞会话
             BinDoctor.ensureAsync(app)
+            // 终端基础层幂等补装（git 等新增默认包对存量环境的补齐；已装时 dpkg -s 秒过）
+            Thread { runCatching { TerminalManager.ensureTerminalLayer(app) } }.start()
         }.start()
         return START_STICKY
     }
