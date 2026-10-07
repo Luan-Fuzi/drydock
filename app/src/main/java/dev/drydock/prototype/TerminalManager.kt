@@ -40,17 +40,18 @@ object TerminalManager {
      *  终端链路 ttyd+dtach；git 全家（git+ca-certificates+less 分页器）；搜索
      *  ripgrep+fd-find（pi 缺它会转 GitHub 下载在国内网络挂死；Ubuntu 包名 fd-find
      *  二进制 fdfind，补 fd 符号链接）；网络 curl+wget；压缩 zip/unzip/xz-utils/
-     *  bzip2（源码包常见格式）；文本/系统 jq（JSON 处理高频）+file+procps（ps/top）。
+     *  bzip2（源码包常见格式）；文本/系统 jq（JSON 处理高频）+file+procps（ps/top）；远端 openssh-client（ssh/scp，
+     *  纯客户端无监听面，key 走惯例 ~/.ssh 用户自理）。
      *  python3（~60MB）/build-essential（数百 MB）/vim（编辑器偏好）不进默认，按需
      *  apt 装。tmux 因 proot ptrace 冲突暂缓（D18）。EnvService 会话 ensure 后异步
      *  补跑，存量环境缺包自动补齐。 */
     fun ensureTerminalLayer(context: Context): RootfsManager.ExecResult {
         val cmd = (
-            "dpkg -s ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps ca-certificates less >/dev/null 2>&1 && echo LAYER_ALREADY " +
+            "dpkg -s ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less >/dev/null 2>&1 && echo LAYER_ALREADY " +
                 "|| (apt-get update -o Acquire::Retries=2 >/dev/null 2>&1; " +
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps ca-certificates less 2>&1 | tail -3); " +
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less 2>&1 | tail -3); " +
                 "[ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }; " +
-                "command -v ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps; echo LAYER_RC=\$?"
+                "command -v ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; echo LAYER_RC=\$?"
             )
         return RootfsManager.runInEnv(context, cmd)
     }
