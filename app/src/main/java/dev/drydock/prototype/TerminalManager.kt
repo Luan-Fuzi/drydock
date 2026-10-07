@@ -35,16 +35,22 @@ object TerminalManager {
 
     fun registryFile(context: Context) = File(context.filesDir, "terminal-sessions.json")
 
-    /** 幂等安装终端基础层（走 apt，http 源）：ttyd + dtach + git（2026-10-07 用户定调
-     *  默认装，agent 刚需；ca-certificates 为 https clone 地基、less 为 git 分页器伴生）。
-     *  tmux 因 proot ptrace 冲突暂缓，见 D18。EnvService 会话 ensure 后亦异步补跑，
-     *  存量环境缺包自动补齐。 */
+    /** 幂等安装终端基础层（走 apt，http 源）。rootfs 是 ubuntu-base 裸底盘（30MB），
+     *  基础层从完整安装里按 agent 刚需取回（2026-10-07 用户定调），下载合计 ~10MB：
+     *  终端链路 ttyd+dtach；git 全家（git+ca-certificates+less 分页器）；搜索
+     *  ripgrep+fd-find（pi 缺它会转 GitHub 下载在国内网络挂死；Ubuntu 包名 fd-find
+     *  二进制 fdfind，补 fd 符号链接）；网络 curl+wget；压缩 zip/unzip/xz-utils/
+     *  bzip2（源码包常见格式）；文本/系统 jq（JSON 处理高频）+file+procps（ps/top）。
+     *  python3（~60MB）/build-essential（数百 MB）/vim（编辑器偏好）不进默认，按需
+     *  apt 装。tmux 因 proot ptrace 冲突暂缓（D18）。EnvService 会话 ensure 后异步
+     *  补跑，存量环境缺包自动补齐。 */
     fun ensureTerminalLayer(context: Context): RootfsManager.ExecResult {
         val cmd = (
-            "dpkg -s ttyd >/dev/null 2>&1 && dpkg -s dtach >/dev/null 2>&1 && dpkg -s git >/dev/null 2>&1 && echo LAYER_ALREADY " +
+            "dpkg -s ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps ca-certificates less >/dev/null 2>&1 && echo LAYER_ALREADY " +
                 "|| (apt-get update -o Acquire::Retries=2 >/dev/null 2>&1; " +
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach git ca-certificates less 2>&1 | tail -3); " +
-                "command -v ttyd dtach git; echo LAYER_RC=\$?"
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps ca-certificates less 2>&1 | tail -3); " +
+                "[ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }; " +
+                "command -v ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps; echo LAYER_RC=\$?"
             )
         return RootfsManager.runInEnv(context, cmd)
     }
