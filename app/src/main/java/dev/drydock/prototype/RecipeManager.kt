@@ -21,7 +21,9 @@ object RecipeManager {
     const val NPM_PRIMARY_SOURCE = "https://registry.npmmirror.com"
     const val NPM_FALLBACK_SOURCE = "https://registry.npmjs.org"
 
-    /** 配方 = npm 包 + 版本 pin（升级 = 改这里 + 重走安装判据，同 RootfsManifest 口径）。 */
+    /** 配方 = npm 包 + 基线参考版本。2026-10-07 用户定调：不 pin 版本，安装走 npm
+     *  latest（opencode 自带 autoupdate 亦随之放行，断链由 BinDoctor 兜底）；version
+     *  仅作展示/文档参考，不参与已装判定与安装。 */
     data class Recipe(
         val id: String,
         val title: String,
@@ -65,7 +67,7 @@ object RecipeManager {
             .edit().putString("recipes_installed", cur.joinToString(",")).apply()
     }
 
-    /** 已安装且版本匹配的配方 id 列表（读环境，不动手）。 */
+    /** 已安装配方 id 列表（读环境不动手；bin 在即算，基线版本不符记 id:other 不影响判定）。 */
     fun installed(context: Context): List<String> {
         val checks = ALL.joinToString(" ") { r ->
             "command -v ${r.bin} >/dev/null 2>&1 && ${r.bin} --version 2>/dev/null | grep -q '${r.version}' && echo ${r.id}" +
@@ -81,7 +83,7 @@ object RecipeManager {
         if (!node.output.contains("NODE_RC=0")) {
             return RootfsManager.ExecResult(1, "Node 层失败：${node.output.takeLast(300)}")
         }
-        onLog("安装 ${recipe.title} ${recipe.version}…")
+        onLog("安装 ${recipe.title}（npm 最新版）…")
         val toolsSh = if (recipe.aptTools.isEmpty()) "" else """
             TOOLS_RC=0
             command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || {
@@ -100,13 +102,13 @@ object RecipeManager {
             NPM_REG="${'$'}{DRYDOCK_NPM_REGISTRY:-$NPM_PRIMARY_SOURCE}"
             echo NPM_REG=${'$'}NPM_REG
             $toolsSh
-            command -v ${recipe.bin} >/dev/null 2>&1 && ${recipe.bin} --version 2>/dev/null | grep -q '${recipe.version}' \
+            command -v ${recipe.bin} >/dev/null 2>&1 \
               && { echo RECIPE_ALREADY; echo RECIPE_RC=0; exit 0; }
-            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=${'$'}NPM_REG ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+            npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=${'$'}NPM_REG ${recipe.npmPackage}@latest 2>&1 | tail -3
             NPM_RC=${'$'}{PIPESTATUS[0]}
             if [ ${'$'}NPM_RC -ne 0 ]; then
               echo "首选源失败，换官方 npmjs 源重试…"
-              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=$NPM_FALLBACK_SOURCE ${recipe.npmPackage}@${recipe.version} 2>&1 | tail -3
+              npm install -g --no-fund --no-audit ${recipe.extraInstallFlags} --registry=$NPM_FALLBACK_SOURCE ${recipe.npmPackage}@latest 2>&1 | tail -3
               NPM_RC=${'$'}{PIPESTATUS[0]}
             fi
             ${recipe.bin} --version 2>/dev/null; BIN_RC=${'$'}?
