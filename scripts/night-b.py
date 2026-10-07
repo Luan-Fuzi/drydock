@@ -356,31 +356,76 @@ def t6(r):
 
 # ---------- t7 向导 ANTHROPIC 已知问题教育（块 3） ----------
 
-@stage("t7_wizard_anthropic_hint")
+@stage("t7_wizard_config")
 def t7(r):
-    """D30 后向导端点步为纯引导：验证两种情况的引导文案在（内置厂商标准名 / Coding 端点表单指引）。"""
+    """2026-10-07 向导第二轮：欢迎页定位、左上角返回、连接大模型页真实可配——
+    GLM key 经向导写入 env.sh（ZHIPU_API_KEY + ZAI_CODING_CN_API_KEY 双变量）、
+    自定义服务地址表单在场。"""
     sc.shell("dumpsys", "deviceidle", "whitelist", "+dev.drydock.prototype")  # AVD 测试条件：过保活步
     sc.shell("am", "start", "-S", "-n", HOME)
     sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页")
-    # 设置页重构（2026-10-07）：入口行标题「初始设置向导」，contains 命中
     if not sc.tap_text("初始设置", 30):
         raise RuntimeError("找不到初始设置入口")
-    if not sc.wait_text("保活设置", 30):
-        raise RuntimeError("向导未打开（保活步）")
+    if not sc.wait_text("欢迎使用 Drydock", 30):
+        raise RuntimeError("欢迎页未出现")
+    r["welcome_shown"] = "开始配置" in sc.ui_dump()
+    # 左上角返回按钮：应退出向导回设置页（不依赖系统导航）
+    if not sc.tap_text("‹", 15):
+        raise RuntimeError("欢迎页无左上返回按钮")
+    time.sleep(1)
+    r["back_exits_wizard"] = "初始设置" in sc.ui_dump() and "HomeActivity" in focus()
+    if not r["back_exits_wizard"]:
+        raise RuntimeError("左上返回未退出向导")
+    # 重新进入，走完到端点步
+    if not sc.tap_text("初始设置", 30):
+        raise RuntimeError("重进向导失败")
+    if not sc.wait_text("欢迎使用 Drydock", 20):
+        raise RuntimeError("欢迎页未出现")
+    if not sc.tap_text("开始配置", 15):
+        raise RuntimeError("点不到开始配置")
+    if not sc.wait_text("保活设置", 20):
+        raise RuntimeError("保活步未出现")
     if not sc.tap_text("下一步", 30):
         raise RuntimeError("保活步过不去（豁免未生效？）")
-    if not wait_text_scroll("连接大模型", 30):
+    if not sc.wait_text("连接大模型", 20):
         raise RuntimeError("端点步未出现")
     xml = sc.ui_dump()
-    # 2026-10-07 向导文案重做（面向新手）：内置路径断言「自动识别 + 标准变量名示例」，
-    # 自定义路径断言「自定义服务地址 + Coding 端点」表单指引
-    r["builtin_guide"] = "自动识别" in xml and "ZHIPU_API_KEY" in xml
-    r["custom_guide"] = "自定义服务地址" in xml and "Coding 端点" in xml
+    r["vendor_chips"] = all(v in xml for v in ("智谱 GLM", "DeepSeek", "Moonshot", "OpenAI", "Anthropic"))
+    r["mode_cards"] = "常见服务" in xml and "自定义服务地址" in xml
+    # 常见服务真实配置：GLM + key → 保存并下一步 → env.sh 双变量断言
+    if not sc.tap_text("智谱 GLM", 15):
+        raise RuntimeError("点不到智谱 GLM 厂商 chip")
+    if not sc.tap_text("API key", 15):
+        raise RuntimeError("点不到 key 输入框")
+    sc.shell("input", "text", "night-t7-glm-key")
+    time.sleep(1)
+    # 收起软键盘：AVD Gboard 不理 ESC（t7 两轮实锤），BACK 在键盘开着时只收键盘
+    sc.shell("input", "keyevent", "KEYCODE_BACK")
+    time.sleep(1)
+    if not sc.tap_text("保存并下一步", 20):
+        raise RuntimeError("「保存并下一步」未出现或点不到")
+    if not sc.wait_text("选择 Coding Agent", 30):
+        raise RuntimeError("保存后未进入 agent 步")
+    env_out = sc.env_read(
+        "grep -q 'export ZHIPU_API_KEY=night-t7-glm-key' /root/.drydock/env.sh && "
+        "grep -q 'export ZAI_CODING_CN_API_KEY=night-t7-glm-key' /root/.drydock/env.sh && echo GLM_KEYS_OK\n",
+        timeout=90)
+    r["glm_key_written"] = "GLM_KEYS_OK" in env_out
+    # 左上返回回端点步，切自定义模式查表单字段
+    if not sc.tap_text("‹", 15):
+        raise RuntimeError("agent 步无左上返回")
+    if not sc.wait_text("连接大模型", 15):
+        raise RuntimeError("返回后端点步未出现")
+    if not sc.tap_text("自定义服务地址", 15):
+        raise RuntimeError("点不到自定义模式卡")
+    xml = sc.ui_dump()
+    r["custom_form"] = "Base URL" in xml and "模型 ID" in xml
     screencap("night-wizard-endpoint-guide.png")
     sc.shell("input", "keyevent", "KEYCODE_BACK")
-    r["pass"] = r["builtin_guide"] and r["custom_guide"]
+    r["pass"] = all([r["welcome_shown"], r["back_exits_wizard"], r["vendor_chips"],
+                     r["mode_cards"], r["glm_key_written"], r["custom_form"]])
 
 # ---------- t9 环境导出（块 5） ----------
 

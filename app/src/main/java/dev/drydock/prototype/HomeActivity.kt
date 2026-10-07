@@ -371,8 +371,8 @@ private fun SessionPane() {
         if (sessions.isEmpty()) {
             Text(
                 "Drydock 让 coding agent 在手机上常驻干活。\n\n" +
-                    "第一次使用：先到「设置 → 初始设置」完成三步配置（保活、端点与模型、安装 agent），" +
-                    "然后点「新建会话」进入终端——OpenCode 或 pi 会直接可用。\n\n" +
+                    "第一次使用：先到「设置 → 初始设置向导」完成配置（保活、连接大模型、安装 agent），"
+                    + "然后点「新建会话」进入终端——OpenCode 或 pi 会直接可用。\n\n" +
                     "API key 走环境变量：进入终端后把 key 发给 agent，它会帮你写进 ~/.drydock/env.sh；" +
                     "锁屏挂机不中断、产物在手机文件管理器可见。",
                 fontSize = 14.sp,
@@ -687,7 +687,7 @@ private fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
             ) { onOpen(SettingsPage.ENDPOINTS) }
             SettingsRow(
                 "初始设置向导",
-                if (wizardDone) "已完成 · 可重新运行" else "保活 / 端点 / agent 三步",
+                if (wizardDone) "已完成 · 可重新运行" else "保活 / 连接大模型 / 安装 agent",
                 divider = false,
             ) { context.startActivity(Intent(context, WizardActivity::class.java)) }
         }
@@ -838,7 +838,7 @@ private fun EndpointSettingsPage(onBack: () -> Unit) {
             }
         }
         Button(onClick = { context.startActivity(Intent(context, WizardActivity::class.java)) }) {
-            Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置向导" else "运行初始设置向导（保活 / 端点 / agent）")
+            Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置向导" else "运行初始设置向导（保活 / 连接大模型 / 安装 agent）")
         }
     }
 }

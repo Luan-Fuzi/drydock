@@ -27,7 +27,8 @@
 
 **状态（2026-10-03）**：AVD 可验部分全过——配方安装（OpenCode 1.18.34 / pi 1.0.0，npmmirror 直连）、三协议映射配置写入、Chat Completions 双配方 headless 出第一句话（pi 另实证 Anthropic Messages）、向导三步与跳过路径、主页产品面、向导直达终端（verdict：`draft/phase1-avd-verdict.json`）。已知问题：OpenCode × Anthropic 协议组合静默无限重试（适配器内部问题，裸端点全 200），向导引导 OpenCode 用户优先 Chat Completions；Responses 协议无端点可测、留文档口径。真机项（TUI 观感/触控/IME、端到端首话）按协作约定留批次复查。
 **状态增补（2026-10-04 夜批）**：向导 Anthropic × OpenCode 已知问题警示落地（选该协议即显，t7）；上下文窗口字段端到端实证（`limit.context` 落 opencode.json，t3）；npm 首选源默认纠回 npmmirror、假源注入实测 npmmirror→npmjs 回退真实代码路径成立（t5）；「打开终端/新建会话」主链路按钮 AVD 驱动实证（t1，附轮询 60s 与会话列表刷新修复）。
-**状态增补（2026-10-07，向导版式与文案重做，用户定调）**：主题跟随（DrydockTheme，不再锁深色）；版式全居中（步骤圆点指示、图标+居中大标题、引导卡片、居中按钮）；端点步文案面向新手重写——标题改「连接大模型」，先给动作（进终端把 key 发给 agent 代配）再讲两条手动路径（内置目录变量名 / 设置→Coding 端点表单）；agent 步改多选、可不选（零选＝暂不安装，按钮「暂不安装，继续」），文案改「我们预制了几种可用的 Agent，供你下载安装」，不再提及 Claude Code。night-b t7 锚点同步（连接大模型/自动识别/ZHIPU_API_KEY）；AVD 实证：t7 过、零选路径端到端（报告→进入终端→TerminalActivity 前台）；截图 draft/wizard*-*.png 留观感批次。
+**状态增补（2026-10-07，向导版式与文案重做，用户定调）**：主题跟随（DrydockTheme，不再锁深色）；版式全居中（步骤圆点指示、图标+居中大标题、引导卡片、居中按钮）；端点步文案面向新手重写；agent 步改多选、可不选（零选＝暂不安装），文案改「我们预制了几种可用的 Agent，供你下载安装」，不再提及 Claude Code；截图 draft/wizard1-light/wizard2-light/wizard3-light/wizard2-dark.png。
+**状态增补（2026-10-07，向导第二轮，用户定调）**：①新增欢迎页（进向导先讲应用定位：Linux 环境 + agent 住在这里，三张卡片各一句话）；②「连接大模型」从纯引导改为真实可配（推翻 D30 的纯引导口径）——常见服务模式：厂商 chip（智谱 GLM/DeepSeek/Moonshot/OpenAI/Anthropic）+ key 输入 → 写入 env.sh（GLM 按 D31 双变量 ZHIPU_API_KEY+ZAI_CODING_CN_API_KEY，同名 export 行去重后追加；envShFile 自建目录，未部署也安全），键盘 IME Done 即保存前进；自定义模式：D30 表单内嵌 → EndpointStore + 已部署即写 agent 配置（未部署由步骤③补写）；主按钮在有合法输入时变「保存并下一步」，跳过不保存；③所有向导页左上角「‹」返回（欢迎页退出向导，其余回上一层级，不依赖系统导航）。**顺带修全新设备暗坑**：向导的安装/进入终端此前假设环境已部署（部署只在新建会话路径），步骤③动作前统一补 ensureDeployed。night-b t7 重写为全链路（欢迎页→左上返回→GLM key 写入 env.sh 双变量断言→自定义表单在场）；AVD 干净全量 t1-t11 all_pass=True；截图 draft/wizard0-welcome/wizard2-common/wizard2-custom.png。测试方法论两则：AVD Gboard 不理 ESC（BACK 在键盘开着时只收键盘）；uiautomator 对被 IME 遮挡的节点 tap 会落空（输入后必须先收键盘）。
 
 ## 阶段 2：终端输入
 
