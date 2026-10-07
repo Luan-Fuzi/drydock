@@ -4,11 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,9 +33,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -568,31 +573,191 @@ private fun openExternal(context: Context, root: File, f: File) {
     }
 }
 
-/** 设置页：镜像源（= ~/.drydock/mirrors 的 GUI 编辑器）、外观、初始设置、开发者工具。 */
+/** 设置页（2026-10-07 重构）：主页面 = 分组卡片 + 一行一入口 + 当前值摘要，各区块的
+ *  表单/编辑器/单选收进二级页（页内导航，系统返回键回主页面）；验收通道与诊断收进
+ *  「开发者选项」。动机：旧版八区块平铺一页（摊大饼）、说明 11sp 正文 13sp 主次不清。 */
+private enum class SettingsPage {
+    ROOT, ENDPOINTS, ENV_SH, MIRRORS, BACKUP, BIND, APPEARANCE, TERMINAL, DEV
+}
+
 @Composable
 private fun SettingsPane() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var tick by remember { mutableStateOf(0) }
+    var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(SettingsPage.ROOT) }
+    BackHandler(enabled = page != SettingsPage.ROOT) { page = SettingsPage.ROOT }
+    when (page) {
+        SettingsPage.ROOT -> SettingsRoot { page = it }
+        SettingsPage.ENDPOINTS -> EndpointSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.ENV_SH -> EnvShSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.MIRRORS -> MirrorSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.BACKUP -> BackupSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.BIND -> BindSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.APPEARANCE -> AppearanceSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.TERMINAL -> TerminalSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.DEV -> DevSettingsPage { page = SettingsPage.ROOT }
+    }
+}
 
-    data class MirrorOpt(val id: String, val label: String, val aptUrl: String?, val npmUrl: String?)
+/** 设置行：标题 + 当前值摘要 + chevron；divider = 组内非末行画分隔线。 */
+@Composable
+private fun SettingsRow(title: String, summary: String, divider: Boolean = true, onClick: () -> Unit) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                if (summary.isNotBlank()) {
+                    Text(
+                        summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
+            Text("›", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (divider) HorizontalDivider(
+            modifier = Modifier.padding(start = 16.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+    }
+}
 
+/** 分组卡片：组标签（primary 色）+ Card 容器。 */
+@Composable
+private fun SettingsGroup(label: String, content: @Composable () -> Unit) {
+    Column {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 20.dp, bottom = 4.dp),
+        )
+        Card(Modifier.fillMaxWidth()) { Column { content() } }
+    }
+}
+
+/** 二级页骨架：「‹ 设置」返回 + 页标题 + 内容（整页可滚）。 */
+@Composable
+private fun SettingsSubPage(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            TextButton(
+                onClick = onBack,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+            ) { Text("‹ 设置") }
+            Text(title, style = MaterialTheme.typography.titleLarge)
+        }
+        content()
+    }
+}
+
+/** 设置主页面：摘要当前值只在本组合读（when 分支切换销毁重建，返回时自然重读）。 */
+@Composable
+private fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
+    val context = LocalContext.current
+    val endpoints = remember { EndpointStore.all(context) }
+    val wizardDone = remember { EndpointStore.wizardDone(context) }
+    val mirrorSummary = remember { mirrorSummaryOf(context) }
+    val bindOn = remember { BindStore.enabled(context) }
+    val themeLabel = when (ThemeStore.mode.value) {
+        ThemeStore.Mode.SYSTEM -> "跟随系统"
+        ThemeStore.Mode.LIGHT -> "浅色"
+        ThemeStore.Mode.DARK -> "深色"
+    }
+    val termSummary = "字号 ${TermPrefs.fontSize(context)} · 回滚 ${TermPrefs.scrollback(context)} 行"
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Text("设置", style = MaterialTheme.typography.titleLarge)
 
-        Text("Coding 端点", style = MaterialTheme.typography.titleMedium)
+        SettingsGroup("模型与端点") {
+            SettingsRow(
+                "Coding 端点",
+                if (endpoints.isEmpty()) "未添加（内置厂商自动识别）" else "${endpoints.size} 个自定义端点",
+            ) { onOpen(SettingsPage.ENDPOINTS) }
+            SettingsRow(
+                "初始设置向导",
+                if (wizardDone) "已完成 · 可重新运行" else "保活 / 端点 / agent 三步",
+                divider = false,
+            ) { context.startActivity(Intent(context, WizardActivity::class.java)) }
+        }
+
+        SettingsGroup("环境") {
+            SettingsRow("环境变量", "~/.drydock/env.sh（新会话生效）") { onOpen(SettingsPage.ENV_SH) }
+            SettingsRow("镜像源", mirrorSummary) { onOpen(SettingsPage.MIRRORS) }
+            SettingsRow("备份与导出", "工作区与配置 → Downloads/Drydock") { onOpen(SettingsPage.BACKUP) }
+            SettingsRow(
+                "目录直通绑定",
+                "实验 · " + if (bindOn) "已开启" else "已关闭",
+                divider = false,
+            ) { onOpen(SettingsPage.BIND) }
+        }
+
+        SettingsGroup("应用") {
+            SettingsRow("外观", themeLabel) { onOpen(SettingsPage.APPEARANCE) }
+            SettingsRow("终端", termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
+        }
+
+        SettingsGroup("更多") {
+            SettingsRow("开发者选项", "验收通道、时间线导出与版本详情", divider = false) { onOpen(SettingsPage.DEV) }
+        }
+
+        Text(
+            "Drydock 原型（从 main tag 构建）· Ubuntu ${RootfsManifest.UBUNTU_VERSION}\n" +
+                "⚠ 卸载或清除应用数据会连同 Linux 环境一起删除——删除前先用「备份与导出」备份。",
+            fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** ROOT 行摘要：读 ~/.drydock/mirrors 当前生效值 → 短名（GUI、手编、agent 改三者同源）。 */
+private fun mirrorSummaryOf(context: Context): String {
+    val txt = runCatching {
+        File(RootfsManager.rootfsDir(context), "root/.drydock/mirrors").takeIf { it.exists() }?.readText()
+    }.getOrNull().orEmpty()
+    val apt = Regex("DRYDOCK_APT_MIRROR=(\\S+)").find(txt)?.groupValues?.get(1)?.let(::mirrorHostOf)
+    val npm = Regex("DRYDOCK_NPM_REGISTRY=(\\S+)").find(txt)?.groupValues?.get(1)?.let(::mirrorHostOf)
+    if (apt == null && npm == null) return "默认（国内镜像 + 官方回退）"
+    return listOfNotNull(apt?.let { "APT $it" }, npm?.let { "npm $it" }).joinToString(" · ")
+}
+
+private fun mirrorHostOf(url: String): String = when {
+    url.contains("tuna") -> "清华 TUNA"
+    url.contains("ustc") -> "中科大"
+    url.contains("nju") -> "南大"
+    url.contains("ports.ubuntu.com") -> "官方源"
+    url.contains("npmmirror") -> "npmmirror"
+    url.contains("registry.npmjs.org") -> "npm 官方"
+    else -> "自定义"
+}
+
+/** Coding 端点二级页（D30）：列表可见可删 + 折叠式追加表单。 */
+@Composable
+private fun EndpointSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var tick by remember { mutableStateOf(0) }
+
+    SettingsSubPage("Coding 端点", onBack) {
         Text(
             "自定义端点列表（写进 opencode/pi 的配置文件）。内置目录厂商不需要在这——" +
                 "往 ~/.drydock/env.sh 放标准变量名即自动识别（GLM Coding Plan 用 ZHIPU_API_KEY）",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        // 已添加端点列表（D30：可见、可删）
         val endpoints = remember(tick) { EndpointStore.all(context) }
         if (endpoints.isEmpty()) {
-            Text("（暂无自定义端点）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("（暂无自定义端点）", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         endpoints.forEach { e ->
             Row(
@@ -601,10 +766,10 @@ private fun SettingsPane() {
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("${e.providerId} · ${e.model}", fontSize = 13.sp)
+                    Text("${e.providerId} · ${e.model}", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "${e.protocol.label} · ${e.baseUrl} · key=\${e.envVar}",
-                        fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -631,9 +796,12 @@ private fun SettingsPane() {
             val fOk = fBaseUrl.startsWith("http://") || fBaseUrl.startsWith("https://")
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 EndpointStore.Protocol.entries.forEach { pr ->
-                    Row(modifier = Modifier.fillMaxWidth().clickable { fProtocol = pr }) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { fProtocol = pr },
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
                         RadioButton(selected = fProtocol == pr, onClick = { fProtocol = pr })
-                        Text(pr.label, modifier = Modifier.padding(top = 12.dp))
+                        Text(pr.label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 OutlinedTextField(value = fBaseUrl, onValueChange = { fBaseUrl = it },
@@ -663,23 +831,32 @@ private fun SettingsPane() {
                 }
                 Text(
                     "保存后新会话生效；别忘往 ~/.drydock/env.sh 放上 key（变量名用上面填的名字）。",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         Button(onClick = { context.startActivity(Intent(context, WizardActivity::class.java)) }) {
-            Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置" else "初始设置（保活 / 端点 / agent）")
+            Text(if (EndpointStore.wizardDone(context)) "重新运行初始设置向导" else "运行初始设置向导（保活 / 端点 / agent）")
         }
+    }
+}
 
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("环境变量（~/.drydock/env.sh）", style = MaterialTheme.typography.titleMedium)
+/** 环境变量二级页（D29）：env.sh 直接编辑。 */
+@Composable
+private fun EnvShSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    SettingsSubPage("环境变量（~/.drydock/env.sh）", onBack) {
         Text(
             "每个新会话生效。key 写成 export DRYDOCK_API_KEY=…（opencode/pi 的配置已引用它），" +
                 "其他工具要的变量（代理、各家 key）也放这里；复杂改动也可以直接让 agent 帮你改。",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (RootfsManager.isDeployed(context)) {
-            // 不挂 tick：5s 注册表轮询会把编辑中的内容重置回文件（打字被清），只在进入时读一次
+            // 进入二级页时读一次（不挂轮询：会话注册表 5s 轮询会把编辑中的内容重置回文件）
             var envText by remember {
                 mutableStateOf(
                     runCatching { RootfsManager.envShFile(context).readText() }.getOrElse { "" },
@@ -707,7 +884,6 @@ private fun SettingsPane() {
                             }
                             envSaving = false
                             envMsg = r.fold({ "✓ 已保存" }, { "✗ 保存失败：${it.message}" })
-                            tick++
                         }
                     },
                 ) { Text(if (envSaving) "保存中…" else "保存") }
@@ -717,16 +893,28 @@ private fun SettingsPane() {
             }
             Text(
                 "保存后新会话生效；已开着的终端输入 . ~/.drydock/env.sh 立即生效。",
-                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Text("（部署 Linux 环境后可编辑）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "（部署 Linux 环境后可编辑）",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
+    }
+}
 
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("环境与备份", style = MaterialTheme.typography.titleMedium)
-        var exporting by remember { mutableStateOf(false) }
-        var exportMsg by remember { mutableStateOf("") }
+/** 备份与导出二级页（D28-1 口径：工作区与配置，非全环境）。 */
+@Composable
+private fun BackupSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var exporting by remember { mutableStateOf(false) }
+    var exportMsg by remember { mutableStateOf("") }
+
+    SettingsSubPage("备份与导出", onBack) {
         Button(
             enabled = !exporting && RootfsManager.isDeployed(context),
             onClick = {
@@ -744,15 +932,25 @@ private fun SettingsPane() {
         Text(
             "导出 /root 工作区与 drydock 配置（系统层按配方版本可重放，不进导出）；" +
                 "含 ~/.drydock/env.sh——你写入的环境变量（含自行存放的 key）会进导出包。",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
 
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("高级：目录直通绑定（实验）", style = MaterialTheme.typography.titleMedium)
+/** 目录直通绑定二级页（D28-3 最小版）。「已关闭/已开启（…）」与「已获…」文案是
+ *  night-b t10 的开关定位锚点，改动须同步剧本。 */
+@Composable
+private fun BindSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var tick by remember { mutableStateOf(0) }
+
+    SettingsSubPage("目录直通绑定（实验）", onBack) {
         Text(
             "把手机 Download 目录绑进环境 ${BindStore.ENV_DIR}（proot -b，双向直通）。" +
                 "需要系统「所有文件访问」权限；绑定目录读写都经 proot 翻译，比环境内慢。默认关闭。",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         val bindOn = remember(tick) { BindStore.enabled(context) }
         val permOk = remember(tick) { android.os.Environment.isExternalStorageManager() }
@@ -761,8 +959,8 @@ private fun SettingsPane() {
             fontSize = 12.sp, fontFamily = FontFamily.Monospace,
             color = if (permOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row {
-            androidx.compose.material3.Switch(
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Switch(
                 checked = bindOn,
                 onCheckedChange = { on ->
                     if (on && !permOk) {
@@ -781,13 +979,28 @@ private fun SettingsPane() {
             )
             Text(
                 if (bindOn) "已开启（新建会话生效）" else "已关闭",
-                modifier = Modifier.padding(top = 14.dp), fontSize = 13.sp,
+                modifier = Modifier.padding(start = 8.dp),
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
+    }
+}
 
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("镜像源", style = MaterialTheme.typography.titleMedium)
-        Text("仅影响安装下载速度；也可手编 ~/.drydock/mirrors 或让 agent 改，三者等价。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+/** 镜像源二级页（= ~/.drydock/mirrors 的 GUI 编辑器）。 */
+@Composable
+private fun MirrorSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var tick by remember { mutableStateOf(0) }
+
+    data class MirrorOpt(val id: String, val label: String, val aptUrl: String?, val npmUrl: String?)
+
+    SettingsSubPage("镜像源", onBack) {
+        Text(
+            "仅影响安装下载速度；也可手编 ~/.drydock/mirrors 或让 agent 改，三者等价。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         // 单选回填当前生效值（读 ~/.drydock/mirrors——GUI、手编、agent 改三者同源）；
         // 列表外的手编源动态补一条，如实显示而非回落默认
         val mirrorTxt = remember(tick) {
@@ -827,27 +1040,27 @@ private fun SettingsPane() {
         }
         var mirrorApplying by remember { mutableStateOf(false) }
         var mirrorMsg by remember { mutableStateOf("") }
-        Text("APT 源（系统包安装）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("APT 源（系统包安装）", style = MaterialTheme.typography.titleSmall)
         aptOpts.forEach { o ->
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { aptChoice = o },
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 RadioButton(selected = aptChoice == o, onClick = { aptChoice = o })
-                Text(o.label, fontSize = 13.sp)
+                Text(o.label, style = MaterialTheme.typography.bodyMedium)
             }
         }
-        Text("npm 源（agent 运行时安装）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("npm 源（agent 运行时安装）", style = MaterialTheme.typography.titleSmall)
         npmOpts.forEach { o ->
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { npmChoice = o },
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 RadioButton(selected = npmChoice == o, onClick = { npmChoice = o })
-                Text(o.label, fontSize = 13.sp)
+                Text(o.label, style = MaterialTheme.typography.bodyMedium)
             }
         }
-        // 进度与结果独立成行：不再挤进按钮文字（旧实现按钮被「应用中…/✓…」撑变形）
+        // 进度与结果独立成行：不挤进按钮文字（旧实现按钮被「应用中…/✓…」撑变形）
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -870,44 +1083,63 @@ private fun SettingsPane() {
                 Text(mirrorMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
             }
         }
+    }
+}
 
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("外观", style = MaterialTheme.typography.titleMedium)
-        Row {
-            listOf(
-                ThemeStore.Mode.SYSTEM to "跟随系统",
-                ThemeStore.Mode.LIGHT to "浅色",
-                ThemeStore.Mode.DARK to "深色",
-            ).forEach { (m, label) ->
-                // 写 ThemeStore.mode 即时重组（DrydockTheme 观察该状态），不 recreate——
-                // 旧实现重建 Activity 重置底栏 tab，点外观直接跳回会话页
-                val active = ThemeStore.mode.value == m
-                TextButton(onClick = { ThemeStore.save(context, m) }) {
-                    Text(
-                        label,
-                        fontWeight = if (active) androidx.compose.ui.text.font.FontWeight.Bold else null,
-                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+/** 外观二级页：单选行（当前项加粗高亮语义沿用旧版）。 */
+@Composable
+private fun AppearanceSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    SettingsSubPage("外观", onBack) {
+        Text(
+            "深浅主题即时生效（会话 / 文件 / 设置三栏）。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        listOf(
+            ThemeStore.Mode.SYSTEM to "跟随系统",
+            ThemeStore.Mode.LIGHT to "浅色",
+            ThemeStore.Mode.DARK to "深色",
+        ).forEach { (m, label) ->
+            // 写 ThemeStore.mode 即时重组（DrydockTheme 观察该状态），不 recreate——
+            // 旧实现重建 Activity 重置底栏 tab，点外观直接跳回会话页
+            val active = ThemeStore.mode.value == m
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { ThemeStore.save(context, m) },
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = active, onClick = { ThemeStore.save(context, m) })
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (active) FontWeight.Bold else null,
+                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
+    }
+}
 
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("终端", style = MaterialTheme.typography.titleMedium)
-        // 字号/回滚行数落 TermPrefs；TerminalActivity onResume 经 window.__dk.applyCfg
-        // 推给页面 xterm（含正在开的终端），ttyd 侧不感知
+/** 终端二级页：字号/回滚行数落 TermPrefs；TerminalActivity onResume 经
+ *  window.__dk.applyCfg 推给页面 xterm（含正在开的终端），ttyd 侧不感知。 */
+@Composable
+private fun TerminalSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    SettingsSubPage("终端", onBack) {
         var termFont by remember { mutableStateOf(TermPrefs.fontSize(context)) }
         var termRows by remember { mutableStateOf(TermPrefs.scrollback(context)) }
-        Text("字号 ${termFont}", fontSize = 13.sp)
-        androidx.compose.material3.Slider(
+        Text("字号 ${termFont}", style = MaterialTheme.typography.bodyMedium)
+        Slider(
             value = termFont.toFloat(),
             onValueChange = { termFont = it.toInt().coerceIn(10, 24) },
             valueRange = 10f..24f,
             steps = 13,
             onValueChangeFinished = { TermPrefs.set(context, termFont, termRows) },
         )
-        Text("回滚行数 ${termRows}", fontSize = 13.sp)
-        androidx.compose.material3.Slider(
+        Text("回滚行数 ${termRows}", style = MaterialTheme.typography.bodyMedium)
+        Slider(
             value = termRows.toFloat(),
             onValueChange = { termRows = (it.toInt() / 100) * 100 },
             valueRange = 200f..10_000f,
@@ -915,21 +1147,50 @@ private fun SettingsPane() {
         )
         Text(
             "改动即保存，回到终端页生效。",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
 
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-        Text("开发者工具", style = MaterialTheme.typography.titleMedium)
+/** 开发者选项二级页：验收通道说明、时间线导出（D21 口径：当前份 + .old 合并）、版本详情。 */
+@Composable
+private fun DevSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var tlBusy by remember { mutableStateOf(false) }
+    var tlMsg by remember { mutableStateOf("") }
+
+    SettingsSubPage("开发者选项", onBack) {
+        Text("验收通道", style = MaterialTheme.typography.titleMedium)
         Text(
             "debug 验收通道随本 Activity（am start --es：drydock_endpoint/recipe/exec64/export/provider_test/rescue）。" +
                 "救援通道见桌面入口；原型验收仪器（部署/AV1/AV2/AV3 手动页）随 MainActivity 一并移除。",
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+        Text("诊断", style = MaterialTheme.typography.titleMedium)
+        Button(
+            enabled = !tlBusy && Timeline.file(context).exists(),
+            onClick = {
+                tlBusy = true; tlMsg = ""
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val f = File(context.cacheDir, "drydock-timeline.jsonl")
+                            f.writeText(Timeline.readAll(context).joinToString("\n") + "\n")
+                            "${"%.0f".format(f.length() / 1000.0)} KB → ${Landing.toDownloads(context, f)}"
+                        }
+                    }
+                    tlBusy = false
+                    tlMsg = r.fold({ "✓ $it" }, { "✗ 导出失败：${it.message}" })
+                }
+            },
+        ) { Text(if (tlBusy) "导出中…" else "导出时间线（timeline.jsonl → Downloads/Drydock）") }
+        if (tlMsg.isNotBlank()) Text(tlMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        Text("版本", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu ${RootfsManifest.UBUNTU_VERSION} · 配方 ${RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" }}" +
-                "\n⚠ 卸载或清除应用数据会连同 Linux 环境一起删除——删除前先用上面的导出备份。",
+            "Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu ${RootfsManifest.UBUNTU_VERSION} · 配方 ${RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" }}",
             fontSize = 11.sp, fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

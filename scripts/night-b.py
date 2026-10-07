@@ -249,15 +249,17 @@ def t4(r):
     sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页（底部导航无「设置」）")
-    if not wait_text_scroll("镜像源", 30):
-        raise RuntimeError("设置页未出现")
+    # 2026-10-07 设置页重构：外观收进二级页（主页面 = 分组列表 + 一行一入口）
+    if not sc.tap_text("外观", 15):
+        raise RuntimeError("点不到「外观」入口行")
+    if not sc.wait_text("跟随系统", 15):
+        raise RuntimeError("外观二级页未出现")
     if not sc.tap_text("浅色", 15):
         raise RuntimeError("点不到「浅色」")
     time.sleep(1)  # apply() 异步落盘 + 状态重组
     r["pref_light"] = ">LIGHT</string>" in prefs_xml()
-    # 2026-10-06 起主题状态驱动即时重组：停留在设置页，不再 recreate 跳回会话页
-    # （锚点用「外观」：tap_text 找「浅色」时「镜像源」可能已滚出可视区）
-    r["stays_on_settings"] = "HomeActivity" in focus() and "外观" in sc.ui_dump()
+    # 主题状态驱动即时重组：停留在设置二级页，不 recreate 跳回会话页
+    r["stays_on_settings"] = "HomeActivity" in focus() and "跟随系统" in sc.ui_dump()
     r["screenshot"] = screencap("night-light-home.png")
     if not sc.tap_text("跟随系统", 15):
         xml = sc.ui_dump()
@@ -359,11 +361,12 @@ def t7(r):
     """D30 后向导端点步为纯引导：验证两种情况的引导文案在（内置厂商标准名 / Coding 端点表单指引）。"""
     sc.shell("dumpsys", "deviceidle", "whitelist", "+dev.drydock.prototype")  # AVD 测试条件：过保活步
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
+    sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页")
+    # 设置页重构（2026-10-07）：入口行标题「初始设置向导」，contains 命中
     if not sc.tap_text("初始设置", 30):
-        raise RuntimeError("找不到初始设置按钮")
+        raise RuntimeError("找不到初始设置入口")
     if not sc.wait_text("保活设置", 30):
         raise RuntimeError("向导未打开（保活步）")
     if not sc.tap_text("下一步", 30):
@@ -428,15 +431,17 @@ def t10(r):
     # 预放一个标记文件
     sc.shell("mkdir", "-p", "/sdcard/Download", timeout=15)
     sc.shell("sh", "-c", "echo night-bind-from-host > /sdcard/Download/night-bind.txt", timeout=15)
-    # 打开开关（设置页高级区在「高级」标题下）
+    # 打开开关（2026-10-07 设置页重构：直通绑定收进二级页，主页面点入口行进入）
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
+    sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页")
-    if not wait_text_scroll("高级：目录直通绑定", 60):
-        raise RuntimeError("高级区不在可视区（滚动/tap_text 会自动翻）")
-    # 定位开关：设置页还有镜像源单选钮也是 checkable，先按「已关闭/已开启」标签的
-    # 纵向区间锁定同一行里的 Switch，避免点错单选钮
+    if not sc.tap_text("目录直通绑定", 30):
+        raise RuntimeError("点不到「目录直通绑定」入口行")
+    if not (sc.wait_text("已关闭", 10) or sc.wait_text("新建会话生效", 10)):
+        raise RuntimeError("绑定二级页未出现（开关状态标签缺失）")
+    # 定位开关：二级页内唯一 checkable 是绑定 Switch，按「已关闭/已开启」标签的
+    # 纵向区间锁定同一行里的 Switch
     import re as _re
 
     def find_switch():
