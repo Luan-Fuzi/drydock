@@ -4,6 +4,13 @@
   if (window.__drydockOverlay) return;
   window.__drydockOverlay = true;
 
+  // nudge 状态必须在 IIFE 任何早期同步链（fixFont→applyCfg→nudgeResize，首调在第
+  // ~37 行）之前初始化：声明靠后时守卫读到 undefined 直接放行，term 就绪快的加载
+  // 不等 remote 就恢复，随后被 ttyd attach 期的 soft-reset 冲掉（2026-10-07 AVD
+  // 打点两轮实锤 nudged=undefined → 恢复→canary 全部空转）
+  var nudged = false, sawRemote = false, pendingNudge = false;
+  var overlayLoadedAt = Date.now();
+
   // ---------- 字体修正（D24 实测）----------
   // ttyd 默认字体链（Consolas/Liberation/Menlo/Courier）在 Android 全不存在，
   // 落到通用 monospace 后缺 U+23F5(⏵) 等字形变豆腐块；换安卓实际有的等宽链。
@@ -27,6 +34,7 @@
       if (typeof term !== 'undefined' && term.options) {
         term.options.fontFamily =
           '"Noto Sans Mono","Roboto Mono","Droid Sans Mono",monospace';
+        installSniff(); // term 就绪顺带装嗅探（注入早于 term 创建时此前永不安装）
         applyCfg(window.__DK_CFG || {});
         return true;
       }
@@ -110,40 +118,82 @@
   function tuiSave(st) {
     try { localStorage.setItem(TUI_KEY, JSON.stringify(st)); } catch (e) {}
   }
+  // 模式保真（2026-10-07）：只存 mouse bool 恢复时无脑加 1006(SGR) 会偷换编码——
+  // TUI 真实只开 1000(X10) 时，恢复后的 SGR 字节流进期待 X10 的 TUI 解析不了，
+  // bubbletea 往输入框插字符（真机 C/y/u 垃圾的另一半来源，X10 三原始字节恰落
+  // 可打印区：列 85→u、行 89→y、button 35→C）。嗅探按 1000/1002/1003/1006 分别
+  // 记，恢复按原样发；旧存量记忆（仅 mouse bool）回落三连，行为同旧版。
   var tuiState = { alt: false, mouse: false };
-  try {
-    var t0 = window.term;
-    if (t0) {
+  function installSniff() {
+    try {
+      if (window.__dkSniff) return true;
+      var t0 = window.term;
+      if (!t0 || !t0.write) return false;
+      window.__dkSniff = true;
       var origWrite = t0.write.bind(t0);
       var dec = new TextDecoder('utf-8');
-      t0.write = function (data) {
+      // 透传全部参数：write(data, cb) 的解析完成回调被吞会让依赖回调的调用方
+      //（canary 探针）永远不触发（2026-10-07 AVD 实锤 A2 稳定 miss 的根源）
+      t0.write = function () {
+        var data = arguments[0];
         try {
           var s = typeof data === 'string' ? data : dec.decode(data);
-          if (s.indexOf('\x1b[?1049h') >= 0 || s.indexOf('\x1b[?47h') >= 0) tuiState.alt = true;
-          if (s.indexOf('\x1b[?1049l') >= 0 || s.indexOf('\x1b[?47l') >= 0) tuiState.alt = false;
-          if (/\x1b\[\?(1000|1002|1003|1006)h/.test(s)) tuiState.mouse = true;
-          if (/\x1b\[\?(1000|1002|1003|1006)l/.test(s)) tuiState.mouse = false;
-          tuiSave(tuiState);
+          var dirty = false;
+          if (s.indexOf('\x1b[?1049h') >= 0 || s.indexOf('\x1b[?47h') >= 0) { tuiState.alt = true; dirty = true; }
+          if (s.indexOf('\x1b[?1049l') >= 0 || s.indexOf('\x1b[?47l') >= 0) { tuiState.alt = false; dirty = true; }
+          var mM = s.match(/\x1b\[\?(1000|1002|1003|1006)[hl]/g);
+          if (mM) {
+            for (var i = 0; i < mM.length; i++) {
+              var mm = mM[i].match(/(\d+)([hl])$/);
+              if (mm) {
+                tuiState['m' + mm[1]] = mm[2] === 'h';
+                tuiState.mouse = !!(tuiState.m1000 || tuiState.m1002 || tuiState.m1003);
+                dirty = true;
+              }
+            }
+          }
+          if (dirty) tuiSave(tuiState);
         } catch (e) { /* 嗅探失败不影响正常输出 */ }
-        return origWrite(data);
+        // 首批外部数据（ttyd 服务端来的，非本地恢复序列）→ 触发挂起的模式恢复
+        if (!window.__dkRestoring && !sawRemote) {
+          sawRemote = true;
+          if (pendingNudge) setTimeout(function () { doNudge(); }, 300);
+        }
+        return origWrite.apply(t0, arguments);
       };
-    }
-  } catch (e) { /* term 未就绪则跳过（模式靠既有存量） */ }
+      return true;
+    } catch (e) { return false; /* term 未就绪则靠 fixFont 轮询重装 */ }
+  }
 
-  // ---------- resize 踹脚（2026-10-04 滞后接入实证）----------
+  // ---------- resize 踢脚（2026-10-04 滞后接入实证 / 2026-10-07 竞态修正）----------
   // ttyd 服务端对新客户端无屏幕重放：TUI 启动后才接入的页面只有等新输出才有内容。
   // 载入后先恢复记忆的终端模式，再双次 resize（真尺寸变化 → 内核 SIGWINCH → dtach 链
   // → TUI 重绘），重绘落进（恢复的）alt 屏即覆盖而非追加。
-  var nudged = false;
-  function nudgeResize(force) {
-    if (nudged && !force) return;
+  // 竞态修正：ttyd attach 期服务端的 soft-reset 会冲掉过早的本地恢复（AVD 实证
+  // flaky——同一测试时过时不过），恢复推迟到首批外部数据后 300ms 或 2.5s 兜底。
+  function doNudge() {
+    if (nudged || !window.term) return; // term 未就绪不烧 nudged（兜底先到时让位 fixFont 重试）
     nudged = true;
+    pendingNudge = false;
     try {
       var saved = null;
       try { saved = JSON.parse(localStorage.getItem(TUI_KEY) || 'null'); } catch (e) {}
       var restored = false;
-      if (saved && saved.alt) { term.write('\x1b[?1049h'); restored = true; }
-      if (saved && saved.mouse) { term.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h'); restored = true; }
+      window.__dkRestoring = true; // 嗅探 hook 不把恢复序列当外部数据
+      try {
+        if (saved && saved.alt) { term.write('\x1b[?1049h'); restored = true; }
+        if (saved && saved.mouse) {
+          // 新存量：按嗅探到的模式原样恢复；旧存量（无 m 字段）：回落三连（含 1006，
+          // 保 canary 探针走 SGR——分号数字指纹可靠，X10 原始字节形态误伤面大不采用）
+          var modes = ['m1000', 'm1002', 'm1003', 'm1006'].filter(function (k) { return saved[k]; });
+          if (modes.length) {
+            for (var i = 0; i < modes.length; i++) term.write('\x1b[?' + modes[i].slice(1) + 'h');
+          } else {
+            term.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h');
+          }
+          restored = true;
+        }
+      } finally { window.__dkRestoring = false; }
       var c = term.cols, r = term.rows;
       setTimeout(function () {
         try {
@@ -156,30 +206,57 @@
       }, 120);
     } catch (e) { /* 不具备 resize 能力则放弃，不影响主功能 */ }
   }
+  function nudgeResize(force) {
+    if (nudged && !force) return;
+    if (!sawRemote && Date.now() - overlayLoadedAt < 2500) { pendingNudge = true; return; }
+    doNudge();
+  }
+  setTimeout(function () { if (pendingNudge && !nudged) doNudge(); }, 2600);
 
   // 金丝雀自愈：恢复的记忆可能过期（TUI 在页面离开期间退出——2026-10-04 实锤其
-  // 恶性形态：滚轮序列被 bash 当键盘输入，回显 M64/M65 垃圾进命令行甚至提交执行）。
+  // 恶性形态：滚轮序列被 bash 当键盘输入，回显垃圾进命令行甚至提交执行）。
   // 恢复模式后发一个滚轮事件探路：TUI 活着会静默消费；bash 会把序列尾巴回显出来。
   // 检测到回显 → 记忆过期 → 撤销模式、清行、清记忆，页面回落 normal buffer。
+  // 判据（2026-10-07 pty 回显采样修正）：bash 对 SGR 鼠标序列剥壳回显为
+  // 「数字;数字;数字M/m」（如 64;1;1M、0;11;11m）——M 在尾部；旧判据 /M6[0-9]/
+  // 只在连发多序列（前一个的 M 撞上后一个的 64）时碰巧命中，单滚轮漏检，
+  // 真机实锤 C/y/u 等垃圾残留即此。残迹指纹误伤面≈0（正常文本不出此模式）。
   function canaryValidate() {
     try {
       var el = document.querySelector('.xterm-screen') || document.querySelector('.terminal');
-      el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 16, deltaMode: 0 }));
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem(TUI_KEY) || 'null'); } catch (e) {}
+      var sgrOnly = saved && saved.m1006; // 探针统一走 SGR：临时补开 1006，检测后还原
+      // 探针在临时编码 write 的解析完成回调里发（setTimeout 不保证 xterm write
+      // 缓冲已解析——AVD 实证模式未生效时 wheel 被本地消化、pty 零帧）；三连发
+      // 提高回显采样率
+      function probe() {
+        for (var i = 0; i < 3; i++) {
+          el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 16, deltaMode: 0 }));
+        }
+      }
+      if (!sgrOnly) term.write('\x1b[?1006h', function () { setTimeout(probe, 60); });
+      else setTimeout(probe, 60);
       setTimeout(function () {
         try {
           var t = window.term, b = t.buffer.active, hit = false;
-          for (var i = Math.max(0, t.rows - 3); i < t.rows; i++) {
+          // 检查光标行附近而非视口底部——TUI 退出后光标可能停在视口中部
+          //（2026-10-07 实证漏检：bash 回显在光标行，视口底部是空行）
+          var cur = b.baseY + b.cursorY;
+          for (var i = Math.max(0, cur - 2); i <= Math.min(b.length - 1, cur); i++) {
             var l = b.getLine(i);
-            if (l && /M6[0-9]/.test(l.translateToString(true))) { hit = true; break; }
+            if (l && /(?:\d+;){1,2}\d+[Mm]/.test(l.translateToString(true))) { hit = true; break; }
           }
           if (hit) {
             t.write('\x1b[?1049l');
-            t.write('\x1b[?1000l\x1b[?1002l\x1b[?1006l');
+            t.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l');
             tuiSave({ alt: false, mouse: false });
             window.__dk.sendKey({ key: 'c', code: 'KeyC', keyCode: 67, which: 67, ctrlKey: true });
+          } else if (!sgrOnly) {
+            term.write('\x1b[?1006l'); // 还原 X10-only 记忆的编码
           }
         } catch (e) {}
-      }, 400);
+      }, 750);
     } catch (e) {}
   }
 
