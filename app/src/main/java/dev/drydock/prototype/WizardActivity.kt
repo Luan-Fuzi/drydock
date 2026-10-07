@@ -116,11 +116,14 @@ private fun saveCustomEndpoint(
     baseUrl: String,
     model: String,
     contextWindow: String,
+    outputTokens: String,
     envVar: String,
     provider: String,
 ) {
     EndpointStore.add(context, protocol, baseUrl, model,
-        contextWindow.takeIf { it.isNotBlank() }?.toLongOrNull(), envVar, provider)
+        contextWindow.takeIf { it.isNotBlank() }?.toLongOrNull(),
+        outputTokens.takeIf { it.isNotBlank() }?.toLongOrNull(),
+        envVar, provider)
     if (RootfsManager.isDeployed(context)) {
         val cfg = RecipeManager.applyEndpointConfig(context)
         // 标记缺失不视为失败：步骤③还会再写一次；此处只记日志
@@ -462,6 +465,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     var fBaseUrl by remember { mutableStateOf("") }
     var fModel by remember { mutableStateOf("") }
     var fContext by remember { mutableStateOf("") }
+    var fOutput by remember { mutableStateOf("") }
     var fEnvVar by remember { mutableStateOf("") }
     var fProvider by remember { mutableStateOf("") }
     var err by remember { mutableStateOf("") }
@@ -485,7 +489,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
                         saveVendorKey(context.applicationContext, vendor, keyText.trim())
                     } else {
                         saveCustomEndpoint(context.applicationContext, fProtocol, fBaseUrl.trim(),
-                            fModel.trim(), fContext.trim(), fEnvVar.trim(), fProvider.trim())
+                            fModel.trim(), fContext.trim(), fOutput.trim(), fEnvVar.trim(), fProvider.trim())
                     }
                 }
             }
@@ -531,30 +535,59 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         )
     } else {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "① 选协议（对话报文格式，选错连不上）",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
             EndpointStore.Protocol.entries.forEach { pr ->
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable { fProtocol = pr },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(selected = fProtocol == pr, onClick = { fProtocol = pr })
-                    Text(pr.label, style = MaterialTheme.typography.bodyMedium)
+                    Column {
+                        Text(pr.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            pr.hint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
+            Text("② 填服务信息", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             OutlinedTextField(value = fBaseUrl, onValueChange = { fBaseUrl = it },
                 label = { Text("Base URL") }, singleLine = true, isError = fBaseUrl.isNotBlank() && !customOk,
+                supportingText = { Text("服务的接口根地址，从服务商文档获取；一般以 /v1、/v4 之类结尾，不含 /chat/completions") },
                 modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = fModel, onValueChange = { fModel = it },
-                label = { Text("模型 ID（端点实际服务的名字）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                label = { Text("模型 ID") }, singleLine = true,
+                supportingText = { Text("服务实际提供的模型名，照文档填（如 glm-5.3-flash、deepseek-chat）") },
+                modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(value = fContext, onValueChange = { fContext = it.filter { c -> c.isDigit() } },
-                    label = { Text("上下文（可选）") }, singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(value = fEnvVar, onValueChange = { fEnvVar = it.filter { c -> c.isLetterOrDigit() || c == '_' }.uppercase() },
-                    label = { Text("Key 变量名") }, singleLine = true, modifier = Modifier.weight(1f))
+                    label = { Text("上下文窗口") }, singleLine = true,
+                    supportingText = { Text("可选 · token 数") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = fOutput, onValueChange = { fOutput = it.filter { c -> c.isDigit() } },
+                    label = { Text("最大输出长度") }, singleLine = true,
+                    supportingText = { Text("可选 · token 数") }, modifier = Modifier.weight(1f))
             }
-            OutlinedTextField(value = fProvider, onValueChange = { fProvider = it.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' } },
-                label = { Text("Provider 名（可留空自动生成）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             StepBody(
-                "适用于目录外的服务。保存后写进 agent 的配置文件；别忘把 key 按上面填的变量名放进环境变量。",
+                "两个长度照服务商文档填：上下文窗口 = 模型一次能读进多少内容；" +
+                    "最大输出长度 = 单次最多生成多少（很多服务需要显式设置，留空用工具默认值）。",
+            )
+            Text("③ key 与标识", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            OutlinedTextField(value = fEnvVar, onValueChange = { fEnvVar = it.filter { c -> c.isLetterOrDigit() || c == '_' }.uppercase() },
+                label = { Text("Key 变量名") }, singleLine = true,
+                supportingText = { Text("留空默认 DRYDOCK_API_KEY") },
+                modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = fProvider, onValueChange = { fProvider = it.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' } },
+                label = { Text("Provider 名") }, singleLine = true,
+                supportingText = { Text("这条端点在配置文件里的标识名，不影响连接；留空按域名自动生成，重复添加同名会覆盖更新") },
+                modifier = Modifier.fillMaxWidth())
+            StepBody(
+                "key 本体不填在这里：写进 设置 → 环境变量（export 变量名=key），agent 按变量名取用。",
             )
         }
     }

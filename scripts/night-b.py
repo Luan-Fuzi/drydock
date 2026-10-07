@@ -237,8 +237,32 @@ def t3(r):
     r["opencode_limit_clamped"] = 'LIM={"context":131072,"output":131072}' in parsed
     r["endpoint_info_context"] = "context=131072" in oc
     r["drydock_env_baseurl"] = True  # D30 列表化后 profile.d 环境块只在列表首条写入时生成（断言并入 e2e）
+
+    # ---- 第二段：显式最大输出长度（7 段规格，2026-10-08）----
+    # 只给上下文时 output 回落 min(上下文, 131072)；显式给 output 时两工具都写显式值
+    sc.shell("am", "start", "-S", "-n", HOME,
+             "--es", "drydock_endpoint", "'CHAT_COMPLETIONS|https://night.test/v4|night-model|131072|night-test|NIGHT_KEY|8192'",
+             "--es", "drydock_recipe", "OPENCODE")
+    deadline = time.time() + 240
+    while time.time() < deadline:
+        cfg = logcat("DrydockRecipe")
+        if cfg.count("cfg <") >= 2 and "CFG_RC" in cfg.split("cfg <")[-1]:
+            break
+        time.sleep(5)
+    parsed2 = sc.env_read(
+        "node -e \"const d=require('/root/.config/opencode/opencode.json');"
+        "console.log('LIM2=' + JSON.stringify(d.provider['night-test'].models['night-model'].limit))\"\n",
+        timeout=90)
+    r["opencode_output_explicit"] = 'LIM2={"context":131072,"output":8192}' in parsed2
+    parsed_pi = sc.env_read(
+        "node -e \"const d=require('/root/.pi/agent/models.json');"
+        "const m=d.providers['night-test'].models[0];"
+        "console.log('PI2=' + JSON.stringify({c:m.contextWindow,o:m.maxTokens}))\"\n",
+        timeout=90)
+    r["pi_output_explicit"] = 'PI2={"c":131072,"o":8192}' in parsed_pi
     r["files_tail"] = oc[-600:]
-    r["pass"] = r["opencode_limit_clamped"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
+    r["pass"] = (r["opencode_limit_clamped"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
+                 and r["opencode_output_explicit"] and r["pi_output_explicit"])
 
 
 # ---------- t4 浅色主题 ----------
