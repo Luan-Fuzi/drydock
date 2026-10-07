@@ -38,6 +38,68 @@
     setTimeout(function () { clearInterval(fontTimer); }, 15000);
   }
 
+  // ---------- Android IME 回车丢字补丁（2026-10-07 真机实锤）----------
+  // 病灶：Android 的 IME 提交都包在 keydown(229)/keyup 之间，xterm 5.3.0（ttyd
+  // 1.7.4 内嵌）靠 keydown(229) 快照 + setTimeout(0) 差分发送，发完不清
+  // textarea。微信输入法的换行键会先清理 IME 编辑状态（textarea 残留被清空
+  // =值变短），差分逻辑把它误译成一个 DEL 发给终端——回车发送前输入框最后
+  // 一字被删（实测「今天几号」回车只发出「今天几」；自家键条 ↵ 走 keydown
+  // (13) 无此问题）。修法：变短分支不再立即发 DEL——整段清空（多字）直接判
+  // 换行清理丢弃；其余挂起 40ms，期间（或紧前 60ms 内）出现回车即判定随行
+  // 清理一并丢弃，无回车则如期补发（真退格通道不变）。增长/组合路径原样。
+  // 已知残留：单字残留 + 超窗口的慢回车（Enter 距清理 >40ms）仍会漏发一个
+  // DEL——真机换行序列实测间隔决定是否再收紧。
+  function patchImeEnter() {
+    try {
+      var ch = window.term && term._core && term._core._compositionHelper;
+      if (!ch || !ch._textarea || !ch._coreService) return false;
+      if (ch.__dkImePatched) return true;
+      var ta = ch._textarea;
+      var PEND_MS = 40, LOOKBACK_MS = 60;
+      var pendings = [], lastEnterAt = 0;
+      ta.addEventListener('keydown', function (e) {
+        if (e.keyCode === 13) {
+          lastEnterAt = Date.now();
+          // 回车随行 = 换行清理，撤掉挂起的 DEL
+          pendings.forEach(function (p) { clearTimeout(p.timer); });
+          pendings = [];
+        }
+      }, true);
+      ch._handleAnyTextareaChanges = function () {
+        var self = this;
+        var oldValue = ta.value;
+        setTimeout(function () {
+          try {
+            if (self._isComposing) return;
+            var newValue = ta.value;
+            var diff = newValue.replace(oldValue, '');
+            self._dataAlreadySent = diff;
+            if (newValue.length > oldValue.length) {
+              self._coreService.triggerDataEvent(diff, true);
+            } else if (newValue.length < oldValue.length) {
+              if (newValue === '' && oldValue.length >= 2) return; // 整段清空=换行清理
+              if (Date.now() - lastEnterAt < LOOKBACK_MS) return;  // 回车紧前（同任务形态）
+              var p = { fire: function () { self._coreService.triggerDataEvent('\x7f', true); } };
+              p.timer = setTimeout(function () {
+                pendings = pendings.filter(function (x) { return x !== p; });
+                p.fire();
+              }, PEND_MS);
+              pendings.push(p);
+            } else if (newValue !== oldValue) {
+              self._coreService.triggerDataEvent(newValue, true);
+            }
+          } catch (e) { /* 补丁失败不崩输入链路 */ }
+        }, 0);
+      };
+      ch.__dkImePatched = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  if (!patchImeEnter()) {
+    var imeTimer = setInterval(function () { if (patchImeEnter()) clearInterval(imeTimer); }, 500);
+    setTimeout(function () { clearInterval(imeTimer); }, 15000);
+  }
+
   // ---------- 会话 TUI 模式记忆（跨页面重载）----------
   // ttyd 不向后来接入的客户端重放终端模式（alt-screen/鼠标上报）；页面重进即失同步，
   // normal buffer 下 TUI 的全量重绘会追加成重复帧（2026-10-04 用户实锤"两遍 π 启动头"）。
