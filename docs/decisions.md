@@ -109,7 +109,15 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 
 **D31 增补（同日，DSH 真机打通）**：真机补装 dsh 0.2.0-rc.2，实测它**不是多协议工具**——内嵌 @anthropic-ai/sdk 走 Anthropic /messages 协议（OpenAI 兼容端点 404）。用 GLM coding plan 驱动它的完整路径：`DEEPSEEK_API_KEY`+`/root/.dsh/cordis.patch.yml` 覆盖 llm-deepseek 插件（baseURL=https://open.bigmodel.cn/api/anthropic、maxTokens=131072——默认 256000 超 GLM 上限报 1210、apiKeyEnv=ZAI_CODING_CN_API_KEY）+ agent-default-model（model=glm-5.3-flash）→ headless 出话；终端页菜单「DSH Web」真机实测拉起系统浏览器进入 Web UI。三工具现状：env.sh 一把 key 通用（opencode/pi 内置识别、dsh 经 patch 接线），GLM 额度覆盖全部三家。
 
-### D32 嵌入式运行时的两个生态缺陷：xterm Android IME 回车丢尾字 + npm×l2s 断链自愈层（2026-10-07，用户真机实锤驱动）
+### D33 rootfs 升级的 /root 迁移细则（2026-10-08，用户定稿，D26 留白收口）
+D26 把「/root 用户文件迁移细则」留白随产品期实现定，R8（rootfs 升级路径）动工前对齐，四条定稿：
+1. **黑名单式全量迁移**：排除 `.l2s*`（D21 自指环教训）、`.npm/`、`.cache/`（可重建缓存）、`AndroidDownload/`（绑定挂载点，本体在宿主 Download）、`*.sock`（运行时 socket，会话重启自建），**其余一律迁走**——含 `.drydock/`（端点与密钥）、`.config/`、`.local/`、`.pi/`、`.npmrc`、`.ssh/` 与全部工作区。理由：升级不替用户判断哪个文件不重要，黑名单比白名单少丢东西。
+2. **用户文件优先**：与新版 rootfs 自带文件（`.bashrc`/`.profile` 等模板）同名冲突时用户版一律保留，新版模板仅在文件不存在时落位；「重置默认 dotfiles」显式入口本期不做（要新默认值的用户手删该文件再走升级，后续按需立项）。与 R4 恢复的「同名弹询问」不同：升级迁移是后台一次跑完，逐文件交互不现实。
+3. **apt/npm 用户自装包不自动重装**：用户自装包（旧环境 dpkg/npm 全局清单减去基础层幂等清单与配方 pin 集）在升级结果报告中列出并附一键重装命令；不自动重装——重装走网络且可能交互失败，违反配方「过程可见、失败可重试」哲学。基础层 17 包由 ensureTerminalLayer 幂等补装，配方由 RecipeManager 按 pin 重放，不属「自装」。
+4. **回滚 = 反向迁移**：回滚到上一版时 /root 反向迁移（新版→旧版），升级后新产生的改动不丢；与正向复用同一套迁移代码。
+升级切换时活跃会话的处理（拒绝切换或自动停会话）属实现细节，随实现定并写入提交记录。
+
+
 
 **① xterm.js 5.3.0（ttyd 1.7.4 内嵌）Android 输入链丢尾字**。现象：WeType 打「你好」回车发送只剩「你」、「今天几号」只剩「今天几」——输入框显示完整、发送瞬间少最后一个字。根因（真机 xterm 实例 dry-run 三角合成实锤）：Android 所有 IME 提交被 Chromium 包在 `keydown(229)/keyup` 之间，xterm 5.3.0 的 `_inputEvent` 门控 `(!composed || !_keyDownSeen)` 在包裹期恒关，实际发送靠 229-keydown 快照 + `setTimeout(0)` 差分且发完不清 textarea——微信输入法换行键会先清理 IME 编辑状态（textarea 残留被清空=值变短），差分逻辑误译成一个 DEL 发给终端，回车发送前最后一字被删；自家键条 ↵ 走 keydown(13)（顺带清 textarea）无此问题。修法：terminal-overlay.js 运行时替换 `_handleAnyTextareaChanges`——值变短不再立即发 DEL（整段清空≥2 字直接判换行清理丢弃；其余挂起 40ms 内有回车随行即丢、无则如期补发，真退格通道不变）。已知残留：单字+超窗慢回车理论漏一个 DEL（观察期）。**关键认知**：WeType 在 Android WebView 上完全不走 composition 事件（拼音预编辑在键盘内部、上屏单批 insertText）——与桌面浏览器 IME 行为模型不同，照搬桌面 composition 竞态假设会诊断错方向（本次第一轮即因此走偏）；且 ttyd/xterm 升级前必须重跑 IME 场景矩阵（draft/ime-patch-verify.py 八场景，合成事件须同任务内 dispatch——CDP 逐条往返的人为时序会制造假阳性全丢）。
 
