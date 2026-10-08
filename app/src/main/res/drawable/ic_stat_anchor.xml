@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 状态栏小图标专用（R1 定稿 A 锚的 24dp 重绘）：108dp 自适应前景直接缩到
+         24dp 时描边仅 ~1.1dp，状态栏里细得认不出；本稿按状态栏惯例加粗到 1.9dp
+         并撑满 4..20 安全区，白描边无填充（平台要求 alpha 剪影） -->
+    <path
+        android:pathData="M9.8,5 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M12,7.4 V18.6"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M8.6,10.6 H15.4"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M6,13 C6,16.9 8.6,19.4 12,19.4 C15.4,19.4 18,16.9 18,13"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

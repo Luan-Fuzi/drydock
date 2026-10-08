@@ -75,7 +75,7 @@ class WorkspaceProvider : DocumentsProvider() {
             add(DocumentsContract.Root.COLUMN_ROOT_ID, "workspace")
             add(DocumentsContract.Root.COLUMN_MIME_TYPES, "*/*")
             add(DocumentsContract.Root.COLUMN_FLAGS, DocumentsContract.Root.FLAG_LOCAL_ONLY)
-            add(DocumentsContract.Root.COLUMN_ICON, android.R.drawable.sym_def_app_icon)
+            add(DocumentsContract.Root.COLUMN_ICON, R.mipmap.ic_launcher)
             add(DocumentsContract.Root.COLUMN_TITLE, "Drydock workspace")
             add(DocumentsContract.Root.COLUMN_SUMMARY, "Linux 环境工作目录")
             add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, ROOT_DOC_ID)
