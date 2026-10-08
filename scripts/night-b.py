@@ -599,8 +599,9 @@ def t11(r):
         if not (sc.tap_text("新建会话", 30) and sc.tap_text("创建", 30)):
             raise RuntimeError("打不开终端")
     assert wait_focus("TerminalActivity", 120), "终端未前台"
-    if not sc.tap_text("☰", 20):
-        raise RuntimeError("找不到菜单按钮 ☰")
+    # 2026-10-08 浮钮合并图标化：☰ 文本锚点改为 content-desc「菜单」（uitap 兼容 desc）
+    if not sc.tap_text("菜单", 20):
+        raise RuntimeError("找不到菜单按钮（desc=菜单）")
     if not sc.wait_text("回主页", 20):
         raise RuntimeError("菜单未弹出")
     xml = sc.ui_dump()
