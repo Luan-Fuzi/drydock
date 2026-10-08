@@ -43,6 +43,13 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- R3 轻量文本编辑页：仅应用内进入（FilePane 文件路由） -->
+        <activity
+            android:name=".TextEditActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".RescueActivity"
             android:exported="false"
