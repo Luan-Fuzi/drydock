@@ -47,8 +47,12 @@ class EnvService : Service() {
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
+        // MIN 不显示状态栏小图标（平台规则，2026-10-09 用户实锤「状态栏只有别人的
+        // 图标」的真因），升 LOW：无声音、卡片正常显示、状态栏小图标出现。
+        // importance 建后不可改：删旧通道重建（原型期无用户自定义可丢）
+        nm.deleteNotificationChannel(CHANNEL_FG)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_FG, "环境宿主", NotificationManager.IMPORTANCE_MIN),
+            NotificationChannel(CHANNEL_FG, "环境宿主", NotificationManager.IMPORTANCE_LOW),
         )
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ALERT, "会话提醒", NotificationManager.IMPORTANCE_DEFAULT),
