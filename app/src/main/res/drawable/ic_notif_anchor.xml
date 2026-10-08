@@ -3,9 +3,12 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 状态栏小图标专用（R1 定稿 A 锚的 24dp 重绘）：108dp 自适应前景直接缩到
-         24dp 时描边仅 ~1.1dp，状态栏里细得认不出；本稿按状态栏惯例加粗到 1.9dp
-         并撑满 4..20 安全区，白描边无填充（平台要求 alpha 剪影） -->
+    <!-- 通知专用彩色小图标（R1 A 锚）：HyperOS 通知卡片左列与状态栏直接渲染
+         smallIcon 本体（不强制剪影），白色剪影在浅色卡片上不可辨、被 OEM 回落成
+         默认图标——按启动图标的形态给彩色小图：深蓝圆底 + 白锚线条。 -->
+    <path
+        android:fillColor="#16324F"
+        android:pathData="M12,0.5 a11.5,11.5 0 1,0 0.001,0 z" />
     <path
         android:pathData="M9.8,5 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0"
         android:strokeColor="#FFFFFF"

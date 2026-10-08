@@ -57,11 +57,10 @@ class EnvService : Service() {
             Notification.Builder(this, CHANNEL_FG)
                 .setContentTitle("Drydock 环境运行中")
                 .setContentText("Linux 会话与终端服务")
-                // 状态栏小图标：平台强制单色剪影，R1 彩色启动图标上不去；用 24dp 加粗
-                // 锚线条（ic_launcher_anchor_fg 缩到 24dp 描边仅 ~1.1dp，状态栏里认不出）
-                .setSmallIcon(R.drawable.ic_stat_anchor)
-                // 通知卡片（下拉阴影）挂真正的启动图标：自适应 icon 直接画位图
-                .setLargeIcon(appIconBitmap())
+                // HyperOS 通知卡片左列与状态栏都直接渲染 smallIcon 本体（不强制剪影），
+                // 白色剪影在卡片上不可辨、被 OEM 回落成默认图标——用彩色小图
+                // （深蓝圆底 + 白锚，即启动图标形态），左列/状态栏就是应用本来的样子
+                .setSmallIcon(R.drawable.ic_notif_anchor)
                 .setColor(0xFF16324F.toInt())
                 .build()
         startForeground(NOTIFICATION_ID, notification)
@@ -240,24 +239,11 @@ class EnvService : Service() {
             Notification.Builder(this, CHANNEL_ALERT)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setSmallIcon(R.drawable.ic_stat_anchor)
-                .setLargeIcon(appIconBitmap())
+                .setSmallIcon(R.drawable.ic_notif_anchor)
                 .setColor(0xFF16324F.toInt())
                 .setAutoCancel(true)
                 .build(),
         )
-    }
-
-    /** 启动图标位图（自适应 icon = 深蓝底 + 白锚）：通知卡片大图标用。
-     *  状态栏小图标是平台强制的单色剪影，彩色的应用图标只能出现在卡片上。 */
-    private fun appIconBitmap(size: Int = 192): android.graphics.Bitmap {
-        val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-        val d = getDrawable(R.mipmap.ic_launcher)
-        if (d != null) {
-            d.setBounds(0, 0, size, size)
-            d.draw(android.graphics.Canvas(bmp))
-        }
-        return bmp
     }
 
     /** CPU 温度/频率采样；AVD 常无 thermal，读不到记空样本（判据只要求记录机制）。 */
