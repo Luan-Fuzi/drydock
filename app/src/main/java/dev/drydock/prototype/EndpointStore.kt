@@ -13,10 +13,11 @@ import org.json.JSONObject
  */
 object EndpointStore {
 
-    enum class Protocol(val label: String) {
-        CHAT_COMPLETIONS("Chat Completions"),
-        RESPONSES("Responses"),
-        ANTHROPIC("Anthropic Messages"),
+    /** 协议 = agent 与服务对话用的报文格式（选错连不上）；hint 给到新手能对号入座。 */
+    enum class Protocol(val label: String, val hint: String) {
+        CHAT_COMPLETIONS("Chat Completions", "最通用：OpenAI 兼容格式，国内绝大多数服务用它"),
+        RESPONSES("Responses", "OpenAI 的新格式，仅部分服务支持"),
+        ANTHROPIC("Anthropic Messages", "Anthropic/Claude 系格式（部分服务单独提供 anthropic 端点）"),
     }
 
     data class Endpoint(
@@ -25,6 +26,7 @@ object EndpointStore {
         val baseUrl: String,
         val model: String,
         val contextWindow: Long?,   // 可选；不填走工具默认
+        val outputTokens: Long?,    // 可选；最大输出长度，不填回落 min(上下文, 131072)（有上下文时）
         val envVar: String,
     )
 
@@ -42,6 +44,7 @@ object EndpointStore {
                 baseUrl = o.getString("baseUrl"),
                 model = o.getString("model"),
                 contextWindow = if (o.isNull("contextWindow")) null else o.getLong("contextWindow"),
+                outputTokens = if (o.isNull("outputTokens")) null else o.getLong("outputTokens"),
                 envVar = o.getString("envVar"),
             )
         }
@@ -58,6 +61,7 @@ object EndpointStore {
                 .put("baseUrl", e.baseUrl)
                 .put("model", e.model)
                 .put("contextWindow", e.contextWindow ?: JSONObject.NULL)
+                .put("outputTokens", e.outputTokens ?: JSONObject.NULL)
                 .put("envVar", e.envVar))
         }
         prefs(context).edit().putString("endpoints", arr.toString()).apply()
@@ -70,7 +74,8 @@ object EndpointStore {
         baseUrl: String,
         model: String,
         contextWindow: Long?,
-        envVar: String,
+        outputTokens: Long? = null,
+        envVar: String = "",
         providerId: String = "",
     ): Endpoint {
         val id = providerId.trim().ifBlank {
@@ -84,6 +89,7 @@ object EndpointStore {
             baseUrl = baseUrl.trim().trimEnd('/'),
             model = model.trim(),
             contextWindow = contextWindow,
+            outputTokens = outputTokens,
             envVar = envVar.trim().ifBlank { "DRYDOCK_API_KEY" },
         )
         // 同 providerId 覆盖（重复添加 = 更新），列表语义是「每家端点一条」
@@ -108,6 +114,7 @@ object EndpointStore {
             baseUrl = baseUrl,
             model = prefs(context).getString("endpoint_model", null) ?: "",
             contextWindow = prefs(context).getString("endpoint_context", null)?.trim()?.toLongOrNull(),
+            outputTokens = null,
             envVar = prefs(context).getString("endpoint_env_var", null)?.takeIf { it.isNotBlank() }
                 ?: "DRYDOCK_API_KEY",
         )

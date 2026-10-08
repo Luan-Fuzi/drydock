@@ -12,6 +12,8 @@
 
     <application
         android:label="Drydock"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false">
@@ -42,6 +44,13 @@
             android:name=".WizardActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- R3 轻量文本编辑页：仅应用内进入（FilePane 文件路由） -->
+        <activity
+            android:name=".TextEditActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".RescueActivity"

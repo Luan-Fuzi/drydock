@@ -36,6 +36,7 @@ proot（ptrace 假 chroot）跑 arm64 发行版，二进制原生执行，CLI/ag
 - "成果落袋"规则：产物自动落到 /sdcard 可见目录（下载/文档），复用用户已有云同步；
 - 一键导出环境 tar + 卸载强提醒（私有目录随卸载蒸发）。
 被否：通用文件管理器（红海 + 用户习惯强 + 纯分心）；内置编辑器（用户是审阅者不是编辑者，手动编辑 intent 甩给外部 App）。
+**边界修订（2026-10-08，用户定调，R3 落地）**：否决项「内置编辑器」收窄为否决**工程级编辑器**（语法高亮、多文件、工程管理、LSP）；**小文本查看+编辑+保存**纳入边界内——单文件全屏编辑（等宽字体，顶部保存/取消），判定 = 纯文本（首 8KB 无 NUL）且 ≤1MB，UTF-8 严格解码失败按二进制甩外部 App；保存前文件 mtime 与进入时不一致（agent 或外部应用改过）先提示覆盖风险。动机：改 env.sh / 小配置 / agent 小产物的真实高频场景成立，env.sh 设置页内编辑器已是先例。
 
 ### D8 agent 分发：下载式安装 + 预选 + 自定义
 镜像预装开源 agent（Codex CLI / Gemini CLI / aider，均 Apache-2.0；OpenCode、Crush MIT）开箱即用；Claude Code 为专有软件，首启从 npm 一键下载（可 pin 验证过的版本），支持自定义 npm 包名/安装命令。
@@ -103,11 +104,20 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
 1. **心跳的"静默"指标用 holder 的 /proc/io rchar**（dtach 只从 PTY 读，rchar 增量即 PTY 输出量代理）；连续 5 分钟无增长 → L1 通知，每静默期只报一次。holder 经 :env 重启被 SIGKILL 时其监控线程同死，proot_exit 记不到——该场景由 service_start 新 pid + session_recreated 表达，只有 holder 单独死亡才有退出码。
 2. **多会话 = 每会话一对 holder+ttyd**（dtach 无 server 复用，名字进注册表 terminal-sessions.json，:env 启动时全量重建死会话=空 shell）；UI 会话名经 Intent extra 传给终端页。
 3. **基准电池计时器用 bash `$EPOCHREALTIME` ×5 轮取中位**（原定 hyperfine）。弃用原因（AVD×proot 实测）：app 语境下对 `--setup`/`-w` 组合必现无声退码 2（同命令手动全过、app 内裸命令直跑正常，机理未明）；多子进程命令与 npm 整树楔死 ptrace-stop（fork 密度相关，单进程命令稳定通过）。npm 用例加预检/开关：registry 不通或 `--ez skip_npm` 即记 SKIPPED，电池仍出 JSON（D12 网络现实）。真机周再评估恢复 hyperfine。**proot 楔死为产品层真问题**：对 Q1 的威胁形态=任务冻死而进程活、WakeLock 空耗，列真机周重点观测。
+   **2026-10-07 梯度复测降级（draft/wedge-verdict.json）**：用户提议从小到大复测——npm 安装全谱系（is-odd 0 依赖 / lodash / esbuild 平台二进制 / typescript / vite 中树 / next 巨树，共 12 次）+ hyperfine `--setup npm-install -w1 -m3` 原始触发器，全部通过、零楔死、零 stop 态进程（proot 译层正常工作时被跟踪进程仅在 syscall 边界瞬时停，4s 采样不可见；真楔死则持续可见——判据成立）。同 APK 同 proot 下不可复现，最可能诱因是当时的 rootfs 毒化状态（本条同文上方另录）。**楔死从「常态威胁」降级为「特定状态历史现象」**：检测缓解版紧迫性下调，Q1 观测从重点降为留意。附带方法论教训：CDP 驱动的长脚本必须 keyDown/keyUp 成对（漏 keyUp 让 xterm `_keyDownSeen` 永久卡 true、insertText 全被吞）且注入确认走文件标记不走屏幕子串（43 列折行制造假阴性）——本实验三轮假失败全因测试驱动自身。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
 
 **D31 增补（同日，DSH 真机打通）**：真机补装 dsh 0.2.0-rc.2，实测它**不是多协议工具**——内嵌 @anthropic-ai/sdk 走 Anthropic /messages 协议（OpenAI 兼容端点 404）。用 GLM coding plan 驱动它的完整路径：`DEEPSEEK_API_KEY`+`/root/.dsh/cordis.patch.yml` 覆盖 llm-deepseek 插件（baseURL=https://open.bigmodel.cn/api/anthropic、maxTokens=131072——默认 256000 超 GLM 上限报 1210、apiKeyEnv=ZAI_CODING_CN_API_KEY）+ agent-default-model（model=glm-5.3-flash）→ headless 出话；终端页菜单「DSH Web」真机实测拉起系统浏览器进入 Web UI。三工具现状：env.sh 一把 key 通用（opencode/pi 内置识别、dsh 经 patch 接线），GLM 额度覆盖全部三家。
 
-### D32 嵌入式运行时的两个生态缺陷：xterm Android IME 回车丢尾字 + npm×l2s 断链自愈层（2026-10-07，用户真机实锤驱动）
+### D33 rootfs 升级的 /root 迁移细则（2026-10-08，用户定稿，D26 留白收口）
+D26 把「/root 用户文件迁移细则」留白随产品期实现定，R8（rootfs 升级路径）动工前对齐，四条定稿：
+1. **黑名单式全量迁移**：排除 `.l2s*`（D21 自指环教训）、`.npm/`、`.cache/`（可重建缓存）、`AndroidDownload/`（绑定挂载点，本体在宿主 Download）、`*.sock`（运行时 socket，会话重启自建），**其余一律迁走**——含 `.drydock/`（端点与密钥）、`.config/`、`.local/`、`.pi/`、`.npmrc`、`.ssh/` 与全部工作区。理由：升级不替用户判断哪个文件不重要，黑名单比白名单少丢东西。
+2. **用户文件优先**：与新版 rootfs 自带文件（`.bashrc`/`.profile` 等模板）同名冲突时用户版一律保留，新版模板仅在文件不存在时落位；「重置默认 dotfiles」显式入口本期不做（要新默认值的用户手删该文件再走升级，后续按需立项）。与 R4 恢复的「同名弹询问」不同：升级迁移是后台一次跑完，逐文件交互不现实。
+3. **apt/npm 用户自装包不自动重装**：用户自装包（旧环境 dpkg/npm 全局清单减去基础层幂等清单与配方 pin 集）在升级结果报告中列出并附一键重装命令；不自动重装——重装走网络且可能交互失败，违反配方「过程可见、失败可重试」哲学。基础层 17 包由 ensureTerminalLayer 幂等补装，配方由 RecipeManager 按 pin 重放，不属「自装」。
+4. **回滚 = 反向迁移**：回滚到上一版时 /root 反向迁移（新版→旧版），升级后新产生的改动不丢；与正向复用同一套迁移代码。
+升级切换时活跃会话的处理（拒绝切换或自动停会话）属实现细节，随实现定并写入提交记录。
+
+
 
 **① xterm.js 5.3.0（ttyd 1.7.4 内嵌）Android 输入链丢尾字**。现象：WeType 打「你好」回车发送只剩「你」、「今天几号」只剩「今天几」——输入框显示完整、发送瞬间少最后一个字。根因（真机 xterm 实例 dry-run 三角合成实锤）：Android 所有 IME 提交被 Chromium 包在 `keydown(229)/keyup` 之间，xterm 5.3.0 的 `_inputEvent` 门控 `(!composed || !_keyDownSeen)` 在包裹期恒关，实际发送靠 229-keydown 快照 + `setTimeout(0)` 差分且发完不清 textarea——微信输入法换行键会先清理 IME 编辑状态（textarea 残留被清空=值变短），差分逻辑误译成一个 DEL 发给终端，回车发送前最后一字被删；自家键条 ↵ 走 keydown(13)（顺带清 textarea）无此问题。修法：terminal-overlay.js 运行时替换 `_handleAnyTextareaChanges`——值变短不再立即发 DEL（整段清空≥2 字直接判换行清理丢弃；其余挂起 40ms 内有回车随行即丢、无则如期补发，真退格通道不变）。已知残留：单字+超窗慢回车理论漏一个 DEL（观察期）。**关键认知**：WeType 在 Android WebView 上完全不走 composition 事件（拼音预编辑在键盘内部、上屏单批 insertText）——与桌面浏览器 IME 行为模型不同，照搬桌面 composition 竞态假设会诊断错方向（本次第一轮即因此走偏）；且 ttyd/xterm 升级前必须重跑 IME 场景矩阵（draft/ime-patch-verify.py 八场景，合成事件须同任务内 dispatch——CDP 逐条往返的人为时序会制造假阳性全丢）。
 

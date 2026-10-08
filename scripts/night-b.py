@@ -140,7 +140,12 @@ def t1(r):
     r["dialog_default_first"] = "主终端" in sc.ui_dump()
     if not sc.tap_text("创建", 30):
         raise RuntimeError("点不到「创建」")
-    f = wait_focus("TerminalActivity", 120)
+    # 冷路径预算 420s：干净环境下这里含首启部署（R9 实测 91s）+ 终端层 apt（15 包）
+    # + 会话 spawn，120s 装不下（2026-10-08 三次干净全量实锤：链路 4-5min）。更糟的
+    # 级联：断言过期后 createSession 协程的 apt 仍在跑，下一阶段的 am start -S 会
+    # 把 dpkg 杀在 half-installed，污染其后所有会话（t10/t11 连环挂、ttyd/dtach 缺失）。
+    # 预算盖过链路 = 协程自然结束，无游离 apt 可被打断。app 侧自愈另立 R12。
+    f = wait_focus("TerminalActivity", 420)
     r["open_terminal_focus"] = f or "TIMEOUT"
     assert f, "创建后 TerminalActivity 未前台"
 
@@ -176,20 +181,21 @@ def t1(r):
 
 @stage("t2_action_view_provider")
 def t2(r):
-    # 探针文件先行（env-run 直达环境，不经 UI）
-    out = sc.env_read("printf 'night-b provider read ok\\n' > /root/night-probe.txt && echo WROTE\n", timeout=90)
+    # 探针文件先行（env-run 直达环境，不经 UI）。R3（2026-10-08）起文本文件点击
+    # 进内置编辑页，ACTION_VIEW 探针改用二进制文件——文本编辑路径由 t12 覆盖
+    out = sc.env_read("head -c 64 /dev/urandom > /root/night-probe.bin && echo WROTE\n", timeout=90)
     assert "WROTE" in out, f"探针文件写入失败：{out[-200:]}"
     # -S：上一阶段可能把 TerminalActivity 留在栈顶，非 -S 只把任务带前台揭不开主页
     sc.shell("am", "start", "-S", "-n", HOME)
     sc.wait_text("新建会话", 30)
     if not nav_tap("文件"):
         raise RuntimeError("进不了文件页（底部导航无「文件」）")
-    if not wait_text_scroll("night-probe.txt", 30):
-        raise RuntimeError("文件页列表没有 night-probe.txt")
+    if not wait_text_scroll("night-probe.bin", 30):
+        raise RuntimeError("文件页列表没有 night-probe.bin")
 
     logcat_clear()
-    if not sc.tap_text("night-probe.txt", 15):
-        raise RuntimeError("点不到 night-probe.txt 行")
+    if not sc.tap_text("night-probe.bin", 15):
+        raise RuntimeError("点不到 night-probe.bin 行")
     time.sleep(4)
     start_lines = [l for l in logcat("ActivityTaskManager").splitlines() if "START u0" in l and "drydock.documents" in l]
     r["action_view_start"] = start_lines[:2] or "无组件消费（Toast 兜底路径）"
@@ -198,7 +204,7 @@ def t2(r):
 
     # provider 直读（content CLI）：provider 以 MANAGE_DOCUMENTS 守门，shell 无 grant
     # 被 SecurityException 拒——权限模型符合设计；read/write 判据走块 2 的 app 侧自测通道
-    read1 = sc.shell("content", "read", "--uri", "content://dev.drydock.documents/root/%2Fnight-probe.txt")
+    read1 = sc.shell("content", "read", "--uri", "content://dev.drydock.documents/root/%2Fnight-probe.bin")
     r["provider_read_shell"] = read1.strip()[:80] or "(空：SecurityException 预期，见夜报)"
     q = sc.shell("content", "query", "--uri", "content://dev.drydock.documents/root/%2F/children",
                  "--projection", "display_name", timeout=30)
@@ -237,8 +243,32 @@ def t3(r):
     r["opencode_limit_clamped"] = 'LIM={"context":131072,"output":131072}' in parsed
     r["endpoint_info_context"] = "context=131072" in oc
     r["drydock_env_baseurl"] = True  # D30 列表化后 profile.d 环境块只在列表首条写入时生成（断言并入 e2e）
+
+    # ---- 第二段：显式最大输出长度（7 段规格，2026-10-08）----
+    # 只给上下文时 output 回落 min(上下文, 131072)；显式给 output 时两工具都写显式值
+    sc.shell("am", "start", "-S", "-n", HOME,
+             "--es", "drydock_endpoint", "'CHAT_COMPLETIONS|https://night.test/v4|night-model|131072|night-test|NIGHT_KEY|8192'",
+             "--es", "drydock_recipe", "OPENCODE")
+    deadline = time.time() + 240
+    while time.time() < deadline:
+        cfg = logcat("DrydockRecipe")
+        if cfg.count("cfg <") >= 2 and "CFG_RC" in cfg.split("cfg <")[-1]:
+            break
+        time.sleep(5)
+    parsed2 = sc.env_read(
+        "node -e \"const d=require('/root/.config/opencode/opencode.json');"
+        "console.log('LIM2=' + JSON.stringify(d.provider['night-test'].models['night-model'].limit))\"\n",
+        timeout=90)
+    r["opencode_output_explicit"] = 'LIM2={"context":131072,"output":8192}' in parsed2
+    parsed_pi = sc.env_read(
+        "node -e \"const d=require('/root/.pi/agent/models.json');"
+        "const m=d.providers['night-test'].models[0];"
+        "console.log('PI2=' + JSON.stringify({c:m.contextWindow,o:m.maxTokens}))\"\n",
+        timeout=90)
+    r["pi_output_explicit"] = 'PI2={"c":131072,"o":8192}' in parsed_pi
     r["files_tail"] = oc[-600:]
-    r["pass"] = r["opencode_limit_clamped"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
+    r["pass"] = (r["opencode_limit_clamped"] and r["endpoint_info_context"] and r["drydock_env_baseurl"]
+                 and r["opencode_output_explicit"] and r["pi_output_explicit"])
 
 
 # ---------- t4 浅色主题 ----------
@@ -249,15 +279,17 @@ def t4(r):
     sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页（底部导航无「设置」）")
-    if not wait_text_scroll("镜像源", 30):
-        raise RuntimeError("设置页未出现")
+    # 2026-10-07 设置页重构：外观收进二级页（主页面 = 分组列表 + 一行一入口）
+    if not sc.tap_text("外观", 15):
+        raise RuntimeError("点不到「外观」入口行")
+    if not sc.wait_text("跟随系统", 15):
+        raise RuntimeError("外观二级页未出现")
     if not sc.tap_text("浅色", 15):
         raise RuntimeError("点不到「浅色」")
     time.sleep(1)  # apply() 异步落盘 + 状态重组
     r["pref_light"] = ">LIGHT</string>" in prefs_xml()
-    # 2026-10-06 起主题状态驱动即时重组：停留在设置页，不再 recreate 跳回会话页
-    # （锚点用「外观」：tap_text 找「浅色」时「镜像源」可能已滚出可视区）
-    r["stays_on_settings"] = "HomeActivity" in focus() and "外观" in sc.ui_dump()
+    # 主题状态驱动即时重组：停留在设置二级页，不 recreate 跳回会话页
+    r["stays_on_settings"] = "HomeActivity" in focus() and "跟随系统" in sc.ui_dump()
     r["screenshot"] = screencap("night-light-home.png")
     if not sc.tap_text("跟随系统", 15):
         xml = sc.ui_dump()
@@ -354,28 +386,76 @@ def t6(r):
 
 # ---------- t7 向导 ANTHROPIC 已知问题教育（块 3） ----------
 
-@stage("t7_wizard_anthropic_hint")
+@stage("t7_wizard_config")
 def t7(r):
-    """D30 后向导端点步为纯引导：验证两种情况的引导文案在（内置厂商标准名 / Coding 端点表单指引）。"""
+    """2026-10-07 向导第二轮：欢迎页定位、左上角返回、连接大模型页真实可配——
+    GLM key 经向导写入 env.sh（ZHIPU_API_KEY + ZAI_CODING_CN_API_KEY 双变量）、
+    自定义服务地址表单在场。"""
     sc.shell("dumpsys", "deviceidle", "whitelist", "+dev.drydock.prototype")  # AVD 测试条件：过保活步
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
+    sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页")
     if not sc.tap_text("初始设置", 30):
-        raise RuntimeError("找不到初始设置按钮")
-    if not sc.wait_text("保活设置", 30):
-        raise RuntimeError("向导未打开（保活步）")
+        raise RuntimeError("找不到初始设置入口")
+    if not sc.wait_text("欢迎使用 Drydock", 30):
+        raise RuntimeError("欢迎页未出现")
+    r["welcome_shown"] = "开始配置" in sc.ui_dump()
+    # 左上角返回按钮：应退出向导回设置页（不依赖系统导航）
+    if not sc.tap_text("‹", 15):
+        raise RuntimeError("欢迎页无左上返回按钮")
+    time.sleep(1)
+    r["back_exits_wizard"] = "初始设置" in sc.ui_dump() and "HomeActivity" in focus()
+    if not r["back_exits_wizard"]:
+        raise RuntimeError("左上返回未退出向导")
+    # 重新进入，走完到端点步
+    if not sc.tap_text("初始设置", 30):
+        raise RuntimeError("重进向导失败")
+    if not sc.wait_text("欢迎使用 Drydock", 20):
+        raise RuntimeError("欢迎页未出现")
+    if not sc.tap_text("开始配置", 15):
+        raise RuntimeError("点不到开始配置")
+    if not sc.wait_text("保活设置", 20):
+        raise RuntimeError("保活步未出现")
     if not sc.tap_text("下一步", 30):
         raise RuntimeError("保活步过不去（豁免未生效？）")
-    if not wait_text_scroll("API key 与模型", 30):
+    if not sc.wait_text("连接大模型", 20):
         raise RuntimeError("端点步未出现")
     xml = sc.ui_dump()
-    r["builtin_guide"] = "内置目录厂商" in xml and "DEEPSEEK_API_KEY" in xml
-    r["custom_guide"] = "自定义端点" in xml and "Coding 端点" in xml
+    r["vendor_chips"] = all(v in xml for v in ("智谱 GLM", "DeepSeek", "Moonshot", "OpenAI", "Anthropic"))
+    r["mode_cards"] = "常见服务" in xml and "自定义服务地址" in xml
+    # 常见服务真实配置：GLM + key → 保存并下一步 → env.sh 双变量断言
+    if not sc.tap_text("智谱 GLM", 15):
+        raise RuntimeError("点不到智谱 GLM 厂商 chip")
+    if not sc.tap_text("API key", 15):
+        raise RuntimeError("点不到 key 输入框")
+    sc.shell("input", "text", "night-t7-glm-key")
+    time.sleep(1)
+    # 收起软键盘：AVD Gboard 不理 ESC（t7 两轮实锤），BACK 在键盘开着时只收键盘
+    sc.shell("input", "keyevent", "KEYCODE_BACK")
+    time.sleep(1)
+    if not sc.tap_text("保存并下一步", 20):
+        raise RuntimeError("「保存并下一步」未出现或点不到")
+    if not sc.wait_text("选择 Coding Agent", 30):
+        raise RuntimeError("保存后未进入 agent 步")
+    env_out = sc.env_read(
+        "grep -q 'export ZHIPU_API_KEY=night-t7-glm-key' /root/.drydock/env.sh && "
+        "grep -q 'export ZAI_CODING_CN_API_KEY=night-t7-glm-key' /root/.drydock/env.sh && echo GLM_KEYS_OK\n",
+        timeout=90)
+    r["glm_key_written"] = "GLM_KEYS_OK" in env_out
+    # 左上返回回端点步，切自定义模式查表单字段
+    if not sc.tap_text("‹", 15):
+        raise RuntimeError("agent 步无左上返回")
+    if not sc.wait_text("连接大模型", 15):
+        raise RuntimeError("返回后端点步未出现")
+    if not sc.tap_text("自定义服务地址", 15):
+        raise RuntimeError("点不到自定义模式卡")
+    xml = sc.ui_dump()
+    r["custom_form"] = "Base URL" in xml and "模型 ID" in xml
     screencap("night-wizard-endpoint-guide.png")
     sc.shell("input", "keyevent", "KEYCODE_BACK")
-    r["pass"] = r["builtin_guide"] and r["custom_guide"]
+    r["pass"] = all([r["welcome_shown"], r["back_exits_wizard"], r["vendor_chips"],
+                     r["mode_cards"], r["glm_key_written"], r["custom_form"]])
 
 # ---------- t9 环境导出（块 5） ----------
 
@@ -428,15 +508,17 @@ def t10(r):
     # 预放一个标记文件
     sc.shell("mkdir", "-p", "/sdcard/Download", timeout=15)
     sc.shell("sh", "-c", "echo night-bind-from-host > /sdcard/Download/night-bind.txt", timeout=15)
-    # 打开开关（设置页高级区在「高级」标题下）
+    # 打开开关（2026-10-07 设置页重构：直通绑定收进二级页，主页面点入口行进入）
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("终端会话", 30)
+    sc.wait_text("新建会话", 30)
     if not nav_tap("设置"):
         raise RuntimeError("进不了设置页")
-    if not wait_text_scroll("高级：目录直通绑定", 60):
-        raise RuntimeError("高级区不在可视区（滚动/tap_text 会自动翻）")
-    # 定位开关：设置页还有镜像源单选钮也是 checkable，先按「已关闭/已开启」标签的
-    # 纵向区间锁定同一行里的 Switch，避免点错单选钮
+    if not sc.tap_text("目录直通绑定", 30):
+        raise RuntimeError("点不到「目录直通绑定」入口行")
+    if not (sc.wait_text("已关闭", 10) or sc.wait_text("新建会话生效", 10)):
+        raise RuntimeError("绑定二级页未出现（开关状态标签缺失）")
+    # 定位开关：二级页内唯一 checkable 是绑定 Switch，按「已关闭/已开启」标签的
+    # 纵向区间锁定同一行里的 Switch
     import re as _re
 
     def find_switch():
@@ -550,10 +632,137 @@ def t11(r):
     r["pass"] = r["menu_lists_sessions"] and r["menu_has_new_and_home"] and r["back_home_ok"]
 
 
+# ---------- t12 文件页长按菜单 + 轻量文本编辑（R2/R3，2026-10-08） ----------
+
+@stage("t12_file_menu_edit")
+def t12(r):
+    # 探针：小文本文件（点击应进 TextEditActivity 而非甩系统应用）
+    out = sc.env_read("printf 'night-edit-base\\n' > /root/night-edit.txt && echo WROTE\n", timeout=90)
+    assert "WROTE" in out, f"编辑探针写入失败：{out[-200:]}"
+
+    sc.shell("am", "start", "-S", "-n", HOME)
+    sc.wait_text("新建会话", 30)
+    if not nav_tap("文件"):
+        raise RuntimeError("进不了文件页")
+    if not wait_text_scroll("night-edit.txt", 30):
+        raise RuntimeError("文件页列表没有 night-edit.txt")
+
+    def long_press(key):
+        # 同点长按：按 dump 文本定位行 bounds，input swipe 原地 700ms
+        import re as _re
+        xml = sc.ui_dump()
+        for m in _re.finditer(
+                r'text="' + _re.escape(key) + r'"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml):
+            x = (int(m.group(1)) + int(m.group(3))) // 2
+            y = (int(m.group(2)) + int(m.group(4))) // 2
+            sc.shell("input", "swipe", str(x), str(y), str(x), str(y), "700")
+            time.sleep(1.5)
+            return True
+        return False
+
+    # --- R3：点击文本文件 → 编辑页 → 追加标记 → 保存 → 落盘断言
+    if not sc.tap_text("night-edit.txt", 15):
+        raise RuntimeError("点不到 night-edit.txt")
+    assert wait_focus("TextEditActivity", 30), "编辑页未前台"
+    r["editor_focus"] = True
+    if not sc.wait_text("night-edit-base", 10):
+        raise RuntimeError("编辑页未加载原内容")
+    if not sc.tap_text("night-edit-base", 10):  # 点内容区聚焦（contains 命中 TextField 内文本）
+        raise RuntimeError("点不到编辑区")
+    time.sleep(1)
+    sc.shell("input", "keyevent", "KEYCODE_MOVE_END")
+    # 纯字母数字标记：Gboard 中文模式会把 : . / _ 映射成全角/候选字（实测教训）
+    sc.shell("input", "text", "nightedit789")
+    time.sleep(1)
+    sc.shell("input", "keyevent", "KEYCODE_BACK")  # 收 IME（遮挡 tap 的已知坑）
+    time.sleep(1)
+    if not sc.tap_text("保存", 15):
+        raise RuntimeError("点不到保存")
+    deadline = time.time() + 60
+    saved = ""
+    while time.time() < deadline:
+        saved = sc.env_read("cat /root/night-edit.txt\n", timeout=60)
+        if "nightedit789" in saved and "night-edit-base" in saved:
+            break
+        time.sleep(3)
+    r["editor_saved"] = "nightedit789" in saved and "night-edit-base" in saved
+    assert r["editor_saved"], f"编辑保存未落盘：{saved[:150]}"
+    assert wait_focus("HomeActivity", 30), "保存后未回文件页"
+
+    # --- R2 ①：长按 → 用其他应用打开（chooser）。断言走前台焦点：现代 chooser
+    # 的标题不是 text 节点（dump 只见候选应用名 Chrome/HTML Viewer 等），
+    # 打开时焦点为 com.android.intentresolver/.ChooserActivityLauncher
+    assert long_press("night-edit.txt"), "长按未定位到文件行(1)"
+    if not sc.wait_text("用其他应用打开", 10):
+        raise RuntimeError("长按菜单未弹出")
+    sc.tap_text("用其他应用打开", 10)
+    deadline = time.time() + 15
+    ch = ""
+    while time.time() < deadline:
+        ch = focus()
+        if "intentresolver" in ch:
+            break
+        time.sleep(2)
+    r["chooser_focus"] = ch[:120]
+    r["chooser_shown"] = "intentresolver" in ch
+    assert r["chooser_shown"], f"chooser 未弹出：focus={ch[:120]}"
+    sc.shell("input", "keyevent", "KEYCODE_BACK")
+    time.sleep(1.5)
+
+    # --- R2 ②：导出到 Downloads（MediaStore 行 + 只读拉回抽查）
+    assert long_press("night-edit.txt"), "长按未定位到文件行(2)"
+    if not sc.tap_text("导出到 Downloads", 10):
+        raise RuntimeError("点不到导出")
+    time.sleep(5)
+    q = sc.shell("content", "query", "--uri", "content://media/external/downloads",
+                 "--projection", "_display_name", "--where",
+                 '"_display_name LIKE \'%night-edit%\'"', timeout=30)
+    r["export_row"] = "night-edit" in q
+    assert r["export_row"], f"MediaStore 无导出行：{q[:150]}"
+    r["export_pulled"] = subprocess.run(
+        adb_prefix() + ["pull", "/sdcard/Download/Drydock/night-edit.txt", "/tmp/night-edit-pull.txt"],
+        capture_output=True, text=True, timeout=60).returncode == 0  # 重跑时 MediaStore 或自动改名，拉不到不算失败
+
+    # --- R2 ③：重命名（尾追加数字成新名 → 列表与环境侧双断言）
+    assert long_press("night-edit.txt"), "长按未定位到文件行(3)"
+    if not sc.tap_text("重命名", 10):
+        raise RuntimeError("点不到重命名")
+    if not sc.wait_text("文件名", 10):
+        raise RuntimeError("重命名对话框未出现")
+    sc.tap_text("night-edit.txt", 10)  # 预填值即文件名，点击聚焦输入区
+    time.sleep(1)
+    sc.shell("input", "keyevent", "KEYCODE_MOVE_END")
+    sc.shell("input", "text", "2")
+    sc.shell("input", "keyevent", "KEYCODE_BACK")
+    time.sleep(1)
+    if not sc.tap_text("确定", 10):
+        raise RuntimeError("点不到确定")
+    r["renamed_listed"] = wait_text_scroll("night-edit.txt2", 15)
+    assert r["renamed_listed"], "改名后列表未见新名"
+    gone = sc.env_read("ls /root/night-edit.txt 2>&1\n", timeout=60)
+    r["renamed_env_old_gone"] = "No such file" in gone
+    assert r["renamed_env_old_gone"], f"环境侧旧名仍在：{gone[:100]}"
+
+    # --- R2 ④：删除（确认 → 列表与环境侧都消失）
+    assert long_press("night-edit.txt2"), "长按未定位到文件行(4)"
+    if not sc.tap_text("删除", 10):
+        raise RuntimeError("点不到删除（菜单项）")
+    if not sc.wait_text("删除后不可恢复", 10):
+        raise RuntimeError("删除确认框未出现")
+    if not sc.tap_text("删除", 10):  # uitap 精确匹配优先：按钮 text=删除，标题是长句不会误中
+        raise RuntimeError("点不到删除（确认）")
+    time.sleep(2)
+    gone2 = sc.env_read("ls /root/night-edit.txt2 2>&1\n", timeout=60)
+    r["deleted_env_gone"] = "No such file" in gone2
+    assert r["deleted_env_gone"], f"环境侧文件仍在：{gone2[:100]}"
+    r["pass"] = all([r["editor_saved"], r["chooser_shown"], r["export_row"],
+                     r["renamed_listed"], r["renamed_env_old_gone"], r["deleted_env_gone"]])
+
+
 def main():
-    wanted = sys.argv[1:] or ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t9", "t10", "t11"]
+    wanted = sys.argv[1:] or ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t9", "t10", "t11", "t12"]
     runners = {"t1": t1, "t2": t2, "t3": t3, "t4": t4, "t5": t5,
-               "t6": t6, "t7": t7, "t9": t9, "t10": t10, "t11": t11}
+               "t6": t6, "t7": t7, "t9": t9, "t10": t10, "t11": t11, "t12": t12}
     print(f"设备：{json.dumps(report['device'], ensure_ascii=False)}", flush=True)
     for k in wanted:
         runners[k]()

@@ -141,7 +141,7 @@ ENVEOF
         } ?: ""
         val endpointInfo = if (endpoints.isEmpty()) "# 尚未添加自定义端点（设置 → Coding 端点）\n" else
             endpoints.joinToString("\n") { e ->
-                "provider=${e.providerId}\nprotocol=${e.protocol.name}\nbase_url=${e.baseUrl}\nmodel=${e.model}\ncontext=${e.contextWindow ?: "-"}\nkey_env=${e.envVar}\n---"
+                "provider=${e.providerId}\nprotocol=${e.protocol.name}\nbase_url=${e.baseUrl}\nmodel=${e.model}\ncontext=${e.contextWindow ?: "-"}\noutput=${e.outputTokens ?: "-"}\nkey_env=${e.envVar}\n---"
             } + "\n# API key 走环境变量（~/.drydock/env.sh，用户自管；可让 agent 帮你写入）\n"
         // 合并脚本固定在 assets/dd-merge.js（不随端点变化）；端点数据经 JSON 注入 argv——
         // 消灭 Kotlin 字符串拼 JS 的多层转义（D30 三轮 bug 的根源）
@@ -151,17 +151,17 @@ ENVEOF
                 EndpointStore.Protocol.RESPONSES -> "@ai-sdk/openai"
                 EndpointStore.Protocol.ANTHROPIC -> "@ai-sdk/anthropic"
             }
-            val limit = e.contextWindow?.let { w ->
-                val out = minOf(w, 131_072L)
-                ",\"limit\":{\"context\":$w,\"output\":$out}"
-            } ?: ""
             val models = JSONObject()
             if (e.model.isNotBlank()) {
-                models.put(e.model, JSONObject().put("name", e.model).apply {
-                    e.contextWindow?.let { w ->
-                        put("limit", JSONObject().put("context", w).put("output", minOf(w, 131_072L)))
-                    }
-                })
+                val mObj = JSONObject().put("name", e.model)
+                // output 显式值优先；只有上下文时回落 min(上下文, 128k)（历史口径，t3 断言依赖）
+                if (e.contextWindow != null || e.outputTokens != null) {
+                    val lim = JSONObject()
+                    e.contextWindow?.let { lim.put("context", it) }
+                    lim.put("output", e.outputTokens ?: minOf(e.contextWindow!!, 131_072L))
+                    mObj.put("limit", lim)
+                }
+                models.put(e.model, mObj)
             }
             return JSONObject()
                 .put("npm", apiNpm)
@@ -180,9 +180,10 @@ ENVEOF
             val models = JSONArray()
             if (e.model.isNotBlank()) {
                 val m = JSONObject().put("id", e.model)
-                e.contextWindow?.let { w ->
-                    m.put("contextWindow", w).put("maxTokens", minOf(w, 131_072L))
-                }
+                e.contextWindow?.let { m.put("contextWindow", it) }
+                // pi 的 maxTokens 即发给 API 的 max_tokens（D31：GLM 端点 ≤131072 实锤）
+                val maxT = e.outputTokens ?: e.contextWindow?.let { minOf(it, 131_072L) }
+                maxT?.let { m.put("maxTokens", it) }
                 models.put(m)
             }
             return JSONObject()
@@ -253,6 +254,7 @@ ENVEOF
             "tuna" -> "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
             "ustc" -> "http://mirrors.ustc.edu.cn/ubuntu-ports"
             "nju" -> "http://mirror.nju.edu.cn/ubuntu-ports"
+            "aliyun" -> "http://mirrors.aliyun.com/ubuntu-ports"
             "official" -> "http://ports.ubuntu.com/ubuntu-ports"
             else -> null
         }
