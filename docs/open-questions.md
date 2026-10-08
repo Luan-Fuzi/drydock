@@ -26,6 +26,8 @@ agent 任务一跑几十分钟，手机会锁屏、降频、被杀后台、发�
 
 16KB page size 等新特性对 proot 与 rootfs 内 glibc 二进制的兼容性影响未验证（部分新设备内核页尺寸变化可能导致未按其编译的 ELF 失败）。购入/借用新设备时补测。
 
+**2026-10-08 已验（R9 预检，Pixel_9 AVD android-37 ps16k 镜像，verdict：通过）**：冷启 `getconf PAGE_SIZE`=**16384**（Android 17 / SDK 37，内核 6.12.58-android16-6，指纹 CP21.260306.017.A1），现 APK（item/r9-ps16k 构建）全链冒烟三步全过：① 部署——主页「新建会话」触发首启部署 91s 完成（rootfs 下载解压配置 + 终端层 apt `LAYER_RC=0`）；② 终端——TerminalActivity 内 ttyd/xterm 渲染出 `root@localhost:~#` 提示符（CDP 读 buffer 断言）；③ 配方——向导真实路径（设置→初始设置→agent 步）安装 OpenCode 1.18.35（npm 走 npmmirror，`RECIPE_RC=0`），proot ptrace 密集的 npm install 未触发楔死。ELF PT_LOAD `p_align` 断言（llvm-readelf）：APK 内 `libproot.so`/`libproot-loader.so` 最小 align=**0x4000(16384)**；rootfs 内 bash/ttyd/dtach（apt Ubuntu arm64）、node（官方 arm64 tarball）、opencode.exe（npm 平台包）全部=**0x10000(65536)**——均 ≥16KB，64KB 对齐在 16KB 内核天然兼容。**结论：16KB 页尺寸对现 proot 链路无阻碍，Q4 关闭**；遗留备注：模拟器验证不等价真机（真机 16KB 设备入手时按需复测），rootfs 内全部二进制依赖上游 arm64 包自身保持大页对齐，若上游改用 4KB-only 编译需重检。证据：`draft/r9-ps16k-verdict.json`（判定与数值）、`draft/r9-elf/`（七个 ELF 原文件）、`draft/r9-a-deploy-terminal.png`、`draft/r9-b-terminal-prompt.png`、`draft/r9-c-wizard-install.png`、驱动脚本 `draft/r9-smoke.py`（复用 scripts/scommon.py）。
+
 ## Q5：hook 集成的实际深度
 
 **2026-10-01 真机实测（draft/q5-hooks-result.json）**：PreToolUse/PostToolUse/Stop 全链路触发、tool_input 载荷完整（file_path+content，够批准卡片展示）；PreToolUse `exit 2 + stderr` 决策返回被模型尊重——工具调用拦截、stderr 回馈、模型明确不绕过（拒绝改用 shell 等替代路径）。**批准卡片地基成立**。遗留：Notification hook 在 headless 无权限请求场景未触发，触发时机留驾驶舱交互场景验证；结构化 permissionDecision JSON（比 exit 2 更细的 allow/deny/ask 三态）留产品期。"批准"方向的挂起等待外部决策（hook ↔ 宿主 IPC）为驾驶舱期工程项。Codex notify 与 OpenCode 的事件粒度待调查。L2 只做 Claude Code，此问题不阻塞 Q1/Q2。
