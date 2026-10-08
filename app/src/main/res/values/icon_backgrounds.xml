@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R1 图标底色（2026-10-08 定稿 A 锚，B 船坞/C 终端窗两稿已删） -->
+<resources>
+    <color name="ic_bg_anchor">#16324F</color>
+</resources>
