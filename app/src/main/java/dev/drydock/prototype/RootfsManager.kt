@@ -1,11 +1,18 @@
 package dev.drydock.prototype
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 /**
@@ -228,6 +235,420 @@ object RootfsManager {
         f.delete()
         return "${"%.1f".format(bytes / 1_000_000.0)} MB → $uri"
     }
+
+    // ---------- R4 环境导入（备份恢复） ----------
+
+    /** 同名冲突的用户决定。 */
+    enum class ImportDecision { OVERWRITE, SKIP }
+
+    /** 导入结果计数；failedSample 取前几个失败原因（路径 + 异常）。 */
+    data class EnvImportResult(
+        val imported: Int,
+        val skipped: Int,
+        val failed: Int,
+        val failedSample: List<String>,
+    )
+
+    sealed class ImportState {
+        data object Copying : ImportState()
+        data class Scanning(val entries: Int) : ImportState()
+        data class Merging(val done: Int, val total: Int) : ImportState()
+    }
+
+    /** 校验失败整体拒绝（此时环境零改动）。 */
+    class ImportReject(reason: String) : IllegalStateException(reason)
+
+    /**
+     * 从 SAF 选中的 tar.gz 恢复（exportEnvTar 的逆）：先单遍「校验 + 解包到 cacheDir
+     * 暂存」，全部条目过了白名单才进入合并——恶意包（绝对路径 / .. / 白名单外 /
+     * 头损坏 / 借符号链接越界）在暂存阶段即整体拒绝，环境不动。合并默认增量：
+     * 新条目写入 /root（与 /etc 片段），同名同内容静默跳过，同名不同内容问一次
+     * onConflict（覆盖/跳过）。恢复的 tar 不含 .l2s（D21 导出口径排除），符号链接
+     * 原样重建、无自指环。rootfs 未部署时调用方先 deploy（页内接线），本函数只管灌。
+     */
+    suspend fun importEnvTar(
+        context: Context,
+        uri: Uri,
+        onState: (ImportState) -> Unit,
+        onConflict: suspend (path: String, remaining: Int) -> ImportDecision,
+    ): EnvImportResult = withContext(Dispatchers.IO) {
+        val appCtx = context.applicationContext
+        val cacheTar = File(appCtx.cacheDir, "drydock-import.tar.gz")
+        val stage = File(appCtx.cacheDir, "drydock-import-stage")
+        val rootfs = rootfsDir(appCtx)
+        try {
+            // 1) SAF 流落缓存（gzip 流不可回卷，落盘后单遍扫描）
+            onState(ImportState.Copying)
+            cacheTar.delete()
+            try {
+                appCtx.contentResolver.openInputStream(uri)?.use { input ->
+                    cacheTar.outputStream().use { input.copyTo(it, 1 shl 16) }
+                } ?: throw ImportReject("无法读取所选文件")
+            } catch (e: ImportReject) {
+                throw e
+            } catch (e: Exception) {
+                throw ImportReject("读取所选文件失败：$e")
+            }
+            if (cacheTar.length() == 0L) throw ImportReject("所选文件为空")
+
+            // 2) 校验 + 解包到暂存（违规即抛 ImportReject，整体拒绝）
+            stage.deleteRecursively()
+            stage.mkdirs()
+            val entries = ArrayList<StagedEntry>(256)
+            try {
+                scanAndExtract(appCtx, cacheTar, stage, entries, onState)
+            } catch (e: ImportReject) {
+                throw e
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw ImportReject("tar.gz 结构非法：$e")
+            }
+            if (entries.isEmpty()) throw ImportReject("tar 内没有可恢复的条目（./root 与 /etc 片段）")
+
+            // 3) 合并（此时校验已全过）。冲突 = 目标已存在且内容不同，先数一遍供
+            //    「还剩 N 个」提示；同名同内容不问（覆盖/跳过都无效果）
+            var conflictTotal = 0
+            for (e in entries) {
+                if (!e.isDir && existsNoFollow(e.target) && !sameContent(e)) conflictTotal++
+            }
+            var imported = 0
+            var skipped = 0
+            var failed = 0
+            val failedSample = ArrayList<String>(3)
+            var asked = 0
+            for ((idx, e) in entries.withIndex()) {
+                try {
+                    val stagedSrc = e.staged
+                    if (stagedSrc == null) {
+                        failed++
+                        if (failedSample.size < 3) failedSample.add("${e.name}：硬链接源缺失")
+                        continue
+                    }
+                    ensureUnderRoot(rootfs, e.target)
+                    when {
+                        e.isDir -> {
+                            if (existsNoFollow(e.target) &&
+                                !Files.isDirectory(e.target.toPath(), LinkOption.NOFOLLOW_LINKS)
+                            ) {
+                                removeExisting(e.target)
+                            }
+                            e.target.mkdirs()
+                            imported++
+                        }
+                        else -> {
+                            val exists = existsNoFollow(e.target)
+                            val conflict = exists && !sameContent(e)
+                            var overwrite = true
+                            if (conflict) {
+                                val d = onConflict(e.name, conflictTotal - ++asked)
+                                overwrite = d == ImportDecision.OVERWRITE
+                            }
+                            if (exists && !conflict) {
+                                skipped++ // 同名同内容：覆盖/跳过无差别，静默跳过
+                            } else if (conflict && !overwrite) {
+                                skipped++
+                            } else {
+                                if (exists) {
+                                    removeExisting(e.target)
+                                }
+                                e.target.parentFile?.mkdirs()
+                                if (e.link != null) {
+                                    Files.createSymbolicLink(
+                                        e.target.toPath(), Paths.get(e.link),
+                                    )
+                                } else {
+                                    Files.copy(
+                                        stagedSrc.toPath(), e.target.toPath(),
+                                        StandardCopyOption.REPLACE_EXISTING,
+                                    )
+                                    e.target.setExecutable((e.mode and 0x49) != 0, true)
+                                }
+                                imported++
+                            }
+                        }
+                    }
+                } catch (ce: kotlinx.coroutines.CancellationException) {
+                    throw ce
+                } catch (e2: Exception) {
+                    failed++
+                    if (failedSample.size < 3) failedSample.add("${e.name}：$e2")
+                }
+                if (idx % 25 == 0 || idx == entries.size - 1) {
+                    onState(ImportState.Merging(idx + 1, entries.size))
+                }
+            }
+            EnvImportResult(imported, skipped, failed, failedSample)
+        } finally {
+            cacheTar.delete()
+            stage.deleteRecursively()
+        }
+    }
+
+    private class StagedEntry(
+        val name: String, // 归一化路径（root/… 或 etc/profile.d/… 等）
+        val isDir: Boolean,
+        val mode: Int,
+        val link: String?, // 符号链接目标（tar 原样，不校验——环境内链接可指向任意环境路径）
+        var staged: File?, // 暂存源；硬链接源缺失时为 null（计入 failed）
+        val target: File, // rootfsDir 下的目标
+    )
+
+    /** 同名是否等价：目录不比；链接比目标；文件比字节（大小先短路）。 */
+    private fun sameContent(e: StagedEntry): Boolean {
+        val t = e.target.toPath()
+        return if (e.link != null) {
+            Files.isSymbolicLink(t) &&
+                Files.readSymbolicLink(t).toString() == e.link
+        } else {
+            val s = e.staged ?: return false
+            !Files.isSymbolicLink(t) &&
+                s.length() == e.target.length() &&
+                s.inputStream().use { a ->
+                    e.target.inputStream().use { b -> streamsEqual(a, b) }
+                }
+        }
+    }
+
+    private fun streamsEqual(a: InputStream, b: InputStream): Boolean {
+        val buf1 = ByteArray(64 * 1024)
+        val buf2 = ByteArray(64 * 1024)
+        while (true) {
+            val n1 = readFull(a, buf1)
+            val n2 = readFull(b, buf2)
+            if (n1 != n2) return false
+            if (n1 <= 0) return true
+            if (!buf1.copyOf(n1).contentEquals(buf2.copyOf(n1))) return false
+        }
+    }
+
+    private fun readFull(s: InputStream, buf: ByteArray): Int {
+        var done = 0
+        while (done < buf.size) {
+            val n = s.read(buf, done, buf.size - done)
+            if (n < 0) break
+            done += n
+        }
+        return done
+    }
+
+    private fun existsNoFollow(f: File): Boolean = Files.exists(f.toPath(), LinkOption.NOFOLLOW_LINKS)
+
+    /** 让位旧目标：符号链接只删链接本身（deleteRecursively 会跟进目标，删穿到链接
+     *  指向处）；真目录按覆盖语义整目录删除；普通文件/硬链直删。 */
+    private fun removeExisting(f: File) {
+        val p = f.toPath()
+        when {
+            Files.isSymbolicLink(p) -> Files.delete(p)
+            Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS) -> f.deleteRecursively()
+            else -> Files.delete(p)
+        }
+    }
+
+    /** 写入目标必须物理落在 rootfs 内：目标链上有符号链接借道出界（如指向宿主路径）即拒。 */
+    private fun ensureUnderRoot(rootfs: File, target: File) {
+        val root = rootfs.canonicalFile.absolutePath + File.separator
+        val canon = target.canonicalFile.absolutePath
+        check(canon.startsWith(root)) { "目标越界：$target" }
+    }
+
+    /**
+     * 单遍读 tar.gz：逐条目归一化路径 → 白名单校验 → 解包到暂存目录。任何违规
+     * 抛 ImportReject（调用方删暂存，环境零改动）。支持 GNU L/K 长名、ustar
+     * prefix、pax x 记录（path/linkpath/size）、硬链接（内容复制——SELinux 禁
+     * app 数据目录 link()，见 deploy 注释）。
+     */
+    private fun scanAndExtract(
+        context: Context,
+        cacheTar: File,
+        stage: File,
+        entries: MutableList<StagedEntry>,
+        onState: (ImportState) -> Unit,
+    ) {
+        val rootfs = rootfsDir(context)
+        val input = try {
+            java.util.zip.GZIPInputStream(cacheTar.inputStream(), 1 shl 16)
+        } catch (e: Exception) {
+            throw ImportReject("不是有效的 gzip 文件：$e")
+        }
+        val header = ByteArray(512)
+        var longName: String? = null
+        var longLink: String? = null
+        var paxPath: String? = null
+        var paxLink: String? = null
+        var paxSize: Long? = null
+        val pendingHard = ArrayList<Pair<StagedEntry, String>>()
+        var count = 0
+        input.use { ins ->
+            while (true) {
+                val h = readFullOrThrow(ins, header, "tar 头截断")
+                if (header.all { it == 0.toByte() }) break // 结束块
+                verifyChecksum(header)
+                val rawName = fieldStr(header, 0, 100)
+                var size = fieldOctal(header, 124, 12)
+                val typeflag = header[156].toInt().toChar()
+                val linkField = fieldStr(header, 157, 257)
+                // GNU 长名/长链接与 pax 覆盖作用于紧随的条目
+                when (typeflag) {
+                    'L' -> { longName = payloadStr(ins, size); skipPad(ins, size); continue }
+                    'K' -> { longLink = payloadStr(ins, size); skipPad(ins, size); continue }
+                    'x', 'g' -> {
+                        val recs = payloadStr(ins, size)
+                        skipPad(ins, size)
+                        if (typeflag == 'x') {
+                            Regex("(?:^|\\n)\\d+ (path|linkpath|size)=(.*)").findAll(recs)
+                                .associate { it.groupValues[1] to it.groupValues[2].trim() }
+                                .also { m ->
+                                    paxPath = m["path"]?.takeIf { it.isNotBlank() }
+                                    paxLink = m["linkpath"]?.takeIf { it.isNotBlank() }
+                                    paxSize = m["size"]?.toLongOrNull()
+                                }
+                        }
+                        continue
+                    }
+                    else -> {}
+                }
+                val prefix = if (fieldStr(header, 257, 263) == "ustar") fieldStr(header, 345, 500) else ""
+                val name = longName ?: paxPath ?: (if (prefix.isNotBlank()) "$prefix/$rawName" else rawName)
+                val link = longLink ?: paxLink ?: linkField.takeIf { it.isNotBlank() }
+                if (paxSize != null) size = paxSize!!
+                longName = null; longLink = null; paxPath = null; paxLink = null; paxSize = null
+
+                val norm = normalizeTarPath(name)
+                    ?: throw ImportReject("路径非法（绝对路径或含 ..）：$name")
+                if (norm.isEmpty()) continue // tar 根目录标记（"./"），无需恢复
+                if (!withinWhitelist(norm)) {
+                    throw ImportReject("路径在白名单外（只收 ./root 与 /etc 片段）：$norm")
+                }
+                if (++count % 200 == 0) onState(ImportState.Scanning(count))
+
+                val staged = File(stage, norm)
+                ensureUnderRoot(stage, staged) // 暂存链上有越界符号链接即拒（防借道写穿）
+                val target = File(rootfs, norm)
+                when (typeflag) {
+                    '5' -> {
+                        staged.mkdirs()
+                        entries.add(StagedEntry(norm, true, 0, null, staged, target))
+                    }
+                    '0', '\u0000', '7' -> {
+                        staged.parentFile?.mkdirs()
+                        staged.outputStream().use { out ->
+                            copyExactly(ins, size, out)
+                        }
+                        skipPad(ins, size)
+                        val mode = fieldOctal(header, 100, 8).toInt()
+                        entries.add(StagedEntry(norm, false, mode, null, staged, target))
+                    }
+                    '2' -> {
+                        val lt = link ?: throw ImportReject("符号链接缺目标：$norm")
+                        staged.parentFile?.mkdirs()
+                        Files.createSymbolicLink(staged.toPath(), Paths.get(lt))
+                        entries.add(StagedEntry(norm, false, 0, lt, staged, target))
+                        skipPad(ins, size) // 符号链接 size 应为 0，防御性跳过
+                    }
+                    '1' -> {
+                        val ref = normalizeTarPath(link ?: "")
+                            ?.takeIf { withinWhitelist(it) }
+                            ?: throw ImportReject("硬链接引用非法：$name → $link")
+                        staged.parentFile?.mkdirs()
+                        val e = StagedEntry(norm, false, 0, null, null, target)
+                        val src = File(stage, ref)
+                        if (existsNoFollow(src)) {
+                            src.copyTo(staged)
+                            e.staged = staged
+                        } else {
+                            pendingHard.add(e to ref) // 引用可能晚于自身出现，扫描完统一补
+                        }
+                        entries.add(e)
+                        skipPad(ins, size)
+                    }
+                    else -> throw ImportReject("不支持的条目类型 '$typeflag'：$norm")
+                }
+            }
+        }
+        // 硬链接兜底：引用成员此时应全部在场（GNU tar 先发首见成员）
+        val byName = entries.filter { !it.isDir }.associateBy { it.name }
+        for ((e, ref) in pendingHard) {
+            val src = byName[ref]?.staged
+            if (src != null && existsNoFollow(src)) {
+                val staged = File(stage, e.name)
+                src.copyTo(staged)
+                e.staged = staged
+            } // 仍缺则保持 staged=null，合并阶段计入 failed
+        }
+    }
+
+    // ---------- tar 底层件（R4 导入用；无第三方依赖，512 字节头逐条解析） ----------
+
+    private fun readFullOrThrow(s: InputStream, buf: ByteArray, what: String) {
+        val n = readFull(s, buf)
+        if (n < buf.size) throw ImportReject("数据截断（$what，读到 $n/${buf.size}）")
+    }
+
+    private fun verifyChecksum(h: ByteArray) {
+        val stored = fieldOctal(h, 148, 8)
+        var unsigned = 0L
+        var signed = 0L
+        for (i in h.indices) {
+            val b = if (i in 148..155) 0x20.toByte() else h[i] // 校验和字段按空格计
+            unsigned += b.toInt() and 0xFF
+            signed += b.toInt()
+        }
+        if (stored != unsigned && stored != signed) {
+            throw ImportReject("条目头校验和不符（文件损坏或不是 tar.gz）")
+        }
+    }
+
+    private fun fieldStr(h: ByteArray, from: Int, to: Int): String =
+        h.copyOfRange(from, to).takeWhile { it != 0.toByte() }.toByteArray().toString(Charsets.UTF_8)
+
+    private fun fieldOctal(h: ByteArray, from: Int, len: Int): Long {
+        val s = h.copyOfRange(from, from + len)
+            .takeWhile { it != 0.toByte() && it != ' '.code.toByte() }
+            .toByteArray().toString(Charsets.UTF_8).trim()
+        if (s.isEmpty()) return 0
+        return s.toLongOrNull(radix = 8) ?: throw ImportReject("数值字段非法：$s")
+    }
+
+    private fun payloadStr(ins: InputStream, size: Long): String {
+        val bytes = ByteArray(size.toInt())
+        readFullOrThrow(ins, bytes, "长名/pax 载荷")
+        return bytes.takeWhile { it != 0.toByte() }.toByteArray().toString(Charsets.UTF_8)
+    }
+
+    private fun copyExactly(ins: InputStream, size: Long, out: java.io.OutputStream) {
+        val buf = ByteArray(64 * 1024)
+        var done = 0L
+        while (done < size) {
+            val n = ins.read(buf, 0, minOf(buf.size.toLong(), size - done).toInt())
+            if (n < 0) throw ImportReject("文件数据截断")
+            out.write(buf, 0, n)
+            done += n
+        }
+    }
+
+    private fun skipPad(ins: InputStream, size: Long) {
+        val pad = ((size + 511) / 512 * 512 - size).toInt()
+        if (pad > 0) {
+            val buf = ByteArray(pad)
+            readFullOrThrow(ins, buf, "条目填充")
+        }
+    }
+
+    /** tar 条目名归一化：去掉 ./、空段与尾斜杠；绝对路径或含 .. 返回 null。tar 根（"./"）返回 ""。 */
+    private fun normalizeTarPath(raw: String): String? {
+        if (raw.isEmpty()) return null
+        if (raw.startsWith("/")) return null
+        val parts = raw.split('/').filter { it.isNotEmpty() && it != "." }
+        if (parts.any { it == ".." }) return null
+        return parts.joinToString("/")
+    }
+
+    /** 白名单：./root 全量 + 导出口径的两个 /etc 片段（backlog R4）。 */
+    private fun withinWhitelist(p: String): Boolean =
+        p == "root" || p.startsWith("root/") ||
+            p == "etc/profile.d" || p.startsWith("etc/profile.d/") ||
+            p == "etc/apt/sources.list.d" || p.startsWith("etc/apt/sources.list.d/")
 
     /** 向 env.sh 写入/更新若干 export 行（同名行去重后追加；文件不存在则建模板）。
      *  向导的常见服务 key 与自定义端点 key、设置页共用；值原样写入（key 惯例为
