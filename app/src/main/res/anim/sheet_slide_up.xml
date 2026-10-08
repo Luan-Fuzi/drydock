@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 贴底面板入场：自窗口底部滑入 -->
+<translate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fromYDelta="100%p"
+    android:toYDelta="0"
+    android:duration="220"
+    android:interpolator="@android:anim/decelerate_interpolator" />

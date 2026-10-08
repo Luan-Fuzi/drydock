@@ -359,7 +359,7 @@
   // 验收钩子：CDP 可直接调用/断言（无视觉环境）
   window.__dk = {
     sendKey: sendKey,
-    keyLabels: ['Ctrl','Esc','Tab','⇧Tab','PgUp','PgDn','←','↑','↓','→','↵'],
+    keyLabels: ['Ctrl','Esc','Tab','Shift+Tab','←','↑','↓','→','↵'],
     armCtrl: setCtrl,
     isCtrlArmed: function () { return ctrlArmed; },
     applyCfg: applyCfg,

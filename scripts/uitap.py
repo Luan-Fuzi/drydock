@@ -28,9 +28,17 @@ def main():
     key = sys.argv[1]
     xml = dump()
     pat = re.compile(r'text="([^"]*)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
+    desc = re.compile(r'content-desc="([^"]*)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
     exact = None
     contains = None
     for m in pat.finditer(xml):
+        if key == m.group(1) and exact is None:
+            exact = m
+        if key in m.group(1) and contains is None:
+            contains = m
+    # 2026-10-08 浮钮合并后图标化（无 text 只有 content-desc）：desc 作为兜底，
+    # text 命中优先（正文文案可能只「包含」关键词且点文案才有效，见下）
+    for m in desc.finditer(xml):
         if key == m.group(1) and exact is None:
             exact = m
         if key in m.group(1) and contains is None:

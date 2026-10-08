@@ -22,5 +22,7 @@ third_party/
 
 # 模拟器运行时插件产物（夜批期间生成）
 .video_agent/
+.v2c/
+out/
 __pycache__/
 .zcode/
