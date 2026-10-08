@@ -88,28 +88,15 @@ private enum class Vendor(val label: String, val envVars: List<String>) {
     ANTHROPIC("Anthropic", listOf("ANTHROPIC_API_KEY")),
 }
 
-/** 常见服务 key 落 env.sh：清掉同名 export 行再追加（重复保存不堆叠）。返回写入的变量名。 */
-private fun saveVendorKey(context: android.content.Context, vendor: Vendor, key: String): List<String> {
-    val f = RootfsManager.envShFile(context)
-    val kept = runCatching { f.readText() }.getOrElse { "" }
-        .lines()
-        .filter { line ->
-            val t = line.trim()
-            vendor.envVars.none { v -> t.startsWith("export $v=") }
-        }
-        .toMutableList()
-    while (kept.isNotEmpty() && kept.last().isBlank()) kept.removeAt(kept.size - 1)
-    val sb = StringBuilder()
-    if (kept.isNotEmpty()) sb.appendLine(kept.joinToString("\n"))
-    sb.appendLine()
-    sb.appendLine("# ${vendor.label} key（初始设置向导写入）")
-    vendor.envVars.forEach { sb.appendLine("export $it=$key") }
-    f.writeText(sb.toString())
-    return vendor.envVars
+/** 常见服务 key 落 env.sh（GLM 双变量），复用通用 upsert。 */
+private fun saveVendorKey(context: android.content.Context, vendor: Vendor, key: String) {
+    RootfsManager.upsertEnvExports(context, vendor.envVars.map { it to key })
 }
 
-/** 自定义端点：进 EndpointStore（prefs，未部署也安全）；环境已部署时立即写进
- *  agent 配置，未部署则由步骤③安装后统一补写（onRun 里的 applyEndpointConfig）。 */
+/** 自定义端点：进 EndpointStore（prefs，未部署也安全）；key 值非空时以
+ *  「export 变量名=值」写进 env.sh（变量名留空默认 DRYDOCK_API_KEY）；环境已
+ *  部署时立即写 agent 配置，未部署则由步骤③安装后统一补写（onRun 里的
+ *  applyEndpointConfig）。 */
 private fun saveCustomEndpoint(
     context: android.content.Context,
     protocol: EndpointStore.Protocol,
@@ -119,11 +106,16 @@ private fun saveCustomEndpoint(
     outputTokens: String,
     envVar: String,
     provider: String,
+    keyValue: String,
 ) {
     EndpointStore.add(context, protocol, baseUrl, model,
         contextWindow.takeIf { it.isNotBlank() }?.toLongOrNull(),
         outputTokens.takeIf { it.isNotBlank() }?.toLongOrNull(),
         envVar, provider)
+    if (keyValue.isNotBlank()) {
+        val resolvedName = envVar.trim().ifBlank { "DRYDOCK_API_KEY" }
+        RootfsManager.upsertEnvExports(context, listOf(resolvedName to keyValue.trim()))
+    }
     if (RootfsManager.isDeployed(context)) {
         val cfg = RecipeManager.applyEndpointConfig(context)
         // 标记缺失不视为失败：步骤③还会再写一次；此处只记日志
@@ -467,6 +459,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
     var fContext by remember { mutableStateOf("") }
     var fOutput by remember { mutableStateOf("") }
     var fEnvVar by remember { mutableStateOf("") }
+    var fKeyValue by remember { mutableStateOf("") }
     var fProvider by remember { mutableStateOf("") }
     var err by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
@@ -489,7 +482,8 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
                         saveVendorKey(context.applicationContext, vendor, keyText.trim())
                     } else {
                         saveCustomEndpoint(context.applicationContext, fProtocol, fBaseUrl.trim(),
-                            fModel.trim(), fContext.trim(), fOutput.trim(), fEnvVar.trim(), fProvider.trim())
+                            fModel.trim(), fContext.trim(), fOutput.trim(), fEnvVar.trim(),
+                            fProvider.trim(), fKeyValue.trim())
                     }
                 }
             }
@@ -582,12 +576,18 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
                 label = { Text("Key 变量名") }, singleLine = true,
                 supportingText = { Text("留空默认 DRYDOCK_API_KEY") },
                 modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = fKeyValue, onValueChange = { fKeyValue = it },
+                label = { Text("API key 值") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                supportingText = { Text("保存后以「export 变量名=key值」写进 ~/.drydock/env.sh；留空则只写配置，key 稍后自己补") },
+                modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = fProvider, onValueChange = { fProvider = it.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' } },
                 label = { Text("Provider 名") }, singleLine = true,
-                supportingText = { Text("这条端点在配置文件里的标识名，不影响连接；留空按域名自动生成，重复添加同名会覆盖更新") },
+                supportingText = { Text("这条端点在配置文件里的标识名：agent 里模型会显示为「provider名/模型名」；不影响连接，留空按域名自动生成，重复添加同名会覆盖更新") },
                 modifier = Modifier.fillMaxWidth())
             StepBody(
-                "key 本体不填在这里：写进 设置 → 环境变量（export 变量名=key），agent 按变量名取用。",
+                "之后换 key：改 ~/.drydock/env.sh 即可（设置 → 环境变量），配置文件不用动。",
             )
         }
     }

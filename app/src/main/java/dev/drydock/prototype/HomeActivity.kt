@@ -843,9 +843,15 @@ private fun EndpointSettingsPage(onBack: () -> Unit) {
                     label = { Text("Key 变量名") }, singleLine = true,
                     supportingText = { Text("留空默认 DRYDOCK_API_KEY") },
                     modifier = Modifier.fillMaxWidth())
+                var fKeyValue by remember { mutableStateOf("") }
+                OutlinedTextField(value = fKeyValue, onValueChange = { fKeyValue = it },
+                    label = { Text("API key 值") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    supportingText = { Text("保存后以「export 变量名=key值」写进 ~/.drydock/env.sh；留空则只写配置，key 稍后自己补") },
+                    modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = fProvider, onValueChange = { fProvider = it.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' } },
                     label = { Text("Provider 名") }, singleLine = true,
-                    supportingText = { Text("这条端点在配置文件里的标识名，不影响连接；留空按域名自动生成，重复添加同名会覆盖更新") },
+                    supportingText = { Text("这条端点在配置文件里的标识名：agent 里模型会显示为「provider名/模型名」；不影响连接，留空按域名自动生成，重复添加同名会覆盖更新") },
                     modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(enabled = fOk, onClick = {
@@ -855,6 +861,10 @@ private fun EndpointSettingsPage(onBack: () -> Unit) {
                             fEnvVar, fProvider)
                         showForm = false
                         scope.launch(Dispatchers.IO) {
+                            if (fKeyValue.isNotBlank()) {
+                                val resolvedName = fEnvVar.trim().ifBlank { "DRYDOCK_API_KEY" }
+                                runCatching { RootfsManager.upsertEnvExports(context.applicationContext, listOf(resolvedName to fKeyValue.trim())) }
+                            }
                             runCatching { RecipeManager.applyEndpointConfig(context.applicationContext) }
                             tick++
                         }

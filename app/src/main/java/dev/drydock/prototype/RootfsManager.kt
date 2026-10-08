@@ -229,6 +229,27 @@ object RootfsManager {
         return "${"%.1f".format(bytes / 1_000_000.0)} MB → $uri"
     }
 
+    /** 向 env.sh 写入/更新若干 export 行（同名行去重后追加；文件不存在则建模板）。
+     *  向导的常见服务 key 与自定义端点 key、设置页共用；值原样写入（key 惯例为
+     *  URL-safe token，含空格等 bash 特殊字符的值应由用户自编 env.sh 处理）。 */
+    fun upsertEnvExports(context: Context, exports: List<Pair<String, String>>) {
+        val f = envShFile(context)
+        val names = exports.map { it.first }.toSet()
+        val kept = runCatching { f.readText() }.getOrElse { "" }
+            .lines()
+            .filter { line ->
+                val t = line.trim()
+                names.none { v -> t.startsWith("export $v=") }
+            }
+            .toMutableList()
+        while (kept.isNotEmpty() && kept.last().isBlank()) kept.removeAt(kept.size - 1)
+        val sb = StringBuilder()
+        if (kept.isNotEmpty()) sb.appendLine(kept.joinToString("\n"))
+        sb.appendLine()
+        exports.forEach { (v, value) -> sb.appendLine("export $v=$value") }
+        f.writeText(sb.toString())
+    }
+
     /** 在已部署环境内执行命令（proot -0 -L，绑定 dev/proc/sys）。
      *  extraBinds：额外 "宿主路径:环境内路径" 绑定；extraEnv：注入宿主侧环境变量
      *  （I1 的密钥即经此进环境，只存在于进程 environment，不落环境内文件）。 */
