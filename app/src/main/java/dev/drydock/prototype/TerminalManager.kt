@@ -307,6 +307,10 @@ object TerminalManager {
             // dom 渲染器：渲染文本落在 DOM，宿主可断言（AV2）；webgl/canvas 画布不可观测，
             // 其性能优化留给产品期（Q3 碎片化矩阵一并评估）
             "-t", "rendererType=dom",
+            // 关掉 ttyd 前端自带的 resize 浮层（2026-10-08 用户真机反馈「41×43」）：
+            // 默认每次尺寸变化弹 300ms「列x行」浮层，手机上 IME/键条开合即触发，
+            // 用户误当屏幕尺寸/故障；值为纯客户端选项，与服务端行为无涉
+            "-t", "disableResizeOverlay=true",
             "/usr/bin/dtach", "-a", "/root/${sockHost.name}",
         )
         Log.i(TAG, "spawn ttyd $port for ${sockHost.name} token=${token.take(4)}…")
