@@ -2,14 +2,14 @@
 
 > **性质**：临时需求整理与排程文档（2026-10-08 建）。条目核实→排期→落地后，内容并入 roadmap/decisions 或从本文删除；与正式决策冲突的条目必须先更新 decisions.md 再动工。
 > **来源**：2026-10-08 用户全应用评审（设置页/向导多轮反馈后的扫荡）+ 评估补充。
+> **已收口**：R0（f555e50 合并，HomeActivity 拆 15 文件）、R9（7585a42 合并，Q4 关闭：16KB 无阻碍）。
 > **用法**：每个条目带核实状态、判据（判据即停机点）、触碰面与冲突；开工前先读「并行与冲突」一节。
 
 ## 总览
 
 | 编号 | 条目 | 核实 | 量 | 建议批次 |
 |---|---|---|---|---|
-| R0 | 拆分 HomeActivity（并行使能） | 已核实 | M | 第 1 批（前置） |
-| R1 | 应用图标 | 已核实缺失 | S | 第 1 批（独立） |
+| R1 | 应用图标 | 3 稿草稿就绪（锚/船坞/终端窗），待视觉复查定稿 | S | 草稿已出，等用户选稿 |
 | R2 | 文件页长按菜单 | 已核实缺失 | S | 第 2 批（与 R3 同 tree） |
 | R3 | 轻量文本编辑页 | 成立；需更新 D7 边界 | M | 第 2 批（与 R2 同 tree） |
 | R4 | 备份恢复（导入） | 已核实缺失（只有导出） | M | 第 3 批 |
@@ -17,16 +17,16 @@
 | R6 | 镜像源加阿里云 | 已核实（URL 200） | S | 第 2 批（设置页小改） |
 | R7 | 设置页文案微调 | 已核实 | S | 第 2 批（设置页小改） |
 | R8 | rootfs 升级路径（D26 实现） | 方案在、未实现 | L | 第 4 批（大） |
-| R9 | 16KB 页尺寸预检（Q4） | 未验 | S | 任意批次（无代码） |
 | R10 | 会话并行重建提速 | 待核实收益 | S-M | 待核实后定 |
 | R11 | 长操作统一进度反馈（busy 行 + 模拟进度条） | 已核实（全应用零进度条） | S-M | 第 2 批（tree B 并入） |
+| R12 | 终端层 half-installed 自愈（apt 打断后会话永久起不来） | 已核实（2026-10-08 实锤） | S | 第 2 批（只动 TerminalManager 一函数，任意 tree 可收） |
 
 ## 并行与冲突
 
 **文件热点**：HomeActivity.kt（三个 pane + 全部设置二级页都在这一个文件里）是最大冲突点——R2/R3/R4/R5/R6/R7 都要动它。**R0 先把 pane 拆成独立文件**（SessionPane/FilePane/Settings*.kt/Dev*.kt，纯移动不改逻辑，night-b 全量回归护航），之后各条目各占各的文件，才能真并行。
 
 **批次划分**（同批 = 可在多个 worktree 并行；跨批串行）：
-- 第 1 批：R0（串行做，是后面一切的前提）‖ R1、R9（完全独立，随时可并行）。
+- ~~第 1 批~~（已收口：R0 合并 f555e50、R9 合并 7585a42；R1 三稿草稿待视觉复查）。
 - 第 2 批：R2+R3（同 tree，同在 FilePane）‖ R6+R7+R11（同 tree，同在设置页；R11 另动 SessionPane 与向导，无文件冲突）‖ R1/R9 收尾。
 - 第 3 批：R4（RootfsManager + BackupSettingsPage）‖ R5（DevSettingsPage + 各管理类接线）。R4 与 R8 都动 RootfsManager，R4 先行。
 - 第 4 批：R8（大，单独一个 tree）。
@@ -37,17 +37,10 @@
 
 ## 条目
 
-### R0 拆分 HomeActivity（并行使能）
-
-- **现状**：HomeActivity.kt ~1000 行，含 HomeScreen/SessionPane/FilePane/SettingsPane 及全部二级页、ThemeStore、debug 验收注入通道。
-- **做法**：按 pane 拆文件（纯移动，不改逻辑不趁机动手优化）；ThemeStore 等共享对象进独立文件；debug 注入通道留在 HomeActivity。
-- **判据**：night-b 干净全量 t1-t11 all_pass=True；`grep -c "fun " HomeActivity.kt` 显著下降且编译零警告新增。
-- **触碰面**：HomeActivity.kt → 新文件若干。**量**：M（半天内）。
-
 ### R1 应用图标
 
 - **核实**：Manifest 无 `android:icon`，res/ 无图片资源，启动器显示系统默认机器人图标。
-- **做法**：adaptive icon（前景图形 + 背景主题色），图形走名字无关方向（锚/船坞意象；名字 Q6 未定，不绑文字）；`android:icon` + `android:roundIcon` 声明。
+- **进展（2026-10-08）**：3 稿草稿已在 item/r1-icon——A 锚（深海蓝底）/B 船坞托船（深青底）/C 终端窗+底座（墨石底），全部白色描边线条 + monochrome 层（themed icon），Manifest 已声明 icon/roundIcon；截图留证 drydock-r1-icon/draft/。**待办：用户切有视觉能力的模型复查三稿截图定稿**，定稿后删另两稿资源、判据走真机/AVD 装机确认。
 - **判据**：启动器/设置里显示新图标，明暗壁纸下可辨；安装升级不掉图标（adaptive 规范）。
 - **触碰面**：res/mipmap-*（新增）、AndroidManifest.xml。**量**：S。设计稿可用 image-search/multi-tree 并行，无代码冲突。
 
@@ -100,13 +93,6 @@
 - **判据**：模拟旧→新升级后工作区文件存活、旧版可一键回滚；sha256 不过拒绝切换。
 - **触碰面**：RootfsManager 大改 + RootfsManifest + 设置页入口；与 R4 串行（同文件）。**量**：L。**前置**：与用户对齐 /root 迁移细则后再动工。
 
-### R9 16KB 页尺寸预检（Q4）
-
-- **核实**：open-questions Q4 未验；Pixel_9 AVD（android-37 ps16k）已备。
-- **做法**：现 APK + rootfs 装进 Pixel_9 AVD，跑冒烟（部署/终端/配方）+ 读 proot ELF align 断言；结果记回 Q4。
-- **判据**：Q4 条目更新为已验/有问题清单。
-- **触碰面**：无代码。**量**：S。可与其他任何 tree 并行（独立 AVD，不占 medium_phone）。
-
 ### R10 会话并行重建提速
 
 - **核实**：冷启动串行重建每会话 ~10-15s（proot+ttyd 就绪探测自身 20s 上限），多会话线性叠加；D28 只修过「新会话优先」排序，未并行化。**待核实**：并行重建的资源峰值（多 proot 同时 fork 的 CPU/内存尖峰）是否可接受——先测后做。
@@ -122,10 +108,17 @@
 - **判据**：night-b 全量 t1-t11 all_pass=True（busy 行文字照常渲染，t1「新建会话」锚点不动）；手动/截图断言：新建会话、导出备份、应用镜像期间进度条可见且在滚动、操作结束即消失；向导 agent 安装期间主按钮不再被 busy 文字撑变形。
 - **触碰面**：SessionPane + Backup/Mirror/端点设置页 + WizardActivity + 新共享组件（R0 后各文件独立）。**量**：S-M。
 
+### R12 终端层 half-installed 自愈
+
+- **核实（2026-10-08 R0 回归实锤）**：night-b 全量 run-1 中，t1 冷部署遇网络低谷，createSession 的终端层 apt 拖到 12:02 才进解包；下一阶段 t11 的 `am start -S` force-stop 杀掉 app 进程组，dpkg 在 dtach「half-installed」处被打断——/usr/bin/{dtach,ttyd,git,jq} 未落盘。此后**所有会话 spawn 永久失败**：`ensureTerminalLayer` 的存在性检查 `dpkg -s >/dev/null` 对 half-installed 包也返回 0，误判「已装」跳过修复，无任何自愈路径。真实用户等价场景：首启装终端层时 app 被 force-stop / 系统回收 / 低内存杀死——之后每次新建会话都「会话启动失败」。
+- **做法**：①检查从「dpkg -s」改为「dpkg -s 且 Status=installed 且关键二进制存在」（`dpkg-query -W -f=${Status}` = `install ok installed` + `command -v ttyd dtach`）；②发现 half-installed 时先 `dpkg --configure -a` 再补装（本次修复实证该命令有效）。night-b 侧剧本不改（打断是它的合法行为，app 侧自愈才是正解）。
+- **判据**：AVD 复现——终端层安装中途 force-stop app → 再新建会话 → 自愈路径自动补装、会话正常打开（exec-out 断言 + TerminalActivity 前台）；正常路径 night-b t1 全量绿。
+- **触碰面**：TerminalManager.ensureTerminalLayer（一个函数）。**量**：S。
+
 ## 建议排期
 
-1. **第 1 批**：R0（单人串行）开工同时，R1（图标，可外包设计）与 R9（Pixel_9 预检）并行。
-2. **第 2 批**：R0 合并后开多 tree——tree A：R2+R3（文件页，含 D7 决策更新）；tree B：R6+R7+R11（设置页小改 + 全应用进度反馈）；R9 收尾。
+1. ~~第 1 批~~ 已收口（R0 拆分 + R9 预检均合 dev；R1 等视觉定稿）。
+2. **第 2 批（现在可开）**：tree A：R2+R3（文件页，含 D7 决策更新）+R12（TerminalManager 一函数，无冲突）；tree B：R6+R7+R11（设置页小改 + 全应用进度反馈）。
 3. **第 3 批**：tree C：R4（备份恢复）；tree D：R5（开发者选项）。
 4. **第 4 批**：R8（rootfs 升级，先对齐迁移细则）；R10 待收益核实后插队。
 
