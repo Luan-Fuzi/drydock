@@ -450,66 +450,6 @@ class TerminalActivity : ComponentActivity() {
         return sessions.firstOrNull { it.name == name } ?: sessions.firstOrNull()
     }
 
-    /** DSH Web：环境内起 dsh web（后台），从日志读带 token 的 URL 拉起系统浏览器。
-     *  不走 runInEnv——后台服务的 stdout 即使重定向，proot 管线仍会让 ProcessBuilder
-     *  的 readText() 等到服务退出（env-run.sh 同款教训），这里用 spawn 不等待。 */
-    private fun launchDshWeb() {
-        Thread {
-            val rootfs = RootfsManager.rootfsDir(this)
-            val log = File(rootfs, "tmp/dsh-web.log")
-            if (!log.exists() || System.currentTimeMillis() - log.lastModified() > 60_000) {
-                val nativeDir = applicationInfo.nativeLibraryDir
-                val argv = listOf(
-                    File(nativeDir, "libproot.so").absolutePath,
-                    "-0", "--link2symlink",
-                    "-r", rootfs.absolutePath,
-                    "-b", "/dev", "-b", "/proc", "-b", "/sys",
-                    "-b", RootfsManager.l2sSelfBind(this),
-                    "-w", "/root",
-                    "/usr/bin/dtach", "-n", "/root/dsh-web.sock",
-                    "/bin/bash", "-c",
-                    "export DEEPSEEK_API_KEY=\"\${DEEPSEEK_API_KEY:-}\"; " +
-                        "dsh web --no-open > /tmp/dsh-web.log 2>&1",
-                )
-                try {
-                    ProcessBuilder(argv).apply {
-                        redirectErrorStream(true)
-                        environment().apply {
-                            put("PROOT_LOADER", File(nativeDir, "libproot-loader.so").absolutePath)
-                            put("PROOT_TMP_DIR", cacheDir.absolutePath)
-                            put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-                            put("HOME", "/root")
-                            put("TERM", "xterm-256color")
-                            put("LANG", "C.UTF-8")
-                        }
-                        // stdout 重定向到文件：主线程不读不等待（服务常驻）
-                        redirectOutput(File(cacheDir, "dsh-web-host.log"))
-                    }.start()
-                } catch (e: Exception) {
-                    Log.e("DrydockAv2", "dsh web spawn 失败", e)
-                }
-            }
-            // 等日志出现 token URL（服务冷启 ~8s；已有实例则立即可读）
-            var url: String? = null
-            repeat(20) {
-                url = runCatching {
-                    log.takeIf { it.exists() }?.readText()?.lineSequence()?.lastOrNull { "token=" in it }
-                }.getOrNull()
-                if (url != null) return@repeat
-                Thread.sleep(1000)
-            }
-            Log.i("DrydockAv2", "dsh web url=$url")
-            runOnUiThread {
-                if (url.isNullOrBlank()) {
-                    android.widget.Toast.makeText(this, "DSH Web 未就绪（先装 DSH 配方）", android.widget.Toast.LENGTH_LONG).show()
-                    return@runOnUiThread
-                }
-                val clean = url!!.substringAfter("http://", "").let { if (it.isBlank()) url.trim() else "http://" + it }
-                startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(clean)))
-            }
-        }.start()
-    }
-
     private fun loadSession(s: TerminalManager.Session) {
         session = s
         webView?.loadUrl("http://127.0.0.1:${s.port}/")
@@ -540,16 +480,12 @@ class TerminalActivity : ComponentActivity() {
     /** 终端页内会话菜单：列表切换（显示名 + 各自端口）、新建、回主页。 */
     private fun showSessionMenu() {
         val sessions = TerminalManager.readSessions(this)
-        val dshInstalled = RecipeManager.installedIds(this).contains("dsh")
         val labels = sessions.map { "${SessionNames.get(this, it.name)} :${it.port}" } +
-            (if (dshInstalled) listOf("🌐 DSH Web（浏览器打开）") else emptyList()) +
             listOf("＋ 新建会话", "← 回主页")
-        val dshIndex = if (dshInstalled) sessions.size else -1
         android.app.AlertDialog.Builder(this)
             .setTitle("会话")
             .setItems(labels.toTypedArray()) { _, which ->
                 when {
-                    which == dshIndex -> launchDshWeb()
                     which < sessions.size && sessions.isNotEmpty() -> {
                         if (sessions[which].name != session?.name) {
                             // singleTask：路由回本实例 onNewIntent，同一 WebView 换 URL
