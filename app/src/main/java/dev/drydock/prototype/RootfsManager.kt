@@ -236,11 +236,13 @@ object RootfsManager {
      *  配方）由版本 pin 重放（D8），不进导出——夜批实锤：全环境 gzip 后 ~2GB、proot
      *  下十分钟级，作为备份产品形态不可行。排除 .l2s（link2symlink 目标是宿主绝对路径，
      *  tar 全目录撞 D21 自指环 ELOOP，导出到别处也无效）与 npm/编译缓存（可重取）。
+     *  排除口径按 .l2s* 通配（R8 夜批实锤：proot 对 .l2s* 名字有特判，环境内 GNU
+     *  tar stat 直接 EPERM——精确名 ./root/.l2s 盖不住后缀形态，见 D21）。
      *  密钥不在环境内文件（I1），导出天然无密钥。返回摘要；失败抛异常。 */
     fun exportEnvTar(context: Context): String {
         val cmd = """
             tar -C / -czf /tmp/drydock-env-export.tar.gz \
-              --exclude='./root/.l2s' --exclude='./root/.npm' --exclude='./root/.cache' \
+              --exclude='./root/.l2s*' --exclude='./root/.npm' --exclude='./root/.cache' \
               --exclude='./root/*.sock' --exclude='./root/AndroidDownload' \
               ./root ./etc/profile.d ./etc/apt/sources.list.d 2>&1 | tail -3
             echo TAR_RC=${'$'}{PIPESTATUS[0]}
