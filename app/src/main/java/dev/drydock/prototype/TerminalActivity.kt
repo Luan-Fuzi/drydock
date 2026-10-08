@@ -464,21 +464,36 @@ class TerminalActivity : ComponentActivity() {
     private fun buildKeyBar(webView: WebView): android.view.View {
         fun send(js: String) = webView.evaluateJavascript("window.__dk&&window.__dk.sendKey($js)", null)
 
-        data class Key(val label: String, val js: String)
+        data class Key(val label: String, val js: String, val icon: Int? = null)
         val esc = "{key:'Escape',code:'Escape',keyCode:27,which:27}"
         val tab = "{key:'Tab',code:'Tab',keyCode:9,which:9}"
+        // 方向与回车用 vector 图标键（2026-10-08 用户反馈字形键细且小）：字体里
+        // ←↑↓→/↵ 的字形粗细与大小不可控，Material 箭头路径笔画均匀、随密度缩放
         val nav = listOf(
-            Key("←", "{key:'ArrowLeft',code:'ArrowLeft',keyCode:37,which:37}"),
-            Key("↑", "{key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38}"),
-            Key("↓", "{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40}"),
-            Key("→", "{key:'ArrowRight',code:'ArrowRight',keyCode:39,which:39}"),
+            Key("左", "{key:'ArrowLeft',code:'ArrowLeft',keyCode:37,which:37}", R.drawable.ic_key_arrow_left),
+            Key("上", "{key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38}", R.drawable.ic_key_arrow_up),
+            Key("下", "{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40}", R.drawable.ic_key_arrow_down),
+            Key("右", "{key:'ArrowRight',code:'ArrowRight',keyCode:39,which:39}", R.drawable.ic_key_arrow_right),
         )
         val actions = listOf(
             Key("Esc", esc),
             Key("Tab", tab),
-            Key("⇧Tab", "$tab,shiftKey:true"),
-            Key("↵", "{key:'Enter',code:'Enter',keyCode:13,which:13}"),
+            Key("Shift+Tab", "$tab,shiftKey:true"),
+            Key("回车", "{key:'Enter',code:'Enter',keyCode:13,which:13}", R.drawable.ic_key_return),
         )
+
+        fun keyRipple(): android.graphics.drawable.RippleDrawable =
+            android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x33FFFFFF),
+                android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF2E2E2E.toInt())
+                    cornerRadius = 6.dp().toFloat()
+                },
+                android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF000000.toInt())
+                    cornerRadius = 6.dp().toFloat()
+                },
+            )
 
         fun keyButton(label: String, textSp: Float, onClick: android.view.View.OnClickListener): android.widget.Button =
             android.widget.Button(this).apply {
@@ -488,24 +503,39 @@ class TerminalActivity : ComponentActivity() {
                 // setBackgroundColor 会盖掉默认背景连带 ripple——真机反馈「按了没反应」
                 // 的根源之一；改自绘圆角底 + 前景 ripple，按下有可见反馈
                 stateListAnimator = null
-                background = android.graphics.drawable.RippleDrawable(
-                    android.content.res.ColorStateList.valueOf(0x33FFFFFF),
-                    android.graphics.drawable.GradientDrawable().apply {
-                        setColor(0xFF2E2E2E.toInt())
-                        cornerRadius = 6.dp().toFloat()
-                    },
-                    android.graphics.drawable.GradientDrawable().apply {
-                        setColor(0xFF000000.toInt())
-                        cornerRadius = 6.dp().toFloat()
-                    },
-                )
+                background = keyRipple()
                 setPadding(0, 0, 0, 0)
                 minHeight = 0
                 minWidth = 0
                 setOnClickListener(onClick)
             }
 
-        fun row(buttons: List<android.widget.Button>) = android.widget.LinearLayout(this).apply {
+        /** 图标键（方向/回车）：Material 箭头路径 22dp 居中，笔画粗细与浮钮图标
+         *  同源；desc 沿用 Key.label（「左/上/下/右/回车」），uiautomator 可锚。 */
+        fun keyIcon(desc: String, iconRes: Int, onClick: android.view.View.OnClickListener): android.widget.FrameLayout =
+            android.widget.FrameLayout(this).apply {
+                contentDescription = desc
+                stateListAnimator = null
+                background = keyRipple()
+                setOnClickListener(onClick)
+                addView(
+                    android.widget.ImageView(context).apply {
+                        setImageResource(iconRes)
+                        setColorFilter(0xFFDDDDDD.toInt())
+                    },
+                    android.widget.FrameLayout.LayoutParams(
+                        22.dp(),
+                        22.dp(),
+                        android.view.Gravity.CENTER,
+                    ),
+                )
+            }
+
+        fun keyView(k: Key): android.view.View =
+            if (k.icon != null) keyIcon(k.label, k.icon) { send(k.js) }
+            else keyButton(k.label, if (k.label.length > 4) 13f else 15f) { send(k.js) }
+
+        fun row(buttons: List<android.view.View>) = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF141414.toInt())
             val lp = android.widget.LinearLayout.LayoutParams(0, 46.dp(), 1f)
@@ -521,7 +551,6 @@ class TerminalActivity : ComponentActivity() {
             Key("Ctrl+W", "{key:'w',code:'KeyW',keyCode:87,which:87,ctrlKey:true}"),
         )
 
-        val navRow = row(nav.map { k -> keyButton(k.label, 15f) { send(k.js) } })
         // Ctrl 粘滞：点亮色跟着自绘底走（setBackgroundColor 会压掉 ripple）
         val ctrlBg = android.graphics.drawable.GradientDrawable().apply {
             setColor(0xFF2E2E2E.toInt())
@@ -544,8 +573,9 @@ class TerminalActivity : ComponentActivity() {
                 "window.__dk&&window.__dk.armCtrl($armed)", null,
             )
         }
-        val actionRow = row(listOf(ctrlBtn) + actions.map { k -> keyButton(k.label, 15f) { send(k.js) } })
-        val comboRow = row(combos.map { k -> keyButton(k.label, 13f) { send(k.js) } })
+        val navRow = row(nav.map { keyView(it) })
+        val actionRow = row(listOf(ctrlBtn) + actions.map { keyView(it) })
+        val comboRow = row(combos.map { keyView(it) })
 
         return android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
