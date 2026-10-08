@@ -26,7 +26,7 @@
 
 **验证资源（重要）**：所有 worktree 共享同一台物理 AVD（emulator-5554）时，UI 驱动类验证（night-b/uitap/截图）**互斥**——两个 tree 同时驱动会互相抢 UI（2026-10-07 实锤过并发冲突）。约定二选一：①验证时段串行（约定信号）；②每个并行 tree 建自己的 AVD 实例（`android emulator create` + 各自 serial，ANDROID_SERIAL 区分）。编译与写码不受限。
 
-**分支纪律**：一切从 dev 拉短命分支（`git worktree add ../drydock-<item> -b item/<n>-<名>`），判据全绿合回 dev 即删；发真机的 APK 只从 main tag 构建（既有纪律不变）。UI 文案类改动必须核对 night-b 锚点（t4「外观」「浅色」、t7「连接大模型」「初始设置」、t10「目录直通绑定」「已关闭/已开启」、t1/t11「新建会话」「本地端口」），动到锚点须同步剧本。
+**分支纪律**：一切从 dev 拉短命分支（`git worktree add .worktrees/<item> -b item/<n>-<名>`，2026-10-08 起约定建在仓库内部，见 AGENTS.md；`.worktrees/` 已忽略），判据全绿合回 dev 即删；发真机的 APK 只从 main tag 构建（既有纪律不变）。UI 文案类改动必须核对 night-b 锚点（t4「外观」「浅色」、t7「连接大模型」「初始设置」、t10「目录直通绑定」「已关闭/已开启」、t1/t11「新建会话」「本地端口」），动到锚点须同步剧本。
 
 ## 条目
 

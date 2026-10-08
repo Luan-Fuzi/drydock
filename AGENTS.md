@@ -13,6 +13,7 @@
 - **提交原子**：一次提交一件完整的事；信息用中文一行说清做了什么。
 - **不入库**：构建产物（APK）、rootfs、node_modules；证据文件（截图、遥测导出、基准原始 JSON）默认进 `draft/`，结论提炼进 docs/。新增生成物类型时同步补 `.gitignore`。
 - 大改动可从 dev 拉短命分支，合回即删。
+- **worktree 建在仓库内部 `.worktrees/`**（2026-10-08 定）：并行条目用 `git worktree add .worktrees/<item> -b item/<n>-<名>` 从 dev 拉短命分支，判据全绿合回 dev 后 `git worktree remove` 并删分支。`.worktrees/` 已在 `.gitignore`；全仓搜索/构建时注意它内含平行副本（rg 加 `-g '!.worktrees'` 排除）。不建在仓库同级目录——会在主仓外散落目录。
 
 ## 真机纪律（2026-10-01，步骤 6 真机周生效）
 

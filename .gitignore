@@ -1,6 +1,9 @@
 # 构想草稿与临时文件，不入库
 draft/
 
+# 短命分支 worktree（AGENTS.md 约定：建在 .worktrees/ 内，判据全绿合回 dev 即删）
+.worktrees/
+
 # Gradle / Android 构建产物
 .gradle/
 build/
