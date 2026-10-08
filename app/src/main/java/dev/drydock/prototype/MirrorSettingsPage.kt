@@ -55,6 +55,7 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
                 add(MirrorOpt("tuna", "清华 TUNA", "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports", null))
                 add(MirrorOpt("ustc", "中科大 USTC", "http://mirrors.ustc.edu.cn/ubuntu-ports", null))
                 add(MirrorOpt("nju", "南京大学 NJU", "http://mirror.nju.edu.cn/ubuntu-ports", null))
+                add(MirrorOpt("aliyun", "阿里云", "http://mirrors.aliyun.com/ubuntu-ports", null))
                 add(MirrorOpt("official", "官方源（海外网络）", "http://ports.ubuntu.com/ubuntu-ports", null))
                 if (curApt != null && none { it.aptUrl == curApt }) {
                     add(MirrorOpt("custom-apt", "当前手编：$curApt", curApt, null))

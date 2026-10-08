@@ -254,6 +254,7 @@ ENVEOF
             "tuna" -> "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
             "ustc" -> "http://mirrors.ustc.edu.cn/ubuntu-ports"
             "nju" -> "http://mirror.nju.edu.cn/ubuntu-ports"
+            "aliyun" -> "http://mirrors.aliyun.com/ubuntu-ports"
             "official" -> "http://ports.ubuntu.com/ubuntu-ports"
             else -> null
         }
