@@ -32,6 +32,7 @@
 | [docs/engineering-plan.md](docs/engineering-plan.md) | 工程准备：性能探针、测试策略、安全不变量、前端设计语言（2026-09-27） |
 | [docs/prototype-plan.md](docs/prototype-plan.md) | 原型实施计划：六步路线、判据、时间盒、风险止损（2026-09-27） |
 | [docs/product-roadmap.md](docs/product-roadmap.md) | 产品阶段 roadmap：功能先行、集中测试，五阶段与判据（2026-10-03） |
+| [docs/backlog.md](docs/backlog.md) | 需求池（工作文档）：并行排程、冲突分析与判据（2026-10-08） |
 | [docs/dev-environment.md](docs/dev-environment.md) | 开发环境现状：macOS 工具链、AVD 分工、注意事项（2026-09-27） |
 | `draft/` | 构想草稿与临时文件（git 忽略，见 `.gitignore`；定型后整理进 docs/） |
 
