@@ -25,7 +25,8 @@ internal fun BindSettingsPage(onBack: () -> Unit) {
 
     SettingsSubPage("目录直通绑定（实验）", onBack) {
         Text(
-            "把手机 Download 目录绑进环境 ${BindStore.ENV_DIR}（proot -b，双向直通）。" +
+            "环境里读写 /root/AndroidDownload ≈ 手机 Download 目录：在环境里改文件，" +
+                "手机文件管理器立即可见，反之亦然（proot -b 双向直通）。" +
                 "需要系统「所有文件访问」权限；绑定目录读写都经 proot 翻译，比环境内慢。默认关闭。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

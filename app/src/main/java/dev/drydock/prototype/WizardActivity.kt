@@ -662,12 +662,15 @@ private fun RecipeStep(
         ) {
             Text(
                 when {
-                    busy.isNotBlank() -> busy
                     picks.isEmpty() -> "暂不安装，继续"
                     else -> "安装所选（${picks.size} 个）"
                 },
             )
         }
+    }
+    // busy 文字走页面内 BusyBar（R11）：主按钮文字固定，不被安装进度文案撑变形
+    if (busy.isNotBlank()) {
+        BusyBar(busy, Modifier.fillMaxWidth().padding(top = 4.dp))
     }
     if (doneMsg.isNotBlank()) {
         Text(

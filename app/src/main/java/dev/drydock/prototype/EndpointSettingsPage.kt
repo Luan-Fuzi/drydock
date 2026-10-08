@@ -69,10 +69,12 @@ internal fun EndpointSettingsPage(onBack: () -> Unit) {
                 }) { Text("删除") }
             }
         }
-        // 追加表单（折叠式）
+        // 追加表单（折叠式）；保存中（IO 写 env.sh/配置）走 BusyBar 反馈（R11）
         var showForm by remember { mutableStateOf(false) }
+        var saving by remember { mutableStateOf(false) }
         if (!showForm) {
-            OutlinedButton(onClick = { showForm = true }) { Text("添加自定义端点") }
+            OutlinedButton(enabled = !saving, onClick = { showForm = true }) { Text("添加自定义端点") }
+            if (saving) BusyBar("保存中…")
         } else {
             var fProtocol by remember { mutableStateOf(EndpointStore.Protocol.CHAT_COMPLETIONS) }
             var fBaseUrl by remember { mutableStateOf("") }
@@ -139,7 +141,8 @@ internal fun EndpointSettingsPage(onBack: () -> Unit) {
                     supportingText = { Text("这条端点在配置文件里的标识名：agent 里模型会显示为「provider名/模型名」；不影响连接，留空按域名自动生成，重复添加同名会覆盖更新") },
                     modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = fOk, onClick = {
+                    Button(enabled = fOk && !saving, onClick = {
+                        saving = true
                         EndpointStore.add(context, fProtocol, fBaseUrl, fModel,
                             fContext.trim().takeIf { it.isNotBlank() }?.toLongOrNull(),
                             fOutput.trim().takeIf { it.isNotBlank() }?.toLongOrNull(),
@@ -151,6 +154,7 @@ internal fun EndpointSettingsPage(onBack: () -> Unit) {
                                 runCatching { RootfsManager.upsertEnvExports(context.applicationContext, listOf(resolvedName to fKeyValue.trim())) }
                             }
                             runCatching { RecipeManager.applyEndpointConfig(context.applicationContext) }
+                            saving = false
                             tick++
                         }
                     }) { Text("保存并写入配置") }

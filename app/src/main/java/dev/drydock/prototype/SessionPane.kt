@@ -144,7 +144,7 @@ internal fun SessionPane() {
         Text("会话", style = MaterialTheme.typography.titleLarge)
 
         if (busy.isNotBlank()) {
-            Text(busy, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            BusyBar(busy)
         }
 
         if (sessions.isEmpty()) {

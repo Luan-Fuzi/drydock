@@ -65,7 +65,7 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
 
         SettingsGroup("应用") {
             SettingsRow("外观", themeLabel) { onOpen(SettingsPage.APPEARANCE) }
-            SettingsRow("终端", termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
+            SettingsRow("终端显示", termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
         }
 
         SettingsGroup("更多") {
@@ -96,6 +96,7 @@ private fun mirrorHostOf(url: String): String = when {
     url.contains("tuna") -> "清华 TUNA"
     url.contains("ustc") -> "中科大"
     url.contains("nju") -> "南大"
+    url.contains("aliyun") -> "阿里云"
     url.contains("ports.ubuntu.com") -> "官方源"
     url.contains("npmmirror") -> "npmmirror"
     url.contains("registry.npmjs.org") -> "npm 官方"
