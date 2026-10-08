@@ -202,6 +202,22 @@ class TerminalActivity : ComponentActivity() {
             domStorageEnabled = true
         }
         webView.webViewClient = object : WebViewClient() {
+            // 终端里点到的链接只放行本会话 ttyd 页自身；其余 URL（dsh web 等本机
+            // 服务、外部链接）甩系统浏览器（D25 直达形态）。同 WebView 导航会走离
+            // ttyd 页致 ws 断开，返回后页面自缓存恢复但 xterm 失焦——真机实锤
+            // 「返回后终端什么都输不进」（2026-10-08 用户报告）。
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?,
+            ): Boolean {
+                val u = request?.url ?: return false
+                val port = session?.port
+                val isOwnPage = u.host == "127.0.0.1" && (port == null || u.port == port)
+                if (isOwnPage) return false
+                startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, u))
+                return true
+            }
+
             override fun onReceivedHttpAuthRequest(
                 view: WebView?,
                 handler: android.webkit.HttpAuthHandler,
@@ -317,8 +333,14 @@ class TerminalActivity : ComponentActivity() {
                 1f,
             ),
         )
+        val keyBar = buildKeyBar(webView)
+        val uiPrefs = getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+        // 键条默认收起（2026-10-08 用户定调），状态记忆跨会话
+        keyBar.visibility =
+            if (uiPrefs.getBoolean("keybar_collapsed", true)) android.view.View.GONE
+            else android.view.View.VISIBLE
         content.addView(
-            buildKeyBar(webView),
+            keyBar,
             android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -338,8 +360,8 @@ class TerminalActivity : ComponentActivity() {
             textSize = 22f
             setBackgroundColor(0x88000000.toInt())
             setPadding(28, 8, 28, 16)
-            setOnClickListener { showSessionMenu() }
         }
+        makeFloatDraggable(menuBtn) { showSessionMenu() }
         root.addView(
             menuBtn,
             FrameLayout.LayoutParams(
@@ -348,14 +370,38 @@ class TerminalActivity : ComponentActivity() {
                 android.view.Gravity.TOP or android.view.Gravity.END,
             ).apply { topMargin = 24; rightMargin = 24 },
         )
+        // ⌨ 浮钮：展开/收起虚拟键条（与 ☰ 同款可拖动+边缘吸附）
+        val keyBtn = android.widget.TextView(this).apply {
+            text = "⌨"
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            setBackgroundColor(0x88000000.toInt())
+            setPadding(30, 10, 30, 16)
+        }
+        makeFloatDraggable(keyBtn) {
+            val show = keyBar.visibility != android.view.View.VISIBLE
+            keyBar.visibility = if (show) android.view.View.VISIBLE else android.view.View.GONE
+            uiPrefs.edit().putBoolean("keybar_collapsed", !show).apply()
+        }
+        root.addView(
+            keyBtn,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.TOP or android.view.Gravity.END,
+            ).apply { topMargin = 108; rightMargin = 24 },
+        )
         setContentView(root)
         loadSession(initial)
     }
 
-    /** 原生虚拟键条（2026-10-04 从页面 DOM 迁移）：两行等权重、不溢出不横向滚动——
-     * 上行导航（PgUp/PgDn/方向），下行修饰与动作（Ctrl 粘滞/Esc/Tab/⇧Tab/回车）。
-     * 键位经页面 __dk.sendKey 合成（与 IME 同链路）；Ctrl 粘滞状态与 overlay 的
-     * 字母拦截逻辑（armCtrl）共用。 */
+    /** 原生虚拟键条（2026-10-04 从页面 DOM 迁移）：两行等权重、不溢出不横向滚动。
+     * 2026-10-08 重评估（用户反馈键太多）：PgUp/PgDn 移除——常规回翻已被触控滚动
+     * 覆盖（TerminalTouchLayout），整条默认收起（⌨ 悬浮钮展开）。保留键依据：
+     * 四方向=claude/opencode TUI 菜单导航（D24）；Esc=取消/返回；Ctrl 粘滞=Ctrl+C
+     * 中断；Tab=补全；⇧Tab=claude TUI 模式切换（auto/manual/plan）；↵=绕 IME 的
+     * 干净回车通道（D32 WeType 教训的保险丝）。键位经页面 __dk.sendKey 合成（与
+     * IME 同链路）；Ctrl 粘滞状态与 overlay 的字母拦截逻辑（armCtrl）共用。 */
     private fun buildKeyBar(webView: WebView): android.view.View {
         fun send(js: String) = webView.evaluateJavascript("window.__dk&&window.__dk.sendKey($js)", null)
 
@@ -363,8 +409,6 @@ class TerminalActivity : ComponentActivity() {
         val esc = "{key:'Escape',code:'Escape',keyCode:27,which:27}"
         val tab = "{key:'Tab',code:'Tab',keyCode:9,which:9}"
         val nav = listOf(
-            Key("PgUp", "{key:'PageUp',code:'PageUp',keyCode:33,which:33}"),
-            Key("PgDn", "{key:'PageDown',code:'PageDown',keyCode:34,which:34}"),
             Key("←", "{key:'ArrowLeft',code:'ArrowLeft',keyCode:37,which:37}"),
             Key("↑", "{key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38}"),
             Key("↓", "{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40}"),
@@ -423,6 +467,51 @@ class TerminalActivity : ComponentActivity() {
     }
 
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+
+    /** 悬浮浮钮（☰/⌨）拖动：按住任意方向拖，松手水平吸附到最近边缘（保留拖放
+     *  高度，纵向上限夹在屏内）；位移超过 2×touchSlop 才算拖动，否则判为点按。
+     *  touch 层消费事件，点按走 onTap 回调（不走 setOnClickListener）。ACTION_CANCEL
+     *  只按拖动收尾处理、绝不补点按——2026-10-08 实锤：浮钮贴右缘，系统返回手势
+     *  抢走触摸流时最后送来的是 CANCEL，当点按处理会弹错菜单。配套把浮钮矩形
+     *  加进 systemGestureExclusionRects（minSdk 29），从浮钮起手的拖动不再被抢。 */
+    private fun makeFloatDraggable(v: android.view.View, onTap: () -> Unit) {
+        val slop = android.view.ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f; var downY = 0f; var startX = 0f; var startY = 0f; var moved = false
+        fun excludeFromGestures() {
+            if (android.os.Build.VERSION.SDK_INT < 29) return
+            v.setSystemGestureExclusionRects(
+                listOf(android.graphics.Rect(0, 0, v.width, v.height)),
+            )
+        }
+        v.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> excludeFromGestures() }
+        v.setOnTouchListener { view, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX; downY = e.rawY
+                    startX = view.x; startY = view.y; moved = false
+                    true
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val dx = e.rawX - downX; val dy = e.rawY - downY
+                    if (!moved && (Math.abs(dx) > slop * 2 || Math.abs(dy) > slop * 2)) moved = true
+                    if (moved) { view.x = startX + dx; view.y = startY + dy }
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (moved) {
+                        val parent = view.parent as android.view.ViewGroup
+                        val targetX =
+                            if (view.x + view.width / 2f < parent.width / 2f) 0f
+                            else (parent.width - view.width).toFloat()
+                        val targetY = view.y.coerceIn(0f, (parent.height - view.height).toFloat())
+                        view.animate().x(targetX).y(targetY).setDuration(160).start()
+                    } else if (e.actionMasked == android.view.MotionEvent.ACTION_UP) onTap()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
 
     /** 设置页改字号/回滚后回到本页即套用（window.__dk.applyCfg 由 overlay 提供；
      *  首次进入时页面未就绪则静默跳过——首载配置走 __DK_CFG 注入）。 */
