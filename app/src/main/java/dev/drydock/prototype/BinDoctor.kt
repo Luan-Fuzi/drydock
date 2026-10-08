@@ -18,7 +18,8 @@ import java.net.URL
  *    解出 package/bin/ 单文件真身，放到断链期待的路径（cp 改名，如
  *    tarball 内 opencode → .l2s.opencode0001），chmod 755，test -x 断言。
  * 只新增文件不删改既有文件，幂等可重试；修不了的如实报告（FAIL 行）。
- * 触发点在 EnvService 会话 ensure 后异步执行，无断链时秒级空跑。
+ * 触发点在 EnvService 会话 ensure 后异步执行，无断链时秒级空跑；开发者选项
+ * 另有手动入口 scanNow（R5）。
  *
  * 附带 git 假成功预防（AgentNet #116 syscall 级实证：proot 的 link() 在
  * untrusted_app 域返回成功但文件从未落盘，git 默认用 link() 写 loose
@@ -120,7 +121,45 @@ object BinDoctor {
 
     private data class DoctorItem(val name: String, val version: String, val target: String, val link: String)
 
-    private fun runOnce(context: Context) {
+    /** 一轮 scan+fix 的结果（R5 手动入口消费；健康 = 两个列表皆空）。 */
+    private data class Report(val fixed: List<String>, val failed: List<String>)
+
+    /** 手动触发（开发者选项 R5）：同步跑一轮 scan+fix，报告返回给页面且必落
+     *  Timeline（manual=true，健康也记——异步路径健康保持静默不变）。绕节流但
+     *  保留本进程 running 去重；与 :env 的异步轮在不同进程，极端并发下 tmp 清单
+     *  可能互踩（原型可接受）。调用方放 IO 线程。 */
+    fun scanNow(context: Context): String {
+        if (!RootfsManager.isDeployed(context)) return "环境未部署"
+        if (running) return "已有 doctor 扫描在跑，稍后再试"
+        running = true
+        return try {
+            val r = runOnce(context, manual = true)
+            val text = if (r.fixed.isEmpty() && r.failed.isEmpty()) {
+                "扫描完成：无断链（/usr/local 链接全部有效，修复 0 项）"
+            } else {
+                "扫描完成：修复 ${r.fixed.size} 项、未修复 ${r.failed.size} 项" +
+                    r.fixed.joinToString("") { "\n✓ $it" } +
+                    r.failed.joinToString("") { "\n✗ $it" }
+            }
+            Timeline.log(
+                context, "bin_doctor",
+                mapOf(
+                    "manual" to true,
+                    "fixed" to r.fixed.joinToString(";").take(400),
+                    "failed" to r.failed.joinToString(";").take(400),
+                ),
+            )
+            text
+        } catch (e: Exception) {
+            "扫描异常：$e"
+        } finally {
+            running = false
+            lastRunAt = System.currentTimeMillis()
+        }
+    }
+
+    /** manual=true 时不在此落 Timeline（由 scanNow 统一记），其余行为与异步路径一致。 */
+    private fun runOnce(context: Context, manual: Boolean = false): Report {
         installScript(context)
         ensureGitConfig(context)
 
@@ -140,7 +179,7 @@ object BinDoctor {
             .filter { it.size >= 5 }
             .map { DoctorItem(it[1], it[2], it[3], it[4]) }
             .toList()
-        if (items.isEmpty() && failed.isEmpty()) return // 健康，静默
+        if (items.isEmpty() && failed.isEmpty()) return Report(emptyList(), emptyList()) // 健康，静默
 
         // 2) 宿主下载 tarball（npmmirror → npmjs 回退；同包去重；断链按
         //    target 深度降序——补好最深真身后浅层断链被传导修复，fix 内 SKIP）
@@ -183,15 +222,18 @@ object BinDoctor {
         }
         pkgDir.deleteRecursively()
 
-        Timeline.log(
-            context, "bin_doctor",
-            mapOf(
-                "fixed" to fixed.joinToString(";").take(400),
-                "failed" to failed.joinToString(";").take(400),
-            ),
-        )
+        if (!manual) {
+            Timeline.log(
+                context, "bin_doctor",
+                mapOf(
+                    "fixed" to fixed.joinToString(";").take(400),
+                    "failed" to failed.joinToString(";").take(400),
+                ),
+            )
+        }
         if (fixed.isNotEmpty()) Log.i(TAG, "断链自愈 ${fixed.size} 项：$fixed")
         if (failed.isNotEmpty()) Log.w(TAG, "断链未修复 ${failed.size} 项：$failed")
+        return Report(fixed, failed)
     }
 
     private fun download(item: DoctorItem, dest: File): Boolean {
