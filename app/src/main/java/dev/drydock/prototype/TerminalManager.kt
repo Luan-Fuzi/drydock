@@ -35,6 +35,13 @@ object TerminalManager {
 
     fun registryFile(context: Context) = File(context.filesDir, "terminal-sessions.json")
 
+    /** 终端基础层 apt 包（17 个，ensureTerminalLayer 幂等装；R8 升级报告的
+     *  「非自装」扣除项之一，D33 细则 3）。 */
+    val APT_LAYER_PACKAGES = listOf(
+        "ttyd", "dtach", "git", "ripgrep", "fd-find", "curl", "wget", "zip", "unzip",
+        "xz-utils", "bzip2", "jq", "file", "procps", "openssh-client", "ca-certificates", "less",
+    )
+
     /** 幂等安装终端基础层（走 apt，http 源）。rootfs 是 ubuntu-base 裸底盘（30MB），
      *  基础层从完整安装里按 agent 刚需取回（2026-10-07 用户定调），下载合计 ~10MB：
      *  终端链路 ttyd+dtach；git 全家（git+ca-certificates+less 分页器）；搜索
@@ -51,13 +58,14 @@ object TerminalManager {
      *  dpkg --configure -a 收拾残局再 --reinstall 补齐（half-installed 与「装了但
      *  文件丢失」两种形态都覆盖）。 */
     fun ensureTerminalLayer(context: Context): RootfsManager.ExecResult {
+        val layer = APT_LAYER_PACKAGES.joinToString(" ")
         val cmd = (
             "fdlink() { [ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }; }; " +
                 "miss=0; for b in ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; do command -v \$b >/dev/null 2>&1 || miss=1; done; fdlink; " +
                 // 多参数 command -v 只要任一找到就返回 0（实测），必须逐个探测
                 "[ \$miss -eq 0 ] && echo LAYER_ALREADY " +
                 "|| { dpkg --configure -a >/dev/null 2>&1; apt-get update -o Acquire::Retries=2 >/dev/null 2>&1; " +
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --reinstall ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less 2>&1 | tail -3; fdlink; }; " +
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --reinstall $layer 2>&1 | tail -3; fdlink; }; " +
                 "for b in ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; do command -v \$b || echo MISSING_\$b; done; " +
                 "miss=0; for b in ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; do command -v \$b >/dev/null 2>&1 || miss=1; done; echo LAYER_RC=\$miss"
             )

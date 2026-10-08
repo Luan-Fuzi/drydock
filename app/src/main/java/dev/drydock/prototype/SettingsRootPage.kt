@@ -57,6 +57,10 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
             SettingsRow("镜像源", mirrorSummary) { onOpen(SettingsPage.MIRRORS) }
             SettingsRow("备份与导出", "导出 → Downloads/Drydock · 从 tar.gz 恢复") { onOpen(SettingsPage.BACKUP) }
             SettingsRow(
+                "系统更新",
+                "Ubuntu ${RootfsManager.deployedVersion(context).ifBlank { RootfsManifest.UBUNTU_VERSION }} · 检查更新与回滚",
+            ) { onOpen(SettingsPage.UPDATE) }
+            SettingsRow(
                 "目录直通绑定",
                 "实验 · " + if (bindOn) "已开启" else "已关闭",
                 divider = false,
@@ -73,7 +77,8 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
         }
 
         Text(
-            "Drydock 原型（从 main tag 构建）· Ubuntu ${RootfsManifest.UBUNTU_VERSION}\n" +
+            "Drydock 原型（从 main tag 构建）· Ubuntu " +
+                "${RootfsManager.deployedVersion(context).ifBlank { RootfsManifest.UBUNTU_VERSION }}\n" +
                 "⚠ 卸载或清除应用数据会连同 Linux 环境一起删除——删除前先用「备份与导出」备份。",
             fontSize = 11.sp, fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

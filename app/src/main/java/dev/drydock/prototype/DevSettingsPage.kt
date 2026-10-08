@@ -196,7 +196,7 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
         }
         Text("版本", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu ${RootfsManifest.UBUNTU_VERSION} · 配方 ${RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" }}",
+            "Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu ${RootfsManager.deployedVersion(context).ifBlank { "未部署" }} · 配方 ${RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" }}",
             fontSize = 11.sp, fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
