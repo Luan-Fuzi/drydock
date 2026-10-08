@@ -57,7 +57,7 @@ class EnvService : Service() {
             Notification.Builder(this, CHANNEL_FG)
                 .setContentTitle("Drydock 环境运行中")
                 .setContentText("Linux 会话与终端服务")
-                .setSmallIcon(android.R.drawable.stat_sys_download) // 原型占位
+                .setSmallIcon(R.drawable.ic_launcher_anchor_fg) // R1 定稿锚线条，白描边天然适配状态栏小图
                 .build()
         startForeground(NOTIFICATION_ID, notification)
 
