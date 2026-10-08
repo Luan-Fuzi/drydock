@@ -99,7 +99,8 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
                 Text(o.label, style = MaterialTheme.typography.bodyMedium)
             }
         }
-        // 进度与结果独立成行：不挤进按钮文字（旧实现按钮被「应用中…/✓…」撑变形）
+        // 进度与结果独立成行：不挤进按钮文字（旧实现按钮被「应用中…/✓…」撑变形）；
+        // busy 反馈走 BusyBar（R11），结果行照旧
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -117,10 +118,11 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
                         tick++
                     }
                 },
-            ) { Text(if (mirrorApplying) "应用中…" else "应用镜像设置") }
+            ) { Text("应用镜像设置") }
             if (mirrorMsg.isNotBlank()) {
                 Text(mirrorMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
             }
         }
+        if (mirrorApplying) BusyBar("应用中…")
     }
 }

@@ -37,7 +37,9 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
                     exportMsg = r.fold({ "✓ 已导出到 Downloads/Drydock（$it）" }, { "✗ 导出失败：${it.message}" })
                 }
             },
-        ) { Text(if (exporting) "导出中…（约 1 分钟）" else "导出工作区与配置（tar.gz）") }
+        ) { Text("导出工作区与配置（tar.gz）") }
+        // busy 反馈走 BusyBar（R11）：按钮文字保持固定，不塞进度文字
+        if (exporting) BusyBar("导出中…（约 1 分钟）")
         if (exportMsg.isNotBlank()) Text(exportMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Text(
             "导出 /root 工作区与 drydock 配置（系统层按配方版本可重放，不进导出）；" +
