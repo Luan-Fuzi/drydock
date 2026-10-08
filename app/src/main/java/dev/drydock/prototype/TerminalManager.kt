@@ -44,14 +44,22 @@ object TerminalManager {
      *  纯客户端无监听面，key 走惯例 ~/.ssh 用户自理）。
      *  python3（~60MB）/build-essential（数百 MB）/vim（编辑器偏好）不进默认，按需
      *  apt 装。tmux 因 proot ptrace 冲突暂缓（D18）。EnvService 会话 ensure 后异步
-     *  补跑，存量环境缺包自动补齐。 */
+     *  补跑，存量环境缺包自动补齐。
+     *  存在性判定用 command -v 探二进制而非 dpkg -s（R12，2026-10-08 教训）：dpkg -s
+     *  对 half-installed（安装中途 app 被杀、dpkg 状态库记着装了一半）也返回 0，
+     *  误判已装 → 会话永久起不来且无自愈；command -v 直接反映可用性。修复路径先
+     *  dpkg --configure -a 收拾残局再 --reinstall 补齐（half-installed 与「装了但
+     *  文件丢失」两种形态都覆盖）。 */
     fun ensureTerminalLayer(context: Context): RootfsManager.ExecResult {
         val cmd = (
-            "dpkg -s ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less >/dev/null 2>&1 && echo LAYER_ALREADY " +
-                "|| (apt-get update -o Acquire::Retries=2 >/dev/null 2>&1; " +
-                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less 2>&1 | tail -3); " +
-                "[ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }; " +
-                "command -v ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; echo LAYER_RC=\$?"
+            "fdlink() { [ -e /usr/bin/fdfind ] && { [ -e /usr/local/bin/fd ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd; }; }; " +
+                "miss=0; for b in ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; do command -v \$b >/dev/null 2>&1 || miss=1; done; fdlink; " +
+                // 多参数 command -v 只要任一找到就返回 0（实测），必须逐个探测
+                "[ \$miss -eq 0 ] && echo LAYER_ALREADY " +
+                "|| { dpkg --configure -a >/dev/null 2>&1; apt-get update -o Acquire::Retries=2 >/dev/null 2>&1; " +
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends --reinstall ttyd dtach git ripgrep fd-find curl wget zip unzip xz-utils bzip2 jq file procps openssh-client ca-certificates less 2>&1 | tail -3; fdlink; }; " +
+                "for b in ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; do command -v \$b || echo MISSING_\$b; done; " +
+                "miss=0; for b in ttyd dtach git rg fd curl wget zip unzip xz bzip2 jq file ps ssh; do command -v \$b >/dev/null 2>&1 || miss=1; done; echo LAYER_RC=\$miss"
             )
         return RootfsManager.runInEnv(context, cmd)
     }
