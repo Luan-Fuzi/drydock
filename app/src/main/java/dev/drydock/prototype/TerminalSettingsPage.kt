@@ -16,7 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 internal fun TerminalSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
 
-    SettingsSubPage("终端", onBack) {
+    SettingsSubPage("终端显示", onBack) {
         var termFont by remember { mutableStateOf(TermPrefs.fontSize(context)) }
         var termRows by remember { mutableStateOf(TermPrefs.scrollback(context)) }
         Text("字号 ${termFont}", style = MaterialTheme.typography.bodyMedium)
@@ -28,6 +28,11 @@ internal fun TerminalSettingsPage(onBack: () -> Unit) {
             onValueChangeFinished = { TermPrefs.set(context, termFont, termRows) },
         )
         Text("回滚行数 ${termRows}", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            "可往上翻看的历史行数上限",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Slider(
             value = termRows.toFloat(),
             onValueChange = { termRows = (it.toInt() / 100) * 100 },

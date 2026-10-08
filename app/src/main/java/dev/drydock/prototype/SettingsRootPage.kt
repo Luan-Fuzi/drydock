@@ -65,7 +65,7 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
 
         SettingsGroup("应用") {
             SettingsRow("外观", themeLabel) { onOpen(SettingsPage.APPEARANCE) }
-            SettingsRow("终端", termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
+            SettingsRow("终端显示", termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
         }
 
         SettingsGroup("更多") {

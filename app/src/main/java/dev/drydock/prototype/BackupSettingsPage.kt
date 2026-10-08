@@ -41,6 +41,7 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
         if (exportMsg.isNotBlank()) Text(exportMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Text(
             "导出 /root 工作区与 drydock 配置（系统层按配方版本可重放，不进导出）；" +
+                "产物存 Downloads/Drydock/drydock-env-export.tar.gz；" +
                 "含 ~/.drydock/env.sh——你写入的环境变量（含自行存放的 key）会进导出包。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
