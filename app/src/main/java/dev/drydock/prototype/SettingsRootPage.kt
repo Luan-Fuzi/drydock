@@ -55,7 +55,7 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
         SettingsGroup("环境") {
             SettingsRow("环境变量", "~/.drydock/env.sh（新会话生效）") { onOpen(SettingsPage.ENV_SH) }
             SettingsRow("镜像源", mirrorSummary) { onOpen(SettingsPage.MIRRORS) }
-            SettingsRow("备份与导出", "工作区与配置 → Downloads/Drydock") { onOpen(SettingsPage.BACKUP) }
+            SettingsRow("备份与导出", "导出 → Downloads/Drydock · 从 tar.gz 恢复") { onOpen(SettingsPage.BACKUP) }
             SettingsRow(
                 "目录直通绑定",
                 "实验 · " + if (bindOn) "已开启" else "已关闭",
