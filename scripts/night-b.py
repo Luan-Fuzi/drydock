@@ -140,7 +140,12 @@ def t1(r):
     r["dialog_default_first"] = "主终端" in sc.ui_dump()
     if not sc.tap_text("创建", 30):
         raise RuntimeError("点不到「创建」")
-    f = wait_focus("TerminalActivity", 120)
+    # 冷路径预算 420s：干净环境下这里含首启部署（R9 实测 91s）+ 终端层 apt（15 包）
+    # + 会话 spawn，120s 装不下（2026-10-08 三次干净全量实锤：链路 4-5min）。更糟的
+    # 级联：断言过期后 createSession 协程的 apt 仍在跑，下一阶段的 am start -S 会
+    # 把 dpkg 杀在 half-installed，污染其后所有会话（t10/t11 连环挂、ttyd/dtach 缺失）。
+    # 预算盖过链路 = 协程自然结束，无游离 apt 可被打断。app 侧自愈另立 R12。
+    f = wait_focus("TerminalActivity", 420)
     r["open_terminal_focus"] = f or "TIMEOUT"
     assert f, "创建后 TerminalActivity 未前台"
 
