@@ -181,20 +181,21 @@ def t1(r):
 
 @stage("t2_action_view_provider")
 def t2(r):
-    # 探针文件先行（env-run 直达环境，不经 UI）
-    out = sc.env_read("printf 'night-b provider read ok\\n' > /root/night-probe.txt && echo WROTE\n", timeout=90)
+    # 探针文件先行（env-run 直达环境，不经 UI）。R3（2026-10-08）起文本文件点击
+    # 进内置编辑页，ACTION_VIEW 探针改用二进制文件——文本编辑路径由 t12 覆盖
+    out = sc.env_read("head -c 64 /dev/urandom > /root/night-probe.bin && echo WROTE\n", timeout=90)
     assert "WROTE" in out, f"探针文件写入失败：{out[-200:]}"
     # -S：上一阶段可能把 TerminalActivity 留在栈顶，非 -S 只把任务带前台揭不开主页
     sc.shell("am", "start", "-S", "-n", HOME)
     sc.wait_text("新建会话", 30)
     if not nav_tap("文件"):
         raise RuntimeError("进不了文件页（底部导航无「文件」）")
-    if not wait_text_scroll("night-probe.txt", 30):
-        raise RuntimeError("文件页列表没有 night-probe.txt")
+    if not wait_text_scroll("night-probe.bin", 30):
+        raise RuntimeError("文件页列表没有 night-probe.bin")
 
     logcat_clear()
-    if not sc.tap_text("night-probe.txt", 15):
-        raise RuntimeError("点不到 night-probe.txt 行")
+    if not sc.tap_text("night-probe.bin", 15):
+        raise RuntimeError("点不到 night-probe.bin 行")
     time.sleep(4)
     start_lines = [l for l in logcat("ActivityTaskManager").splitlines() if "START u0" in l and "drydock.documents" in l]
     r["action_view_start"] = start_lines[:2] or "无组件消费（Toast 兜底路径）"
@@ -203,7 +204,7 @@ def t2(r):
 
     # provider 直读（content CLI）：provider 以 MANAGE_DOCUMENTS 守门，shell 无 grant
     # 被 SecurityException 拒——权限模型符合设计；read/write 判据走块 2 的 app 侧自测通道
-    read1 = sc.shell("content", "read", "--uri", "content://dev.drydock.documents/root/%2Fnight-probe.txt")
+    read1 = sc.shell("content", "read", "--uri", "content://dev.drydock.documents/root/%2Fnight-probe.bin")
     r["provider_read_shell"] = read1.strip()[:80] or "(空：SecurityException 预期，见夜报)"
     q = sc.shell("content", "query", "--uri", "content://dev.drydock.documents/root/%2F/children",
                  "--projection", "display_name", timeout=30)
@@ -631,10 +632,137 @@ def t11(r):
     r["pass"] = r["menu_lists_sessions"] and r["menu_has_new_and_home"] and r["back_home_ok"]
 
 
+# ---------- t12 文件页长按菜单 + 轻量文本编辑（R2/R3，2026-10-08） ----------
+
+@stage("t12_file_menu_edit")
+def t12(r):
+    # 探针：小文本文件（点击应进 TextEditActivity 而非甩系统应用）
+    out = sc.env_read("printf 'night-edit-base\\n' > /root/night-edit.txt && echo WROTE\n", timeout=90)
+    assert "WROTE" in out, f"编辑探针写入失败：{out[-200:]}"
+
+    sc.shell("am", "start", "-S", "-n", HOME)
+    sc.wait_text("新建会话", 30)
+    if not nav_tap("文件"):
+        raise RuntimeError("进不了文件页")
+    if not wait_text_scroll("night-edit.txt", 30):
+        raise RuntimeError("文件页列表没有 night-edit.txt")
+
+    def long_press(key):
+        # 同点长按：按 dump 文本定位行 bounds，input swipe 原地 700ms
+        import re as _re
+        xml = sc.ui_dump()
+        for m in _re.finditer(
+                r'text="' + _re.escape(key) + r'"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml):
+            x = (int(m.group(1)) + int(m.group(3))) // 2
+            y = (int(m.group(2)) + int(m.group(4))) // 2
+            sc.shell("input", "swipe", str(x), str(y), str(x), str(y), "700")
+            time.sleep(1.5)
+            return True
+        return False
+
+    # --- R3：点击文本文件 → 编辑页 → 追加标记 → 保存 → 落盘断言
+    if not sc.tap_text("night-edit.txt", 15):
+        raise RuntimeError("点不到 night-edit.txt")
+    assert wait_focus("TextEditActivity", 30), "编辑页未前台"
+    r["editor_focus"] = True
+    if not sc.wait_text("night-edit-base", 10):
+        raise RuntimeError("编辑页未加载原内容")
+    if not sc.tap_text("night-edit-base", 10):  # 点内容区聚焦（contains 命中 TextField 内文本）
+        raise RuntimeError("点不到编辑区")
+    time.sleep(1)
+    sc.shell("input", "keyevent", "KEYCODE_MOVE_END")
+    # 纯字母数字标记：Gboard 中文模式会把 : . / _ 映射成全角/候选字（实测教训）
+    sc.shell("input", "text", "nightedit789")
+    time.sleep(1)
+    sc.shell("input", "keyevent", "KEYCODE_BACK")  # 收 IME（遮挡 tap 的已知坑）
+    time.sleep(1)
+    if not sc.tap_text("保存", 15):
+        raise RuntimeError("点不到保存")
+    deadline = time.time() + 60
+    saved = ""
+    while time.time() < deadline:
+        saved = sc.env_read("cat /root/night-edit.txt\n", timeout=60)
+        if "nightedit789" in saved and "night-edit-base" in saved:
+            break
+        time.sleep(3)
+    r["editor_saved"] = "nightedit789" in saved and "night-edit-base" in saved
+    assert r["editor_saved"], f"编辑保存未落盘：{saved[:150]}"
+    assert wait_focus("HomeActivity", 30), "保存后未回文件页"
+
+    # --- R2 ①：长按 → 用其他应用打开（chooser）。断言走前台焦点：现代 chooser
+    # 的标题不是 text 节点（dump 只见候选应用名 Chrome/HTML Viewer 等），
+    # 打开时焦点为 com.android.intentresolver/.ChooserActivityLauncher
+    assert long_press("night-edit.txt"), "长按未定位到文件行(1)"
+    if not sc.wait_text("用其他应用打开", 10):
+        raise RuntimeError("长按菜单未弹出")
+    sc.tap_text("用其他应用打开", 10)
+    deadline = time.time() + 15
+    ch = ""
+    while time.time() < deadline:
+        ch = focus()
+        if "intentresolver" in ch:
+            break
+        time.sleep(2)
+    r["chooser_focus"] = ch[:120]
+    r["chooser_shown"] = "intentresolver" in ch
+    assert r["chooser_shown"], f"chooser 未弹出：focus={ch[:120]}"
+    sc.shell("input", "keyevent", "KEYCODE_BACK")
+    time.sleep(1.5)
+
+    # --- R2 ②：导出到 Downloads（MediaStore 行 + 只读拉回抽查）
+    assert long_press("night-edit.txt"), "长按未定位到文件行(2)"
+    if not sc.tap_text("导出到 Downloads", 10):
+        raise RuntimeError("点不到导出")
+    time.sleep(5)
+    q = sc.shell("content", "query", "--uri", "content://media/external/downloads",
+                 "--projection", "_display_name", "--where",
+                 '"_display_name LIKE \'%night-edit%\'"', timeout=30)
+    r["export_row"] = "night-edit" in q
+    assert r["export_row"], f"MediaStore 无导出行：{q[:150]}"
+    r["export_pulled"] = subprocess.run(
+        adb_prefix() + ["pull", "/sdcard/Download/Drydock/night-edit.txt", "/tmp/night-edit-pull.txt"],
+        capture_output=True, text=True, timeout=60).returncode == 0  # 重跑时 MediaStore 或自动改名，拉不到不算失败
+
+    # --- R2 ③：重命名（尾追加数字成新名 → 列表与环境侧双断言）
+    assert long_press("night-edit.txt"), "长按未定位到文件行(3)"
+    if not sc.tap_text("重命名", 10):
+        raise RuntimeError("点不到重命名")
+    if not sc.wait_text("文件名", 10):
+        raise RuntimeError("重命名对话框未出现")
+    sc.tap_text("night-edit.txt", 10)  # 预填值即文件名，点击聚焦输入区
+    time.sleep(1)
+    sc.shell("input", "keyevent", "KEYCODE_MOVE_END")
+    sc.shell("input", "text", "2")
+    sc.shell("input", "keyevent", "KEYCODE_BACK")
+    time.sleep(1)
+    if not sc.tap_text("确定", 10):
+        raise RuntimeError("点不到确定")
+    r["renamed_listed"] = wait_text_scroll("night-edit.txt2", 15)
+    assert r["renamed_listed"], "改名后列表未见新名"
+    gone = sc.env_read("ls /root/night-edit.txt 2>&1\n", timeout=60)
+    r["renamed_env_old_gone"] = "No such file" in gone
+    assert r["renamed_env_old_gone"], f"环境侧旧名仍在：{gone[:100]}"
+
+    # --- R2 ④：删除（确认 → 列表与环境侧都消失）
+    assert long_press("night-edit.txt2"), "长按未定位到文件行(4)"
+    if not sc.tap_text("删除", 10):
+        raise RuntimeError("点不到删除（菜单项）")
+    if not sc.wait_text("删除后不可恢复", 10):
+        raise RuntimeError("删除确认框未出现")
+    if not sc.tap_text("删除", 10):  # uitap 精确匹配优先：按钮 text=删除，标题是长句不会误中
+        raise RuntimeError("点不到删除（确认）")
+    time.sleep(2)
+    gone2 = sc.env_read("ls /root/night-edit.txt2 2>&1\n", timeout=60)
+    r["deleted_env_gone"] = "No such file" in gone2
+    assert r["deleted_env_gone"], f"环境侧文件仍在：{gone2[:100]}"
+    r["pass"] = all([r["editor_saved"], r["chooser_shown"], r["export_row"],
+                     r["renamed_listed"], r["renamed_env_old_gone"], r["deleted_env_gone"]])
+
+
 def main():
-    wanted = sys.argv[1:] or ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t9", "t10", "t11"]
+    wanted = sys.argv[1:] or ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t9", "t10", "t11", "t12"]
     runners = {"t1": t1, "t2": t2, "t3": t3, "t4": t4, "t5": t5,
-               "t6": t6, "t7": t7, "t9": t9, "t10": t10, "t11": t11}
+               "t6": t6, "t7": t7, "t9": t9, "t10": t10, "t11": t11, "t12": t12}
     print(f"设备：{json.dumps(report['device'], ensure_ascii=False)}", flush=True)
     for k in wanted:
         runners[k]()
