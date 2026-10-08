@@ -19,6 +19,7 @@
 | R8 | rootfs 升级路径（D26 实现） | 方案在、未实现 | L | 第 4 批（大） |
 | R9 | 16KB 页尺寸预检（Q4） | 未验 | S | 任意批次（无代码） |
 | R10 | 会话并行重建提速 | 待核实收益 | S-M | 待核实后定 |
+| R11 | 长操作统一进度反馈（busy 行 + 模拟进度条） | 已核实（全应用零进度条） | S-M | 第 2 批（tree B 并入） |
 
 ## 并行与冲突
 
@@ -26,7 +27,7 @@
 
 **批次划分**（同批 = 可在多个 worktree 并行；跨批串行）：
 - 第 1 批：R0（串行做，是后面一切的前提）‖ R1、R9（完全独立，随时可并行）。
-- 第 2 批：R2+R3（同 tree，同在 FilePane）‖ R6+R7（同 tree，同在设置页）‖ R1/R9 收尾。
+- 第 2 批：R2+R3（同 tree，同在 FilePane）‖ R6+R7+R11（同 tree，同在设置页；R11 另动 SessionPane 与向导，无文件冲突）‖ R1/R9 收尾。
 - 第 3 批：R4（RootfsManager + BackupSettingsPage）‖ R5（DevSettingsPage + 各管理类接线）。R4 与 R8 都动 RootfsManager，R4 先行。
 - 第 4 批：R8（大，单独一个 tree）。
 
@@ -113,10 +114,18 @@
 - **判据**：3 会话冷启动总时长从 ~40s 降到 ≤25s；期间 UI/时间线无异常。
 - **触碰面**：EnvService。**量**：S-M。
 
+### R11 长操作统一进度反馈（busy 行 + 模拟进度条）
+
+- **核实**：全应用**零进度条组件**（无任何 Linear/CircularProgressIndicator），长操作反馈全是文字——SessionPane busy 文字行（新建/接回/关闭会话、首启部署、终端层安装各阶段），设置页按钮内文字（「导出中…（约 1 分钟）」「应用中…」「保存中…」），向导步骤③ busy 直接塞进主按钮文字（按钮被撑变形的隐患同镜像页旧问题）。长操作全量清单：首启部署 ~1min、终端层 apt 安装（~10MB 网络）、新建/接回会话 ~10s、关闭会话（≤15s 轮询）、向导 agent 安装（npm install -g，**可达数分钟、全应用最慢**）、导出备份 ~1min、应用镜像（秒~十几秒）、端点/env.sh 保存（秒级）。
+- **用户定调（2026-10-08）**：不只新建/关闭会话，全应用长操作都要有反馈；形式 = busy 文字行紧邻一条小进度条（文字行上/下沿，实现按观感定），从左到右滚动的模拟进度动画（indeterminate LinearProgressIndicator，无真实进度概念的操作不装进度数字）；**不弹独立对话框**。
+- **做法**：共享小 Composable（如 BusyBar(text)：文字行 + 2-4dp indeterminate LinearProgressIndicator）放 R0 拆出的共享 UI 文件；SessionPane busy 行、BackupSettingsPage 导出、MirrorSettingsPage 应用、端点表单保存、向导步骤③ 各处替换接线；后续新长操作（R4 导入、R5 清理/扫描、R8 升级）统一复用。**可选增强**：首启部署把 createSession 现在丢弃的 DeployState 回调接上——Downloading 自带下载百分比，可显示真实进度（其余操作保持 indeterminate）。
+- **判据**：night-b 全量 t1-t11 all_pass=True（busy 行文字照常渲染，t1「新建会话」锚点不动）；手动/截图断言：新建会话、导出备份、应用镜像期间进度条可见且在滚动、操作结束即消失；向导 agent 安装期间主按钮不再被 busy 文字撑变形。
+- **触碰面**：SessionPane + Backup/Mirror/端点设置页 + WizardActivity + 新共享组件（R0 后各文件独立）。**量**：S-M。
+
 ## 建议排期
 
 1. **第 1 批**：R0（单人串行）开工同时，R1（图标，可外包设计）与 R9（Pixel_9 预检）并行。
-2. **第 2 批**：R0 合并后开多 tree——tree A：R2+R3（文件页，含 D7 决策更新）；tree B：R6+R7（设置页小改）；R9 收尾。
+2. **第 2 批**：R0 合并后开多 tree——tree A：R2+R3（文件页，含 D7 决策更新）；tree B：R6+R7+R11（设置页小改 + 全应用进度反馈）；R9 收尾。
 3. **第 3 批**：tree C：R4（备份恢复）；tree D：R5（开发者选项）。
 4. **第 4 批**：R8（rootfs 升级，先对齐迁移细则）；R10 待收益核实后插队。
 
