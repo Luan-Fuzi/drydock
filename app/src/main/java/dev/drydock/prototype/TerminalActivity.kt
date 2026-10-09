@@ -397,8 +397,8 @@ class TerminalActivity : ComponentActivity() {
                     ),
                 )
             }
-        val menuHalf = half(R.drawable.ic_fab_menu, "菜单").apply { id = R.id.terminal_menu_btn }
-        val keyHalf = half(R.drawable.ic_fab_keyboard, "键盘").apply {
+        val menuHalf = half(R.drawable.ic_fab_menu, getString(R.string.terminal_fab_menu)).apply { id = R.id.terminal_menu_btn }
+        val keyHalf = half(R.drawable.ic_fab_keyboard, getString(R.string.terminal_fab_keyboard)).apply {
             id = R.id.terminal_key_btn
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(android.graphics.Color.TRANSPARENT)
@@ -470,16 +470,16 @@ class TerminalActivity : ComponentActivity() {
         // 方向与回车用 vector 图标键（2026-10-08 用户反馈字形键细且小）：字体里
         // ←↑↓→/↵ 的字形粗细与大小不可控，Material 箭头路径笔画均匀、随密度缩放
         val nav = listOf(
-            Key("左", "{key:'ArrowLeft',code:'ArrowLeft',keyCode:37,which:37}", R.drawable.ic_key_arrow_left),
-            Key("上", "{key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38}", R.drawable.ic_key_arrow_up),
-            Key("下", "{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40}", R.drawable.ic_key_arrow_down),
-            Key("右", "{key:'ArrowRight',code:'ArrowRight',keyCode:39,which:39}", R.drawable.ic_key_arrow_right),
+            Key(getString(R.string.terminal_key_left), "{key:'ArrowLeft',code:'ArrowLeft',keyCode:37,which:37}", R.drawable.ic_key_arrow_left),
+            Key(getString(R.string.terminal_key_up), "{key:'ArrowUp',code:'ArrowUp',keyCode:38,which:38}", R.drawable.ic_key_arrow_up),
+            Key(getString(R.string.terminal_key_down), "{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40}", R.drawable.ic_key_arrow_down),
+            Key(getString(R.string.terminal_key_right), "{key:'ArrowRight',code:'ArrowRight',keyCode:39,which:39}", R.drawable.ic_key_arrow_right),
         )
         val actions = listOf(
             Key("Esc", esc),
             Key("Tab", tab),
             Key("Shift+Tab", "$tab,shiftKey:true"),
-            Key("回车", "{key:'Enter',code:'Enter',keyCode:13,which:13}", R.drawable.ic_key_return),
+            Key(getString(R.string.terminal_key_enter), "{key:'Enter',code:'Enter',keyCode:13,which:13}", R.drawable.ic_key_return),
         )
 
         fun keyRipple(): android.graphics.drawable.RippleDrawable =
@@ -771,7 +771,7 @@ class TerminalActivity : ComponentActivity() {
             }
         }
         panel.addView(android.widget.TextView(this).apply {
-            text = "会话"
+            text = getString(R.string.terminal_menu_title)
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(0x99FFFFFF.toInt())
@@ -851,7 +851,7 @@ class TerminalActivity : ComponentActivity() {
                 setOnClickListener { dlg.dismiss(); action() }
             }
         panel.addView(
-            actionRow(R.drawable.ic_sheet_new, "新建会话", R.id.terminal_menu_new) {
+            actionRow(R.drawable.ic_sheet_new, getString(R.string.session_new), R.id.terminal_menu_new) {
                 val name = TerminalManager.newSessionName(this)
                 // 菜单快建不弹对话框：默认名「会话 N」，主页可改名
                 SessionNames.set(this, name, "会话 ${sessions.size + 1}")
@@ -878,7 +878,7 @@ class TerminalActivity : ComponentActivity() {
             },
         )
         panel.addView(
-            actionRow(R.drawable.ic_sheet_home, "回主页", R.id.terminal_menu_home) {
+            actionRow(R.drawable.ic_sheet_home, getString(R.string.terminal_menu_home), R.id.terminal_menu_home) {
                 startActivity(
                     android.content.Intent(this, HomeActivity::class.java)
                         .addFlags(

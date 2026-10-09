@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 3 中文侧（与会话/终端主链路键一一对应，见 values/strings_session.xml） -->
+<resources>
+    <string name="nav_label_sessions">会话</string>
+    <string name="nav_label_files">文件</string>
+    <string name="nav_label_settings">设置</string>
+
+    <string name="session_new">新建会话</string>
+    <string name="session_rename">改名</string>
+    <string name="session_close">关闭</string>
+    <string name="session_card_local_port">本地端口 :%1$d</string>
+    <string name="session_empty_intro">Drydock 让 coding agent 在手机上常驻干活。\n\n第一次使用：先到「设置 → 初始设置向导」完成配置（保活、连接大模型、安装 agent），然后点「新建会话」进入终端——OpenCode 或 pi 会直接可用。\n\nAPI key 走环境变量：进入终端后把 key 发给 agent，它会帮你写进 ~/.drydock/env.sh；锁屏挂机不中断、产物在手机文件管理器可见。</string>
+    <string name="session_dlg_new_desc">每个会话是独立的终端，互不影响、可同时跑不同任务。</string>
+    <string name="session_dlg_name_label">会话名称</string>
+    <string name="session_dlg_create">创建</string>
+    <string name="session_dlg_rename_title">重命名会话</string>
+    <string name="session_dlg_save">保存</string>
+    <string name="session_dlg_close_title">关闭会话「%1$s」？</string>
+    <string name="session_dlg_close_desc">dtach 会话无服务进程：关闭后该会话的内容（含 agent TUI）丢失，重新打开会是全新 shell。</string>
+    <string name="session_dlg_close_main_note">全部会话都关闭后，下次打开会自动重建主终端。</string>
+
+    <string name="session_busy_reattach">接回会话 %1$s…</string>
+    <string name="session_busy_deploy">部署 Linux 环境（首次约 1 分钟）…</string>
+    <string name="session_busy_terminal_layer">准备终端层…</string>
+    <string name="session_busy_starting">启动会话…</string>
+    <string name="session_busy_closing">关闭会话 %1$s…</string>
+    <string name="session_err_reattach">会话接回失败（设置 → 开发者工具看日志）</string>
+    <string name="session_err_start">会话启动失败（设置 → 开发者工具看日志）</string>
+    <string name="session_err_close">关闭失败（设置 → 开发者工具看日志）</string>
+
+    <string name="terminal_menu_title">会话</string>
+    <string name="terminal_menu_home">回主页</string>
+    <string name="terminal_fab_menu">菜单</string>
+    <string name="terminal_fab_keyboard">键盘</string>
+    <string name="terminal_key_left">左</string>
+    <string name="terminal_key_up">上</string>
+    <string name="terminal_key_down">下</string>
+    <string name="terminal_key_right">右</string>
+    <string name="terminal_key_enter">回车</string>
+</resources>

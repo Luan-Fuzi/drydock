@@ -7,6 +7,7 @@ UI 驱动（uiautomator dump + input tap）与电源/HOME 键（采样需要）�
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -47,7 +48,8 @@ def device_identity():
     # app 生效 locale 优先 per-app（cmd locale，Android 13+ 官方通道，即时生效）；
     # 其次全局 settings system_locales（注意：手动 settings put 需系统重启才被
     # 应用，仅写不重启时该值不代表实际配置——批 2 实测）；prop 兜底老系统
-    app_loc = shell("cmd", "locale", "get-app-locales", PKG).strip()
+    raw_loc = shell("cmd", "locale", "get-app-locales", PKG).strip()
+    app_loc = (re.search(r"\[([^]]+)\]", raw_loc).group(1) if "[" in raw_loc else "")
     locale = (app_loc or shell("settings", "get", "system", "system_locales").strip()
               or prop("persist.sys.locale"))
     return {
@@ -200,6 +202,25 @@ def res_attr(tag, attr):
             a = _re.search(attr + r'="([^"]*)"', node)
             if a:
                 return a.group(1)
+    return None
+
+
+def res_text(tag, window=1200):
+    """锚点节点子树的渲染文本。tag 常挂容器（Button/菜单行）而文本在子节点——
+    从含该 resource-id 的 node 开标签起取窗口内首个非空 text 属性（自身有文本
+    取自身，无则取首个子节点文本，按钮/菜单行场景即其文案）。"""
+    import re as _re
+    for f in _res_forms(tag):
+        xml = ui_dump()
+        i = xml.find(f)
+        if i < 0:
+            continue
+        start = xml.rfind("<node ", 0, i)
+        if start < 0:
+            start = i
+        m = _re.search(r'text="([^"]+)"', xml[start:start + window])
+        if m:
+            return m.group(1)
     return None
 
 
