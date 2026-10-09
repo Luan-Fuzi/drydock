@@ -61,7 +61,7 @@
         <!-- D7/D25 文件互通：workspace 挂给全安卓文件选择器（免存储权限） -->
         <provider
             android:name=".WorkspaceProvider"
-            android:authorities="dev.drydock.documents"
+            android:authorities="${applicationId}.documents"
             android:exported="true"
             android:grantUriPermissions="true"
             android:permission="android.permission.MANAGE_DOCUMENTS">

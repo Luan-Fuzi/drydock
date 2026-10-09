@@ -348,7 +348,7 @@ private fun PowerStep(onNext: () -> Unit) {
     val powerMgr = remember { context.getSystemService(android.os.PowerManager::class.java) }
     var tick by remember { mutableStateOf(0) }
     val exempt = remember(tick) {
-        powerMgr?.isIgnoringBatteryOptimizations("dev.drydock.prototype") ?: false
+        powerMgr?.isIgnoringBatteryOptimizations(context.packageName) ?: false
     }
     StepHeader("🔋", stringResource(R.string.wizard_power_title), "wizard_step_power")
     if (exempt) {
@@ -368,7 +368,7 @@ private fun PowerStep(onNext: () -> Unit) {
             Button(onClick = {
                 val direct = android.content.Intent(
                     android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    android.net.Uri.parse("package:dev.drydock.prototype"),
+                    android.net.Uri.parse("package:${context.packageName}"),
                 )
                 try {
                     context.startActivity(direct)
@@ -376,7 +376,7 @@ private fun PowerStep(onNext: () -> Unit) {
                     context.startActivity(
                         android.content.Intent(
                             android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            android.net.Uri.parse("package:dev.drydock.prototype"),
+                            android.net.Uri.parse("package:${context.packageName}"),
                         ),
                     )
                 }

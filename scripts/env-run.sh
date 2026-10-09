@@ -8,7 +8,7 @@
 #   否则跨会话断链（见 docs/decisions.md D20）。
 set -euo pipefail
 ADB_CMD="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
-PKG=dev.drydock.prototype
+PKG="${DRYDOCK_PKG:-dev.drydock.debug}"
 
 # 真机纪律（AGENTS.md）：多设备在线且未显式指定 serial 时拒绝执行
 # （macOS 自带 bash 3.2，不能用 mapfile；设备列表统一空格分隔便于 case 匹配）
@@ -34,12 +34,12 @@ RUNNER=/data/local/tmp/drydock-run.sh
 
 cat > /tmp/drydock-inner.sh <<'EOF'
 #!/system/bin/sh
-# $1 loader, $2 proot，$3 可选绑定（host:env）；脚本已放在 app files/__envrun.sh
+# $1 loader, $2 proot，$3 可选绑定（host:env），$4 包名；脚本已放在 app files/__envrun.sh
 if [ -n "$3" ]; then
   PROOT_LOADER="$1" PROOT_TMP_DIR=cache HOME=/root LANG=C.UTF-8 \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   exec "$2" -0 --link2symlink -r files/ubuntu-rootfs \
-  -b /data/user/0/dev.drydock.prototype/files/ubuntu-rootfs:/data/data/dev.drydock.prototype/files/ubuntu-rootfs \
+  -b "/data/user/0/$4/files/ubuntu-rootfs:/data/data/$4/files/ubuntu-rootfs" \
   -b "$3" \
   -b /dev -b /proc -b /sys -b files/__envrun.sh:/check.sh -w /root \
   /bin/bash /check.sh
@@ -47,7 +47,7 @@ else
   PROOT_LOADER="$1" PROOT_TMP_DIR=cache HOME=/root LANG=C.UTF-8 \
   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
   exec "$2" -0 --link2symlink -r files/ubuntu-rootfs \
-  -b /data/user/0/dev.drydock.prototype/files/ubuntu-rootfs:/data/data/dev.drydock.prototype/files/ubuntu-rootfs \
+  -b "/data/user/0/$4/files/ubuntu-rootfs:/data/data/$4/files/ubuntu-rootfs" \
   -b /dev -b /proc -b /sys -b files/__envrun.sh:/check.sh -w /root \
   /bin/bash /check.sh
 fi
@@ -55,9 +55,9 @@ EOF
 BIND_ARG="${2:-}"
 cat > /tmp/drydock-run.sh <<EOF
 #!/system/bin/sh
-NATLIB=\$(dirname "\$(pm path dev.drydock.prototype | sed 's/package://')")/lib/arm64
-exec run-as dev.drydock.prototype /system/bin/sh /data/local/tmp/drydock-inner.sh \
-  "\$NATLIB/libproot-loader.so" "\$NATLIB/libproot.so" "$BIND_ARG"
+NATLIB=\$(dirname "\$(pm path $PKG | sed 's/package://')")/lib/arm64
+exec run-as $PKG /system/bin/sh /data/local/tmp/drydock-inner.sh \
+  "\$NATLIB/libproot-loader.so" "\$NATLIB/libproot.so" "$BIND_ARG" "$PKG"
 EOF
 
 "${ADB[@]}" push /tmp/drydock-inner.sh "$INNER" >/dev/null

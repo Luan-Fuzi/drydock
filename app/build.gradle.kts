@@ -9,7 +9,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.drydock.prototype"
+        applicationId = "dev.drydock"
         minSdk = 30
         targetSdk = 36
         versionCode = 1
@@ -28,6 +28,10 @@ android {
     }
 
     buildTypes {
+        // debug 包独立包名：与用户手机上的正式包并存，真机验收不覆盖用户环境
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = false
         }

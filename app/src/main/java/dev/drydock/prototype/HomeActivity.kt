@@ -99,7 +99,7 @@ class HomeActivity : ComponentActivity() {
                     try {
                         val resolver = contentResolver
                         val uri = android.provider.DocumentsContract.buildDocumentUri(
-                            WorkspaceProvider.AUTHORITY, "/zz-provider-test.txt")
+                            WorkspaceProvider.authority(this@HomeActivity), "/zz-provider-test.txt")
                         resolver.openOutputStream(uri, "w")!!.use { it.write("PROBE_WRITE_OK\n".toByteArray()) }
                         sb.append("write=ok\n")
                         val txt = resolver.openInputStream(uri)!!.bufferedReader().readText()
@@ -108,7 +108,7 @@ class HomeActivity : ComponentActivity() {
                             resolver, uri, "zz-provider-renamed.txt")
                         sb.append("rename_uri=").append(renamed != null).append('\n')
                         val kids = android.provider.DocumentsContract.buildChildDocumentsUri(
-                            WorkspaceProvider.AUTHORITY, "/")
+                            WorkspaceProvider.authority(this@HomeActivity), "/")
                         var listed = false
                         resolver.query(
                             kids, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME),

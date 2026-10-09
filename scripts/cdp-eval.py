@@ -16,13 +16,13 @@ import websockets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from adbdev import adb_prefix
 
+PKG = os.environ.get("DRYDOCK_PKG", "dev.drydock.debug")
+
 
 def app_pid() -> str:
     out = subprocess.run(adb_prefix() + ["shell", "ps", "-A"], capture_output=True, text=True).stdout
     for line in out.splitlines():
-        if "dev.drydock.prototype" in line and line.split()[2] in ("1",):
-            pass
-        if "dev.drydock.prototype" in line:
+        if PKG in line:
             parts = line.split()
             if len(parts) > 2 and parts[2] != "0" and parts[1] != "PID":
                 # 主进程：ppid 较大者为子进程，取 ppid 最小的

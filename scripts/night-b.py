@@ -30,7 +30,7 @@ import scommon as sc
 from adbdev import adb_prefix
 
 PKG = sc.PKG
-HOME = f"{PKG}/.HomeActivity"
+HOME = sc.MAIN_ACTIVITY
 VERDICT = os.path.join(sc.DRAFT, "night-b-verdict.json")
 
 report = {"started": time.strftime("%Y-%m-%d %H:%M:%S"), "device": sc.device_identity(), "stages": {}}
@@ -192,16 +192,16 @@ def t2(r):
     if not sc.tap_text("night-probe.bin", 15):
         raise RuntimeError("点不到 night-probe.bin 行")
     time.sleep(4)
-    start_lines = [l for l in logcat("ActivityTaskManager").splitlines() if "START u0" in l and "drydock.documents" in l]
+    start_lines = [l for l in logcat("ActivityTaskManager").splitlines() if "START u0" in l and f"{PKG}.documents" in l]
     r["action_view_start"] = start_lines[:2] or "无组件消费（Toast 兜底路径）"
     r["action_view_resolved"] = bool(start_lines)
     sc.shell("input", "keyevent", "KEYCODE_BACK")
 
     # provider 直读（content CLI）：provider 以 MANAGE_DOCUMENTS 守门，shell 无 grant
     # 被 SecurityException 拒——权限模型符合设计；read/write 判据走块 2 的 app 侧自测通道
-    read1 = sc.shell("content", "read", "--uri", "content://dev.drydock.documents/root/%2Fnight-probe.bin")
+    read1 = sc.shell("content", "read", "--uri", f"content://{PKG}.documents/root/%2Fnight-probe.bin")
     r["provider_read_shell"] = read1.strip()[:80] or "(空：SecurityException 预期，见夜报)"
-    q = sc.shell("content", "query", "--uri", "content://dev.drydock.documents/root/%2F/children",
+    q = sc.shell("content", "query", "--uri", f"content://{PKG}.documents/root/%2F/children",
                  "--projection", "display_name", timeout=30)
     r["provider_children_has_probe"] = bool(q.strip())
     r["pass"] = r["action_view_resolved"]
@@ -386,7 +386,7 @@ def t7(r):
     """2026-10-07 向导第二轮：欢迎页定位、左上角返回、连接大模型页真实可配——
     GLM key 经向导写入 env.sh（ZHIPU_API_KEY + ZAI_CODING_CN_API_KEY 双变量）、
     自定义服务地址表单在场。i18n 批 1：锚点 resource-id 化（wizard_*）。"""
-    sc.shell("dumpsys", "deviceidle", "whitelist", "+dev.drydock.prototype")  # AVD 测试条件：过保活步
+    sc.shell("dumpsys", "deviceidle", "whitelist", f"+{PKG}")  # AVD 测试条件：过保活步
     sc.shell("am", "start", "-S", "-n", HOME)
     sc.wait_res("home_new_session", 30)
     if not nav_tap("nav_settings"):
