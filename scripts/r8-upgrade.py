@@ -28,7 +28,7 @@ import scommon as sc
 from adbdev import adb_prefix
 
 PKG = sc.PKG
-HOME = f"{PKG}/.HomeActivity"
+HOME = sc.MAIN_ACTIVITY
 DRAFT = sc.DRAFT
 VERDICT = os.path.join(DRAFT, "r8-upgrade-verdict.json")
 APK = os.path.join(sc.ROOT, "app/build/outputs/apk/debug/app-debug.apk")
@@ -213,7 +213,7 @@ def wait_msg(keywords, timeout_s=900):
 def open_terminal(name=None):
     """TerminalActivity 前台化（WebView/xterm 在场是 CDP 的前提）。"""
     if name:
-        sc.shell("am", "start", "-n", f"{PKG}/.TerminalActivity", "--es", "session", name)
+        sc.shell("am", "start", "-n", f"{PKG}/{sc.APP_NS}.TerminalActivity", "--es", "session", name)
     deadline = time.time() + 90
     while time.time() < deadline:
         if "TerminalActivity" in focus():

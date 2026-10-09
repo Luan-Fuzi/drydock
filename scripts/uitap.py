@@ -16,7 +16,7 @@ from adbdev import adb_prefix
 # dump 落 /data/local/tmp（真机纪律：不写 /sdcard）
 DUMP = "/data/local/tmp/uitap-ui.xml"
 
-PKG = "dev.drydock.prototype"
+PKG = os.environ.get("DRYDOCK_PKG", "dev.drydock.debug")
 
 
 def sh(*args, **kw):

@@ -16,7 +16,8 @@ import java.io.File
 class WorkspaceProvider : DocumentsProvider() {
 
     companion object {
-        const val AUTHORITY = "dev.drydock.documents"
+        /** authority 随包名（manifest 同为 ${applicationId}.documents），debug/正式包并存不冲突。 */
+        fun authority(context: android.content.Context) = context.packageName + ".documents"
         private const val ROOT_DOC_ID = "/"
         private val ROOT_PROJECTION = arrayOf(
             DocumentsContract.Root.COLUMN_ROOT_ID,

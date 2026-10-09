@@ -15,8 +15,11 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from adbdev import adb_prefix, online_devices, resolved_serial
 
-PKG = "dev.drydock.prototype"
-MAIN_ACTIVITY = f"{PKG}/.HomeActivity"
+# 验收对象默认 debug 包（applicationId 后缀 .debug）；类名命名空间不随包名变，
+# 组件名须写全限定类名。DRYDOCK_PKG 可改指其他安装（如正式包 dev.drydock）
+PKG = os.environ.get("DRYDOCK_PKG", "dev.drydock.debug")
+APP_NS = "dev.drydock.prototype"
+MAIN_ACTIVITY = f"{PKG}/{APP_NS}.HomeActivity"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DRAFT = os.path.join(ROOT, "draft")
 DUMP = "/data/local/tmp/uitap-ui.xml"

@@ -236,7 +236,7 @@ internal fun openExternalFallback(context: Context, f: File) {
 /** 经 DocumentsProvider 的 content URI 甩系统应用打开（D7：编辑/查看交给外部 App）。 */
 private fun openExternal(context: Context, root: File, f: File) {
     try {
-        context.startActivity(viewIntent(root, f))
+        context.startActivity(viewIntent(context, root, f))
     } catch (_: Exception) {
         Toast.makeText(context, context.getString(R.string.file_no_app, f.name), Toast.LENGTH_SHORT).show()
     }
@@ -245,15 +245,15 @@ private fun openExternal(context: Context, root: File, f: File) {
 /** R2 菜单项：chooser 显式列出候选应用（满足「调用其他编辑器」的可选择性）。 */
 private fun openExternalChooser(context: Context, root: File, f: File) {
     try {
-        context.startActivity(Intent.createChooser(viewIntent(root, f), context.getString(R.string.file_chooser_title, f.name)))
+        context.startActivity(Intent.createChooser(viewIntent(context, root, f), context.getString(R.string.file_chooser_title, f.name)))
     } catch (_: Exception) {
         Toast.makeText(context, context.getString(R.string.file_no_app, f.name), Toast.LENGTH_SHORT).show()
     }
 }
 
-private fun viewIntent(root: File, f: File): Intent {
+private fun viewIntent(context: android.content.Context, root: File, f: File): Intent {
     val docId = f.absolutePath.removePrefix(root.absolutePath).ifBlank { "/" }
-    val uri = android.provider.DocumentsContract.buildDocumentUri(WorkspaceProvider.AUTHORITY, docId)
+    val uri = android.provider.DocumentsContract.buildDocumentUri(WorkspaceProvider.authority(context), docId)
     val mime = android.webkit.MimeTypeMap.getSingleton()
         .getMimeTypeFromExtension(f.extension.lowercase()) ?: "application/octet-stream"
     return Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

@@ -1,6 +1,6 @@
 # Drydock
 
-运行在安卓系统上的 coding agent 宿主（host）：免 root 的本地 Linux 环境 + agent 任务调度
+在安卓手机上开箱即用的 coding agent 环境：免 root 的本地 Linux（Ubuntu）+ 原生终端，锁屏后任务继续运行
 
 ## 使用说明
 
@@ -8,9 +8,11 @@
 
 ### 安装
 
-从 [Releases](https://github.com/Luan-Fuzi/drydock/releases) 下载最新 APK 安装。要求 arm64 设备、Android 10+，安装时允许未知来源。
+从 [Releases](https://github.com/Luan-Fuzi/drydock/releases) 下载最新 APK 安装。要求 arm64 设备、Android 11+，安装时允许未知来源。
 
-自行构建：JDK 17 + Android SDK，执行 `./gradlew assembleDebug`，产物在 `app/build/outputs/apk/debug/`。CI 在每次 push 到 main/dev 时构建 APK 并上传 artifact，也可从 Actions 页取包。
+从 v0.1.0 升级：v0.2.0 起包名改为 `dev.drydock`，与旧版是两个独立应用，不能覆盖升级。在旧版「设置 → 备份与导出」导出，安装新版后在同一页选择导出的 tar.gz 恢复，确认无误再卸载旧版。
+
+自行构建：JDK 17 + Android SDK，执行 `./gradlew assembleDebug`，产物在 `app/build/outputs/apk/debug/`（包名 `dev.drydock.debug`，可与正式版并存，仅供开发验收）。CI 在每次 push 到 main/dev 时构建 debug 包并上传 artifact；正式签名包只由 `v*` tag 触发的 release workflow 构建。
 
 ### 简单操作
 

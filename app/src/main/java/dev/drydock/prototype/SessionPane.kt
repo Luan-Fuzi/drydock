@@ -77,8 +77,7 @@ internal fun SessionPane() {
     val sessions = remember(tick) { TerminalManager.readSessions(context) }
     val displayNames = remember(tick) { SessionNames.load(context) }
 
-    fun displayName(name: String): String =
-        displayNames[name] ?: if (name == TerminalManager.MAIN) "主终端" else name
+    fun displayName(name: String): String = SessionNames.resolve(context, name, displayNames[name])
 
     // 会话列表保鲜：回主页/停留期间 5s 轮询注册表（修「回来不刷新」）
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -186,7 +185,12 @@ internal fun SessionPane() {
         // 新建：默认名可改（display 层，SessionNames 落盘；technical 名照旧自动分配）
         if (showNewDialog) {
             var nameInput by remember(showNewDialog) {
-                mutableStateOf(if (sessions.isEmpty()) "主终端" else "会话 ${sessions.size + 1}")
+                mutableStateOf(
+                    SessionNames.defaultName(
+                        context,
+                        if (sessions.isEmpty()) TerminalManager.MAIN else TerminalManager.newSessionName(context),
+                    ),
+                )
             }
             AlertDialog(
                 modifier = Modifier.semantics { testTagsAsResourceId = true },

@@ -12,6 +12,10 @@ local.properties
 .idea/
 *.iml
 
+# 签名密钥（release keystore 只存本地与 GitHub Secrets）
+*.jks
+*.keystore
+
 # 交叉编译的第三方源码与产物（由 scripts/build-proot.sh 按 pin 重新获取）
 third_party/
 

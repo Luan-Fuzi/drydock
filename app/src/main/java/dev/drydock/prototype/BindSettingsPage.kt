@@ -47,7 +47,7 @@ internal fun BindSettingsPage(onBack: () -> Unit) {
                             context.startActivity(
                                 android.content.Intent(
                                     android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                    android.net.Uri.parse("package:dev.drydock.prototype"),
+                                    android.net.Uri.parse("package:${context.packageName}"),
                                 ),
                             )
                         }

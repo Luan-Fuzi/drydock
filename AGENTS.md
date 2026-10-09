@@ -2,7 +2,7 @@
 
 ## 项目现状
 
-原型步骤 1–6 判据全绿（步骤 6 真机周 2026-10-01–10-08：S1/S2/S3 全过，Q1 结论=正 → continue，Q7 关闭；`q1-verdict` tag 已打在 main 合并提交上）。需求池第 1–4 批全部收口（R0–R9，唯余 R10 待核实）；真机反馈 UX 批 `ux-1`–`ux-6` 已装机（浮钮合并、键条组合键、ttyd resize 浮层关闭、通知图标定案白剪影+通道 LOW，Q9 记录 OEM 限制）。多语言十批落地（i18n：测试锚点 resource-id 化 + values/values-zh 全量文案资源化 + CI 翻译门禁 + 抽样剧本，D34；改 UI 文案不再影响测试，动 testTag/ids.xml 才须同步剧本）。仓库已公开（GitHub PUBLIC，2026-10-09；GPL-3.0 + NOTICE.md + README 快速开始 + v0.1.0 Release 带 APK，docs 过程文档已归档 docs/archive/）。动手前先读 `docs/archive/open-questions.md` 与 `docs/archive/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
+原型步骤 1–6 判据全绿（步骤 6 真机周 2026-10-01–10-08：S1/S2/S3 全过，Q1 结论=正 → continue，Q7 关闭；`q1-verdict` tag 已打在 main 合并提交上）。需求池第 1–4 批全部收口（R0–R9，唯余 R10 待核实）；真机反馈 UX 批 `ux-1`–`ux-6` 已装机（浮钮合并、键条组合键、ttyd resize 浮层关闭、通知图标定案白剪影+通道 LOW，Q9 记录 OEM 限制）。多语言十批落地（i18n：测试锚点 resource-id 化 + values/values-zh 全量文案资源化 + CI 翻译门禁 + 抽样剧本，D34；改 UI 文案不再影响测试，动 testTag/ids.xml 才须同步剧本）。仓库已公开（GitHub PUBLIC，2026-10-09；GPL-3.0 + NOTICE.md + README 快速开始 + v0.1.0 Release 带 APK，docs 过程文档已归档 docs/archive/）。v0.2.0 安全发版（2026-10-10）：正式包名 `dev.drydock`（debug 包 `dev.drydock.debug` 可并存，验收脚本默认指向它，`DRYDOCK_PKG` 可改）、release 签名包只由 `v*` tag 触发 `.github/workflows/release.yml` 构建（keystore 在 Secrets，草稿 Release 人工核对后发布）、验收注入口只在 `src/debug`、minSdk 30。产品方向定为 A（D35：开箱即用的 coding agent 环境，主线=终端体验+环境维护）。动手前先读 `docs/archive/open-questions.md` 与 `docs/archive/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
 
 ## Git 纪律（2026-09-27）
 

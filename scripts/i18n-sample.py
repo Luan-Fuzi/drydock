@@ -20,7 +20,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scommon as sc
 
-HOME = f"{sc.PKG}/.HomeActivity"
+HOME = sc.MAIN_ACTIVITY
 VERDICT = os.path.join(sc.DRAFT, "i18n-sample-verdict.json")
 
 # 每页族至少一个代表键（tag → 各 locale 期望渲染文本）
