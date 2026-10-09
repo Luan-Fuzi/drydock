@@ -5,6 +5,8 @@
     <string name="nav_label_files">文件</string>
     <string name="nav_label_settings">设置</string>
 
+    <string name="session_default_main">主终端</string>
+    <string name="session_default_n">会话 %1$d</string>
     <string name="session_new">新建会话</string>
     <string name="session_rename">改名</string>
     <string name="session_close">关闭</string>

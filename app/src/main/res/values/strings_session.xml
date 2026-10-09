@@ -9,6 +9,8 @@
     <string name="nav_label_settings">Settings</string>
 
     <!-- 会话页 -->
+    <string name="session_default_main">Main terminal</string>
+    <string name="session_default_n">Session %1$d</string>
     <string name="session_new">New session</string>
     <string name="session_rename">Rename</string>
     <string name="session_close">Close</string>

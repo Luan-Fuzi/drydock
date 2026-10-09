@@ -840,8 +840,7 @@ class TerminalActivity : ComponentActivity() {
         panel.addView(
             actionRow(R.drawable.ic_sheet_new, getString(R.string.session_new), R.id.terminal_menu_new) {
                 val name = TerminalManager.newSessionName(this)
-                // 菜单快建不弹对话框：默认名「会话 N」，主页可改名
-                SessionNames.set(this, name, "会话 ${sessions.size + 1}")
+                // 菜单快建不弹对话框：显示默认名（随语言），主页可改名
                 startForegroundService(
                     android.content.Intent(this, EnvService::class.java).putExtra("new_session", name),
                 )

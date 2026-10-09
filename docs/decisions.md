@@ -202,7 +202,7 @@ D26 把「/root 用户文件迁移细则」留白随产品期实现定，R8（ro
 **机制**：`res/values/`（英文=默认兜底）+ `res/values-zh/`（zh* 生效）——系统 locale 为中文显示中文，其余一切语言回落英文，零检测代码；Android 13+ per-app 通道自动可用（AVD 实证 `cmd locale set-app-locales` 即时切换）。资源按页族拆 `strings_<族>.xml` 双侧同构（common/session/settings/wizard/envpages/backup/files/system 共 9 文件、400+ 键），CI 的 `MissingTranslation`/`ExtraTranslation` 双向 fatal 门禁保证键集永不失配（阴性对照实证拦截）。
 
 **不本地化面（口径）**：
-- 默认会话名「主终端」「会话 N」——用户定调固定中文格式（落盘数据跨语言一致，用户可改）；
+- ~~默认会话名「主终端」「会话 N」固定中文格式~~（2026-10-10 用户推翻：英文界面下显示中文默认名观感差）→ 默认名不落盘、按当前语言现取（Main terminal / Session N），只有用户改过的名字落盘；旧版落盘的中文默认名读取时按默认名处理；
 - 环境内容物——env.sh/配置文件内注释、agent 冒烟 prompt（「只回复四个字符：OK 了」、AV3 prompt，属 agent 交互协议）、shell echo 的环境欢迎语与 npm 回退提示（night-b t5 `fallback_fired` 断言依赖其字面）；
 - logcat 日志（开发面，测试证据引用口径）。
 - 通知通道名建后语言定格（平台限制，与 importance 同款先例）。

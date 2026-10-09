@@ -168,8 +168,11 @@ def t1(r):
     assert "s1" in sessions, f"第二会话 s1 不在注册表：{sessions}"
     names = sc.run_as_cat("files/terminal-session-names.json")
     r["display_names"] = names.strip()[:120]
-    r["display_name_saved"] = '"s1"' in names  # 键落盘即显示名已保存（名值本身随语言）
-    r["pass"] = r["display_name_saved"]
+    # 默认名不落盘、按语言现取（2026-10-10 起）：判据 = 两次预填默认名非空且互异
+    r["default_names_ok"] = bool(r["dialog_default_first"]) and \
+        bool(r["dialog_default_second"]) and r["dialog_default_first"] != r["dialog_default_second"]
+    r["default_not_persisted"] = '"s1"' not in names and '"main"' not in names
+    r["pass"] = r["default_names_ok"] and r["default_not_persisted"]
 
 
 # ---------- t2 ACTION_VIEW + provider ----------
