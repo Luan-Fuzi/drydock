@@ -47,8 +47,12 @@ class EnvService : Service() {
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
+        // MIN 不显示状态栏小图标（平台规则，2026-10-09 用户实锤「状态栏只有别人的
+        // 图标」的真因），升 LOW：无声音、卡片正常显示、状态栏小图标出现。
+        // importance 建后不可改：删旧通道重建（原型期无用户自定义可丢）
+        nm.deleteNotificationChannel(CHANNEL_FG)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_FG, "环境宿主", NotificationManager.IMPORTANCE_MIN),
+            NotificationChannel(CHANNEL_FG, "环境宿主", NotificationManager.IMPORTANCE_LOW),
         )
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ALERT, "会话提醒", NotificationManager.IMPORTANCE_DEFAULT),
@@ -57,10 +61,10 @@ class EnvService : Service() {
             Notification.Builder(this, CHANNEL_FG)
                 .setContentTitle("Drydock 环境运行中")
                 .setContentText("Linux 会话与终端服务")
-                // HyperOS 通知卡片左列与状态栏都直接渲染 smallIcon 本体（不强制剪影），
-                // 白色剪影在卡片上不可辨、被 OEM 回落成默认图标——用彩色小图
-                // （深蓝圆底 + 白锚，即启动图标形态），左列/状态栏就是应用本来的样子
-                .setSmallIcon(R.drawable.ic_notif_anchor)
+                // 通知小图标按平台规范给白色剪影（Q9：HyperOS 强制单色化，彩色小图标
+                // 三种形态——vector/彩色 PNG/运行时位图——均被同一管线剥成 alpha 剪影，
+                // 不为 OEM 做专用适配；24dp 加粗锚保证状态栏与卡片小尺寸下可辨）
+                .setSmallIcon(R.drawable.ic_stat_anchor)
                 .setColor(0xFF16324F.toInt())
                 .build()
         startForeground(NOTIFICATION_ID, notification)
@@ -239,7 +243,7 @@ class EnvService : Service() {
             Notification.Builder(this, CHANNEL_ALERT)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setSmallIcon(R.drawable.ic_notif_anchor)
+                .setSmallIcon(R.drawable.ic_stat_anchor)
                 .setColor(0xFF16324F.toInt())
                 .setAutoCancel(true)
                 .build(),
