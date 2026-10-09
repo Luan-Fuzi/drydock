@@ -19,10 +19,12 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false">
 
+        <!-- 语言变化自行处理：不 recreate，Compose 随配置重组换文案（切语言零闪） -->
         <activity
             android:name=".HomeActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:configChanges="locale|layoutDirection">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

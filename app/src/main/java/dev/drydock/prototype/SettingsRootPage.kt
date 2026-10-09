@@ -27,7 +27,9 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
     val context = LocalContext.current
     val endpoints = remember { EndpointStore.all(context) }
     val wizardDone = remember { EndpointStore.wizardDone(context) }
-    val mirrorSummary = remember { mirrorSummaryOf(context) }
+    // HomeActivity 自行处理语言变化（不 recreate）：含文案的缓存随配置失效
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val mirrorSummary = remember(config) { mirrorSummaryOf(context) }
     val bindOn = remember { BindStore.enabled(context) }
     val themeLabel = when (ThemeStore.mode.value) {
         ThemeStore.Mode.SYSTEM -> stringResource(R.string.settings_theme_system)
@@ -36,7 +38,7 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
     }
     val termSummary = stringResource(R.string.settings_term_summary, TermPrefs.fontSize(context), TermPrefs.scrollback(context))
     // per-app locale 读取在 remember 计算块外取 tag，标签映射用 stringResource（remember 内不可调）
-    val langTags = remember {
+    val langTags = remember(config) {
         if (Build.VERSION.SDK_INT >= 33) {
             context.getSystemService(android.app.LocaleManager::class.java)?.applicationLocales?.toLanguageTags().orEmpty()
         } else ""
