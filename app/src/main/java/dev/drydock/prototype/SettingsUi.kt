@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Modifier
@@ -78,7 +79,7 @@ internal fun SettingsSubPage(title: String, onBack: () -> Unit, content: @Compos
             TextButton(
                 onClick = onBack,
                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-            ) { Text("‹ 设置") }
+            ) { Text(stringResource(R.string.settings_back)) }
             Text(title, style = MaterialTheme.typography.titleLarge)
         }
         content()

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 4：设置族键（SettingsRootPage 主页、Appearance/Terminal 二级页、
+     SettingsUi 公共骨架、镜像摘要）。 -->
+<resources>
+    <!-- 设置主页 -->
+    <string name="settings_page_title">Settings</string>
+    <string name="settings_back">‹ Settings</string>
+    <string name="settings_group_model">Model &amp; endpoints</string>
+    <string name="settings_group_env">Environment</string>
+    <string name="settings_group_app">App</string>
+    <string name="settings_group_more">More</string>
+    <string name="settings_row_endpoints">Coding endpoints</string>
+    <string name="settings_row_endpoints_empty">None added (built-in vendors auto-detected)</string>
+    <string name="settings_row_endpoints_count">%1$d custom endpoint(s)</string>
+    <string name="settings_row_wizard">Setup wizard</string>
+    <string name="settings_row_wizard_done">Completed · can run again</string>
+    <string name="settings_row_wizard_todo">Keep-alive / connect a model / install agents</string>
+    <string name="settings_row_env_sh">Environment variables</string>
+    <string name="settings_row_env_sh_sum">~/.drydock/env.sh (applies to new sessions)</string>
+    <string name="settings_row_mirrors">Mirrors</string>
+    <string name="settings_row_backup">Backup &amp; export</string>
+    <string name="settings_row_backup_sum">Export → Downloads/Drydock · restore from tar.gz</string>
+    <string name="settings_row_update">System update</string>
+    <string name="settings_row_update_sum">Ubuntu %1$s · check updates &amp; rollback</string>
+    <string name="settings_row_bind">Directory passthrough</string>
+    <string name="settings_row_bind_sum_on">Experimental · on</string>
+    <string name="settings_row_bind_sum_off">Experimental · off</string>
+    <string name="settings_row_appearance">Appearance</string>
+    <string name="settings_row_terminal">Terminal display</string>
+    <string name="settings_row_dev">Developer options</string>
+    <string name="settings_row_dev_sum">Acceptance channels, timeline export &amp; version details</string>
+    <string name="settings_footer">Drydock prototype (built from a main tag) · Ubuntu %1$s\n⚠ Uninstalling or clearing app data also deletes the Linux environment — use "Backup &amp; export" first.</string>
+
+    <!-- 镜像摘要（机构名用国际通用缩写） -->
+    <string name="settings_mirror_default">Default (CN mirrors + official fallback)</string>
+    <string name="settings_mirror_tuna">TUNA</string>
+    <string name="settings_mirror_ustc">USTC</string>
+    <string name="settings_mirror_nju">NJU</string>
+    <string name="settings_mirror_aliyun">Aliyun</string>
+    <string name="settings_mirror_ubuntu_official">Official</string>
+    <string name="settings_mirror_npm_official">npm official</string>
+    <string name="settings_mirror_custom">Custom</string>
+
+    <!-- 外观页 -->
+    <string name="settings_appearance_desc">Light/dark theme applies immediately to all three tabs.</string>
+    <string name="settings_theme_system">Follow system</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+
+    <!-- 终端显示页 -->
+    <string name="settings_term_title">Terminal display</string>
+    <string name="settings_term_font">Font size %1$d</string>
+    <string name="settings_term_rows">Scrollback %1$d lines</string>
+    <string name="settings_term_rows_hint">Maximum number of history lines you can scroll back</string>
+    <string name="settings_term_saved_hint">Changes are saved immediately and take effect when you return to the terminal.</string>
+    <string name="settings_term_summary">Font %1$d · scrollback %2$d lines</string>
+</resources>

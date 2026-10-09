@@ -15,6 +15,7 @@ i18n 批次的第三层验收（CI lint 保键集、night-b 保逻辑、本剧�
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scommon as sc
@@ -23,21 +24,21 @@ HOME = f"{sc.PKG}/.HomeActivity"
 VERDICT = os.path.join(sc.DRAFT, "i18n-sample-verdict.json")
 
 # 每页族至少一个代表键（tag → 各 locale 期望渲染文本）
+# HOME = 主页直接可见；DLG = 新建对话框内；SETTINGS = 设置页（进 nav_settings 后）
 SAMPLES = {
     "en": {
-        "nav_sessions": "Sessions",
-        "nav_files": "Files",
-        "nav_settings": "Settings",
-        "home_new_session": "New session",
-        # 对话框层（批 2 公共键 + 批 3 会话键）
-        "dlg_create": "Create",
+        "HOME": {"nav_sessions": "Sessions", "nav_files": "Files", "nav_settings": "Settings",
+                 "home_new_session": "New session"},
+        "DLG": {"dlg_create": "Create"},
+        "SETTINGS": {"settings_appearance": "Appearance", "theme_light": "Light",
+                     "theme_system": "Follow system"},
     },
     "zh": {
-        "nav_sessions": "会话",
-        "nav_files": "文件",
-        "nav_settings": "设置",
-        "home_new_session": "新建会话",
-        "dlg_create": "创建",
+        "HOME": {"nav_sessions": "会话", "nav_files": "文件", "nav_settings": "设置",
+                 "home_new_session": "新建会话"},
+        "DLG": {"dlg_create": "创建"},
+        "SETTINGS": {"settings_appearance": "外观", "theme_light": "浅色",
+                     "theme_system": "跟随系统"},
     },
 }
 
@@ -47,27 +48,40 @@ def main():
     if locale not in SAMPLES:
         sys.exit("用法：i18n-sample.py en|zh（locale 由运行者先经 cmd locale 设置）")
     expect = SAMPLES[locale]
-    r = {"locale": locale, "device": sc.device_identity(), "checks": {}, "app_locale": sc.device_identity()["locale"]}
+    r = {"locale": locale, "device": sc.device_identity(), "checks": {}}
 
     sc.shell("am", "start", "-S", "-n", HOME)
     if not sc.wait_res("home_new_session", 60):
         sys.exit("主页未出现（home_new_session）")
 
-    # 主页层样本
-    for tag in ("nav_sessions", "nav_files", "nav_settings", "home_new_session"):
+    def check(tag, layer):
+        exp = expect[layer][tag]
         got = sc.res_text(tag)
-        r["checks"][tag] = {"expect": expect.get(tag), "got": got}
-        print(f"  {tag}: expect={expect.get(tag)!r} got={got!r}")
+        r["checks"][tag] = {"expect": exp, "got": got}
+        print(f"  {tag}: expect={exp!r} got={got!r}")
 
-    # 新建对话框层样本（打开→断言→收起）
+    # 主页层
+    for tag in expect["HOME"]:
+        check(tag, "HOME")
+
+    # 新建对话框层（打开→断言→收起）
     if sc.tap_res("home_new_session", 15) and sc.wait_res("dlg_create", 15):
-        for tag in ("dlg_create",):
-            got = sc.res_text(tag)
-            r["checks"][tag] = {"expect": expect[tag], "got": got}
-            print(f"  {tag}: expect={expect[tag]!r} got={got!r}")
+        for tag in expect["DLG"]:
+            check(tag, "DLG")
         sc.shell("input", "keyevent", "KEYCODE_BACK")
     else:
-        r["checks"]["dlg_create"] = {"expect": expect["dlg_create"], "got": "对话框未打开"}
+        r["checks"]["dlg_create"] = {"expect": expect["DLG"].get("dlg_create"), "got": "对话框未打开"}
+
+    # 设置页层（外观行 → 外观二级页选项）
+    if sc.tap_res("nav_settings", 15) and sc.wait_res("settings_appearance", 15):
+        if "settings_appearance" in expect["SETTINGS"]:
+            check("settings_appearance", "SETTINGS")
+        if sc.tap_res("settings_appearance", 15) and sc.wait_res("theme_light", 15):
+            for tag in expect["SETTINGS"]:
+                if tag != "settings_appearance":
+                    check(tag, "SETTINGS")
+            sc.shell("input", "keyevent", "KEYCODE_BACK")
+            time.sleep(1)
 
     r["pass"] = all(c["got"] == c["expect"] for c in r["checks"].values())
     os.makedirs(sc.DRAFT, exist_ok=True)

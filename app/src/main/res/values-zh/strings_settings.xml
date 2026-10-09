@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 4 中文侧（与 values/strings_settings.xml 一一对应） -->
+<resources>
+    <string name="settings_page_title">设置</string>
+    <string name="settings_back">‹ 设置</string>
+    <string name="settings_group_model">模型与端点</string>
+    <string name="settings_group_env">环境</string>
+    <string name="settings_group_app">应用</string>
+    <string name="settings_group_more">更多</string>
+    <string name="settings_row_endpoints">Coding 端点</string>
+    <string name="settings_row_endpoints_empty">未添加（内置厂商自动识别）</string>
+    <string name="settings_row_endpoints_count">%1$d 个自定义端点</string>
+    <string name="settings_row_wizard">初始设置向导</string>
+    <string name="settings_row_wizard_done">已完成 · 可重新运行</string>
+    <string name="settings_row_wizard_todo">保活 / 连接大模型 / 安装 agent</string>
+    <string name="settings_row_env_sh">环境变量</string>
+    <string name="settings_row_env_sh_sum">~/.drydock/env.sh（新会话生效）</string>
+    <string name="settings_row_mirrors">镜像源</string>
+    <string name="settings_row_backup">备份与导出</string>
+    <string name="settings_row_backup_sum">导出 → Downloads/Drydock · 从 tar.gz 恢复</string>
+    <string name="settings_row_update">系统更新</string>
+    <string name="settings_row_update_sum">Ubuntu %1$s · 检查更新与回滚</string>
+    <string name="settings_row_bind">目录直通绑定</string>
+    <string name="settings_row_bind_sum_on">实验 · 已开启</string>
+    <string name="settings_row_bind_sum_off">实验 · 已关闭</string>
+    <string name="settings_row_appearance">外观</string>
+    <string name="settings_row_terminal">终端显示</string>
+    <string name="settings_row_dev">开发者选项</string>
+    <string name="settings_row_dev_sum">验收通道、时间线导出与版本详情</string>
+    <string name="settings_footer">Drydock 原型（从 main tag 构建）· Ubuntu %1$s\n⚠ 卸载或清除应用数据会连同 Linux 环境一起删除——删除前先用「备份与导出」备份。</string>
+
+    <string name="settings_mirror_default">默认（国内镜像 + 官方回退）</string>
+    <string name="settings_mirror_tuna">清华 TUNA</string>
+    <string name="settings_mirror_ustc">中科大</string>
+    <string name="settings_mirror_nju">南大</string>
+    <string name="settings_mirror_aliyun">阿里云</string>
+    <string name="settings_mirror_ubuntu_official">官方源</string>
+    <string name="settings_mirror_npm_official">npm 官方</string>
+    <string name="settings_mirror_custom">自定义</string>
+
+    <string name="settings_appearance_desc">深浅主题即时生效（会话 / 文件 / 设置三栏）。</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+
+    <string name="settings_term_title">终端显示</string>
+    <string name="settings_term_font">字号 %1$d</string>
+    <string name="settings_term_rows">回滚行数 %1$d</string>
+    <string name="settings_term_rows_hint">可往上翻看的历史行数上限</string>
+    <string name="settings_term_saved_hint">改动即保存，回到终端页生效。</string>
+    <string name="settings_term_summary">字号 %1$d · 回滚 %2$d 行</string>
+</resources>

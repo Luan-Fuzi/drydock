@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 
 /** 终端二级页：字号/回滚行数落 TermPrefs；TerminalActivity onResume 经
  *  window.__dk.applyCfg 推给页面 xterm（含正在开的终端），ttyd 侧不感知。 */
@@ -16,10 +17,10 @@ import androidx.compose.ui.platform.LocalContext
 internal fun TerminalSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
 
-    SettingsSubPage("终端显示", onBack) {
+    SettingsSubPage(stringResource(R.string.settings_term_title), onBack) {
         var termFont by remember { mutableStateOf(TermPrefs.fontSize(context)) }
         var termRows by remember { mutableStateOf(TermPrefs.scrollback(context)) }
-        Text("字号 ${termFont}", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.settings_term_font, termFont), style = MaterialTheme.typography.bodyMedium)
         Slider(
             value = termFont.toFloat(),
             onValueChange = { termFont = it.toInt().coerceIn(10, 24) },
@@ -27,9 +28,9 @@ internal fun TerminalSettingsPage(onBack: () -> Unit) {
             steps = 13,
             onValueChangeFinished = { TermPrefs.set(context, termFont, termRows) },
         )
-        Text("回滚行数 ${termRows}", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.settings_term_rows, termRows), style = MaterialTheme.typography.bodyMedium)
         Text(
-            "可往上翻看的历史行数上限",
+            stringResource(R.string.settings_term_rows_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -40,7 +41,7 @@ internal fun TerminalSettingsPage(onBack: () -> Unit) {
             onValueChangeFinished = { TermPrefs.set(context, termFont, termRows) },
         )
         Text(
-            "改动即保存，回到终端页生效。",
+            stringResource(R.string.settings_term_saved_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
