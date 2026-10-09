@@ -543,9 +543,9 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
                 ) {
                     RadioButton(selected = fProtocol == pr, onClick = { fProtocol = pr })
                     Column {
-                        Text(pr.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(pr.labelRes), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            pr.hint,
+                            stringResource(pr.hintRes),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

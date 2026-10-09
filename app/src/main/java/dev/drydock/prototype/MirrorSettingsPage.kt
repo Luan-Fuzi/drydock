@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,9 +34,9 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
 
     data class MirrorOpt(val id: String, val label: String, val aptUrl: String?, val npmUrl: String?)
 
-    SettingsSubPage("镜像源", onBack) {
+    SettingsSubPage(stringResource(R.string.settings_row_mirrors), onBack) {
         Text(
-            "仅影响安装下载速度；也可手编 ~/.drydock/mirrors 或让 agent 改，三者等价。",
+            stringResource(R.string.mirror_intro),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -49,25 +50,34 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
         }
         val curApt = Regex("DRYDOCK_APT_MIRROR=(\\S+)").find(mirrorTxt)?.groupValues?.get(1)
         val curNpm = Regex("DRYDOCK_NPM_REGISTRY=(\\S+)").find(mirrorTxt)?.groupValues?.get(1)
-        val aptOpts = remember(mirrorTxt) {
+        val optDefault = stringResource(R.string.mirror_opt_default)
+        val optTuna = stringResource(R.string.settings_mirror_tuna)
+        val optUstc = stringResource(R.string.mirror_opt_ustc)
+        val optNju = stringResource(R.string.mirror_opt_nju)
+        val optAliyun = stringResource(R.string.settings_mirror_aliyun)
+        val optOfficial = stringResource(R.string.mirror_opt_official)
+        val optCustom = stringResource(R.string.mirror_opt_custom)
+        val optNpmmirror = stringResource(R.string.mirror_opt_npmmirror)
+        val optNpmjs = stringResource(R.string.mirror_opt_npmjs)
+        val aptOpts = remember(optDefault, optTuna, optUstc, optNju, optAliyun, optOfficial, optCustom, mirrorTxt) {
             buildList {
-                add(MirrorOpt("default", "默认（国内镜像 + 官方自动回退）", null, null))
-                add(MirrorOpt("tuna", "清华 TUNA", "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports", null))
-                add(MirrorOpt("ustc", "中科大 USTC", "http://mirrors.ustc.edu.cn/ubuntu-ports", null))
-                add(MirrorOpt("nju", "南京大学 NJU", "http://mirror.nju.edu.cn/ubuntu-ports", null))
-                add(MirrorOpt("aliyun", "阿里云", "http://mirrors.aliyun.com/ubuntu-ports", null))
-                add(MirrorOpt("official", "官方源（海外网络）", "http://ports.ubuntu.com/ubuntu-ports", null))
+                add(MirrorOpt("default", optDefault, null, null))
+                add(MirrorOpt("tuna", optTuna, "http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports", null))
+                add(MirrorOpt("ustc", optUstc, "http://mirrors.ustc.edu.cn/ubuntu-ports", null))
+                add(MirrorOpt("nju", optNju, "http://mirror.nju.edu.cn/ubuntu-ports", null))
+                add(MirrorOpt("aliyun", optAliyun, "http://mirrors.aliyun.com/ubuntu-ports", null))
+                add(MirrorOpt("official", optOfficial, "http://ports.ubuntu.com/ubuntu-ports", null))
                 if (curApt != null && none { it.aptUrl == curApt }) {
-                    add(MirrorOpt("custom-apt", "当前手编：$curApt", curApt, null))
+                    add(MirrorOpt("custom-apt", optCustom.format(curApt), curApt, null))
                 }
             }
         }
-        val npmOpts = remember(mirrorTxt) {
+        val npmOpts = remember(optNpmmirror, optNpmjs, optCustom, mirrorTxt) {
             buildList {
-                add(MirrorOpt("npmmirror", "npmmirror（国内，默认）", null, "https://registry.npmmirror.com"))
-                add(MirrorOpt("npmjs", "npm 官方源（海外）", null, "https://registry.npmjs.org"))
+                add(MirrorOpt("npmmirror", optNpmmirror, null, "https://registry.npmmirror.com"))
+                add(MirrorOpt("npmjs", optNpmjs, null, "https://registry.npmjs.org"))
                 if (curNpm != null && none { it.npmUrl == curNpm }) {
-                    add(MirrorOpt("custom-npm", "当前手编：$curNpm", null, curNpm))
+                    add(MirrorOpt("custom-npm", optCustom.format(curNpm), null, curNpm))
                 }
             }
         }
@@ -79,7 +89,7 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
         }
         var mirrorApplying by remember { mutableStateOf(false) }
         var mirrorMsg by remember { mutableStateOf("") }
-        Text("APT 源（系统包安装）", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.mirror_apt_title), style = MaterialTheme.typography.titleSmall)
         aptOpts.forEach { o ->
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { aptChoice = o },
@@ -89,7 +99,7 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
                 Text(o.label, style = MaterialTheme.typography.bodyMedium)
             }
         }
-        Text("npm 源（agent 运行时安装）", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.mirror_npm_title), style = MaterialTheme.typography.titleSmall)
         npmOpts.forEach { o ->
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { npmChoice = o },
@@ -114,15 +124,15 @@ internal fun MirrorSettingsPage(onBack: () -> Unit) {
                             RecipeManager.applyMirrors(context.applicationContext, aptChoice.id, npmChoice.npmUrl)
                         }
                         mirrorApplying = false
-                        mirrorMsg = if (r.output.contains("MIRROR_RC=0")) "✓ 已生效（新安装走新源）" else "✗ ${r.output.takeLast(200)}"
+                        mirrorMsg = if (r.output.contains("MIRROR_RC=0")) context.getString(R.string.mirror_applied) else "✗ ${r.output.takeLast(200)}"
                         tick++
                     }
                 },
-            ) { Text("应用镜像设置") }
+            ) { Text(stringResource(R.string.mirror_apply)) }
             if (mirrorMsg.isNotBlank()) {
                 Text(mirrorMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
             }
         }
-        if (mirrorApplying) BusyBar("应用中…")
+        if (mirrorApplying) BusyBar(stringResource(R.string.mirror_applying))
     }
 }

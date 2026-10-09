@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 6：环境族二级页键（Endpoint/Mirror/EnvSh/Bind）。表单字段与向导同套，
+     共用 wizard_* 键；镜像选项机构名与设置摘要（settings_mirror_*）字面不同处独立成键。 -->
+<resources>
+    <!-- Coding 端点页 -->
+    <string name="endpoint_title">Coding endpoints</string>
+    <string name="endpoint_intro">Custom endpoints (written into opencode/pi config files). Built-in catalog vendors do not belong here — put a standard variable name in ~/.drydock/env.sh and they are auto-detected (GLM Coding Plan uses ZHIPU_API_KEY)</string>
+    <string name="endpoint_empty">(no custom endpoints yet)</string>
+    <string name="endpoint_delete">Delete</string>
+    <string name="endpoint_add">Add custom endpoint</string>
+    <string name="ep_saving">Saving…</string>
+    <string name="endpoint_form_protocol_title">Protocol (message format between agent and service; a wrong one will not connect)</string>
+    <string name="proto_chat_completions">Chat Completions</string>
+    <string name="proto_chat_completions_hint">Most common: OpenAI-compatible format; most CN services use it</string>
+    <string name="proto_responses">Responses</string>
+    <string name="proto_responses_hint">OpenAI\'s newer format; supported by a few services only</string>
+    <string name="proto_anthropic">Anthropic Messages</string>
+    <string name="proto_anthropic_hint">Anthropic/Claude-style format (some services expose a separate anthropic endpoint)</string>
+    <string name="endpoint_lengths_hint">Fill both from the provider\'s docs: context window = how much the model can read at once; max output = how much it can generate per turn (leave empty for tool defaults).</string>
+    <string name="endpoint_save">Save &amp; write config</string>
+    <string name="endpoint_saved_hint">Applies to new sessions; don\'t forget to put the key into ~/.drydock/env.sh (use the variable name above).</string>
+    <string name="endpoint_wizard_run">Run setup wizard (keep-alive / model / agents)</string>
+    <string name="endpoint_wizard_rerun">Re-run setup wizard</string>
+
+    <!-- 镜像源页 -->
+    <string name="mirror_intro">Only affects download speed for installs; editing ~/.drydock/mirrors by hand or asking the agent to do it are equivalent.</string>
+    <string name="mirror_opt_default">Default (CN mirrors + official fallback)</string>
+    <string name="mirror_opt_ustc">USTC</string>
+    <string name="mirror_opt_nju">Nanjing University (NJU)</string>
+    <string name="mirror_opt_official">Official (overseas networks)</string>
+    <string name="mirror_opt_npmmirror">npmmirror (CN, default)</string>
+    <string name="mirror_opt_npmjs">npm official (overseas)</string>
+    <string name="mirror_opt_custom">Current manual: %1$s</string>
+    <string name="mirror_apt_title">APT source (system packages)</string>
+    <string name="mirror_npm_title">npm registry (agent runtime installs)</string>
+    <string name="mirror_apply">Apply mirror settings</string>
+    <string name="mirror_applied">✓ Applied (new installs use it)</string>
+    <string name="mirror_applying">Applying…</string>
+
+    <!-- 环境变量页 -->
+    <string name="envsh_title">Environment variables (~/.drydock/env.sh)</string>
+    <string name="envsh_intro">Takes effect for each new session. Write keys as export DRYDOCK_API_KEY=… (opencode/pi configs already reference it); other variables your tools need (proxies, vendor keys) go here too; for complex changes just ask the agent.</string>
+    <string name="envsh_field_label">env.sh (bash syntax, one export per line)</string>
+    <string name="envsh_saved">✓ Saved</string>
+    <string name="envsh_save_fail">✗ Save failed: %1$s</string>
+    <string name="envsh_hint">Applies to new sessions; in an already-open terminal run `. ~/.drydock/env.sh` for immediate effect.</string>
+    <string name="envsh_not_deployed">(editable after the Linux environment is deployed)</string>
+
+    <!-- 直通绑定页 -->
+    <string name="bind_title">Directory passthrough (experimental)</string>
+    <string name="bind_desc">Reading/writing /root/AndroidDownload inside the environment ≈ the phone\'s Download directory: change a file inside and it shows up in the phone\'s file manager immediately, and vice versa (proot -b two-way binding). Requires the system "All files access" permission; bound-directory I/O goes through proot translation and is slower than inside the environment. Off by default.</string>
+    <string name="bind_perm_ok">✓ All-files access granted</string>
+    <string name="bind_perm_missing">Not granted (grant it yourself in system settings before enabling)</string>
+    <string name="bind_state_on">On (applies to new sessions)</string>
+    <string name="bind_state_off">Off</string>
+</resources>

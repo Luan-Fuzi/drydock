@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 6 中文侧（与 values/strings_envpages.xml 一一对应） -->
+<resources>
+    <string name="endpoint_title">Coding 端点</string>
+    <string name="endpoint_intro">自定义端点列表（写进 opencode/pi 的配置文件）。内置目录厂商不需要在这——往 ~/.drydock/env.sh 放标准变量名即自动识别（GLM Coding Plan 用 ZHIPU_API_KEY）</string>
+    <string name="endpoint_empty">（暂无自定义端点）</string>
+    <string name="endpoint_delete">删除</string>
+    <string name="endpoint_add">添加自定义端点</string>
+    <string name="ep_saving">保存中…</string>
+    <string name="endpoint_form_protocol_title">协议（agent 与服务对话用的报文格式，选错会连不上）</string>
+    <string name="proto_chat_completions">Chat Completions</string>
+    <string name="proto_chat_completions_hint">最通用：OpenAI 兼容格式，国内绝大多数服务用它</string>
+    <string name="proto_responses">Responses</string>
+    <string name="proto_responses_hint">OpenAI 的新格式，仅部分服务支持</string>
+    <string name="proto_anthropic">Anthropic Messages</string>
+    <string name="proto_anthropic_hint">Anthropic/Claude 系格式（部分服务单独提供 anthropic 端点）</string>
+    <string name="endpoint_lengths_hint">两个长度照服务商文档填：上下文窗口 = 模型一次能读进多少内容；最大输出长度 = 单次最多生成多少（留空用工具默认值）。</string>
+    <string name="endpoint_save">保存并写入配置</string>
+    <string name="endpoint_saved_hint">保存后新会话生效；别忘往 ~/.drydock/env.sh 放上 key（变量名用上面填的名字）。</string>
+    <string name="endpoint_wizard_run">运行初始设置向导（保活 / 连接大模型 / 安装 agent）</string>
+    <string name="endpoint_wizard_rerun">重新运行初始设置向导</string>
+
+    <string name="mirror_intro">仅影响安装下载速度；也可手编 ~/.drydock/mirrors 或让 agent 改，三者等价。</string>
+    <string name="mirror_opt_default">默认（国内镜像 + 官方自动回退）</string>
+    <string name="mirror_opt_ustc">中科大 USTC</string>
+    <string name="mirror_opt_nju">南京大学 NJU</string>
+    <string name="mirror_opt_official">官方源（海外网络）</string>
+    <string name="mirror_opt_npmmirror">npmmirror（国内，默认）</string>
+    <string name="mirror_opt_npmjs">npm 官方源（海外）</string>
+    <string name="mirror_opt_custom">当前手编：%1$s</string>
+    <string name="mirror_apt_title">APT 源（系统包安装）</string>
+    <string name="mirror_npm_title">npm 源（agent 运行时安装）</string>
+    <string name="mirror_apply">应用镜像设置</string>
+    <string name="mirror_applied">✓ 已生效（新安装走新源）</string>
+    <string name="mirror_applying">应用中…</string>
+
+    <string name="envsh_title">环境变量（~/.drydock/env.sh）</string>
+    <string name="envsh_intro">每个新会话生效。key 写成 export DRYDOCK_API_KEY=…（opencode/pi 的配置已引用它），其他工具要的变量（代理、各家 key）也放这里；复杂改动也可以直接让 agent 帮你改。</string>
+    <string name="envsh_field_label">env.sh（bash 语法，逐行 export）</string>
+    <string name="envsh_saved">✓ 已保存</string>
+    <string name="envsh_save_fail">✗ 保存失败：%1$s</string>
+    <string name="envsh_hint">保存后新会话生效；已开着的终端输入 . ~/.drydock/env.sh 立即生效。</string>
+    <string name="envsh_not_deployed">（部署 Linux 环境后可编辑）</string>
+
+    <string name="bind_title">目录直通绑定（实验）</string>
+    <string name="bind_desc">环境里读写 /root/AndroidDownload ≈ 手机 Download 目录：在环境里改文件，手机文件管理器立即可见，反之亦然（proot -b 双向直通）。需要系统「所有文件访问」权限；绑定目录读写都经 proot 翻译，比环境内慢。默认关闭。</string>
+    <string name="bind_perm_ok">✓ 已获「所有文件访问」授权</string>
+    <string name="bind_perm_missing">未授权（开启前需在系统设置里本人授予）</string>
+    <string name="bind_state_on">已开启（新建会话生效）</string>
+    <string name="bind_state_off">已关闭</string>
+</resources>

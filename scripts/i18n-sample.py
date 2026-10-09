@@ -85,6 +85,15 @@ def main():
             sc.shell("input", "keyevent", "KEYCODE_BACK")
             time.sleep(1)
 
+    # 绑定页层（设置页入口 → bind_switch 在场即页可达；开关状态依环境不判值）
+    if sc.res_hit("settings_bind") or (sc.tap_res("nav_settings", 10) and sc.wait_res("settings_bind", 15)):
+        if sc.tap_res("settings_bind", 15):
+            r["checks"]["bind_page"] = {"expect": "present",
+                                        "got": "present" if sc.wait_res("bind_switch", 10) else "absent"}
+            print(f"  bind_page: {r['checks']['bind_page']['got']}")
+            sc.shell("input", "keyevent", "KEYCODE_BACK")
+            time.sleep(1)
+
     # 向导层（设置页入口 → 欢迎页 → 左上返回退出）
     if "WIZARD" in expect:
         if not sc.res_hit("settings_wizard") and sc.tap_res("nav_settings", 10):
