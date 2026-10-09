@@ -10,7 +10,7 @@ import androidx.compose.runtime.setValue
  *  表单/编辑器/单选收进二级页（页内导航，系统返回键回主页面）；验收通道与诊断收进
  *  「开发者选项」。动机：旧版八区块平铺一页（摊大饼）、说明 11sp 正文 13sp 主次不清。 */
 internal enum class SettingsPage {
-    ROOT, ENDPOINTS, ENV_SH, MIRRORS, BACKUP, UPDATE, BIND, APPEARANCE, TERMINAL, DEV
+    ROOT, ENDPOINTS, ENV_SH, MIRRORS, BACKUP, UPDATE, BIND, APPEARANCE, LANGUAGE, TERMINAL, DEV
 }
 
 @Composable
@@ -26,6 +26,7 @@ internal fun SettingsPane() {
         SettingsPage.UPDATE -> UpdateSettingsPage { page = SettingsPage.ROOT }
         SettingsPage.BIND -> BindSettingsPage { page = SettingsPage.ROOT }
         SettingsPage.APPEARANCE -> AppearanceSettingsPage { page = SettingsPage.ROOT }
+        SettingsPage.LANGUAGE -> LanguageSettingsPage { page = SettingsPage.ROOT }
         SettingsPage.TERMINAL -> TerminalSettingsPage { page = SettingsPage.ROOT }
         SettingsPage.DEV -> DevSettingsPage { page = SettingsPage.ROOT }
     }

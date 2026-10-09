@@ -114,6 +114,33 @@ def main():
             sc.tap_res("wizard_back", 10)
             time.sleep(1)
 
+    # 语言开关层（lang-switch 功能验收：UI 通道切换，不经 cmd locale）
+    # 流程：设置→语言页→English→主页断言英文→语言页→跟随系统→回系统语言
+    try:
+        if not sc.res_hit("settings_language") and sc.tap_res("nav_settings", 10):
+            sc.wait_res("settings_language", 15)
+        if sc.tap_res("settings_language", 15) and sc.wait_res("lang_en", 15):
+            sc.tap_res("lang_en", 10)
+            time.sleep(3)
+            sc.shell("am", "start", "-S", "-n", HOME)
+            en_ok = sc.wait_res("home_new_session", 30) and sc.res_text("home_new_session") == "New session"
+            r["checks"]["lang_switch_en"] = {"expect": "New session", "got": sc.res_text("home_new_session")}
+            print(f"  lang_switch_en: {r['checks']['lang_switch_en']}")
+            # 切回跟随系统：断言 per-app 已清空 + 主页在场（语言回落系统语言，
+            # 具体字面随设备系统语言不定，不作判据）
+            if sc.tap_res("nav_settings", 10) and sc.wait_res("settings_language", 10) and sc.tap_res("settings_language", 10):
+                if sc.wait_res("lang_system", 15):
+                    sc.tap_res("lang_system", 10)
+                    time.sleep(3)
+                    tags = sc.shell("cmd", "locale", "get-app-locales", sc.PKG).strip()
+                    cleared = "[]" in tags or tags == ""
+                    home = sc.wait_res("home_new_session", 30) if sc.shell("am", "start", "-S", "-n", HOME) is not None else False
+                    r["checks"]["lang_switch_back"] = {"expect": "per-app cleared",
+                                                       "got": "per-app cleared" if (cleared and home) else f"tags={tags[-40:]}"}
+                    print(f"  lang_switch_back: {r['checks']['lang_switch_back']}")
+    except Exception as e:
+        r["checks"]["lang_switch"] = {"expect": "ok", "got": f"error: {e}"}
+
     r["pass"] = all(c["got"] == c["expect"] for c in r["checks"].values())
     os.makedirs(sc.DRAFT, exist_ok=True)
     json.dump(r, open(VERDICT, "w"), ensure_ascii=False, indent=2)
