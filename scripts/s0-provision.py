@@ -2,7 +2,7 @@
 """S0 真机装机供给：装 APK → UI 驱动部署 rootfs → AV1 → 终端层 → 开终端会话。
 
 真机周第一步（步骤 6）。全程可插线；AV1 部署计时在此采集（真机口径）。
-前置：用户已在手机上开好开发者选项与 USB 调试（见 docs/dev-environment.md 待办），
+前置：用户已在手机上开好开发者选项与 USB 调试（见 docs/archive/dev-environment.md 待办），
 屏幕保持解锁。用法：
   ANDROID_SERIAL=<serial> python3 scripts/s0-provision.py [apk 路径=draft/drydock-probe-ready.apk]
 输出：draft/s0-provision.json
