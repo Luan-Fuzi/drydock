@@ -12,8 +12,8 @@ android {
         applicationId = "dev.drydock"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -27,12 +27,27 @@ android {
         }
     }
 
+    // 正式签名：keystore 不入库，经环境变量注入（本地自设；CI 由 release workflow
+    // 从 Secrets 解码）。缺变量时 release 打包直接失败，不回落 debug 签名。
+    signingConfigs {
+        create("release") {
+            System.getenv("DRYDOCK_KEYSTORE")?.let { path ->
+                storeFile = file(path)
+                storePassword = System.getenv("DRYDOCK_KEYSTORE_PASSWORD")
+                keyAlias = "drydock"
+                // PKCS12 的 key 与 store 共用一个密码
+                keyPassword = System.getenv("DRYDOCK_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         // debug 包独立包名：与用户手机上的正式包并存，真机验收不覆盖用户环境
         debug {
             applicationIdSuffix = ".debug"
         }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
         }
     }
