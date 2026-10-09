@@ -198,7 +198,8 @@ class TerminalActivity : ComponentActivity() {
             return
         }
 
-        WebView.setWebContentsDebuggingEnabled(true)
+        // CDP 验收通道只在 debug 包开启
+        WebView.setWebContentsDebuggingEnabled(DebugHooks.WEBVIEW_DEBUGGING)
 
         val webView = WebView(this)
         this.webView = webView

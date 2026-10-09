@@ -27,7 +27,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- debug 验收注入口（am start 经 extras 驱动，与旧主页同源） -->
+            <!-- 系统分享目标（D25 文件互通：文件流或文本 → workspace Inbox） -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
