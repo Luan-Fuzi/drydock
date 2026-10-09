@@ -33,6 +33,7 @@ SAMPLES = {
         "SETTINGS": {"settings_appearance": "Appearance", "theme_light": "Light",
                      "theme_system": "Follow system"},
         "WIZARD": {"wizard_step_welcome": "Welcome to Drydock", "wizard_start": "Start setup"},
+        "FILES": {"file_page_title": "Files"},
     },
     "zh": {
         "HOME": {"nav_sessions": "会话", "nav_files": "文件", "nav_settings": "设置",
@@ -41,6 +42,7 @@ SAMPLES = {
         "SETTINGS": {"settings_appearance": "外观", "theme_light": "浅色",
                      "theme_system": "跟随系统"},
         "WIZARD": {"wizard_step_welcome": "欢迎使用 Drydock", "wizard_start": "开始配置"},
+        "FILES": {"file_page_title": "文件"},
     },
 }
 
@@ -93,6 +95,14 @@ def main():
             print(f"  bind_page: {r['checks']['bind_page']['got']}")
             sc.shell("input", "keyevent", "KEYCODE_BACK")
             time.sleep(1)
+
+    # 文件页层（批 8 样本：进页靠 nav_files tag，页标题文案断言走 wait_text——
+    # 本层检验的正是渲染文本本身）
+    if "FILES" in expect and sc.tap_res("nav_files", 15):
+        r["checks"]["file_page_title"] = {"expect": expect["FILES"]["file_page_title"],
+                                          "got": expect["FILES"]["file_page_title"] if sc.wait_text(expect["FILES"]["file_page_title"], 10) else None}
+        print(f"  file_page_title: {r['checks']['file_page_title']}")
+        sc.tap_res("nav_sessions", 10)
 
     # 向导层（设置页入口 → 欢迎页 → 左上返回退出）
     if "WIZARD" in expect:
