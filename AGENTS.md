@@ -2,7 +2,7 @@
 
 ## 项目现状
 
-原型步骤 1–6 判据全绿（步骤 6 真机周 2026-10-01–10-08：S1/S2/S3 全过，Q1 结论=正 → continue，Q7 关闭；`q1-verdict` tag 已打在 main 合并提交上）。需求池第 1–4 批全部收口（R0–R9，唯余 R10 待核实）；真机反馈 UX 批 `ux-1`–`ux-6` 已装机（浮钮合并、键条组合键、ttyd resize 浮层关闭、通知图标定案白剪影+通道 LOW，Q9 记录 OEM 限制）。仓库已按公开状态整理（GPL-3.0 + NOTICE.md + README 快速开始，2026-10-09）。动手前先读 `docs/open-questions.md` 与 `docs/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
+原型步骤 1–6 判据全绿（步骤 6 真机周 2026-10-01–10-08：S1/S2/S3 全过，Q1 结论=正 → continue，Q7 关闭；`q1-verdict` tag 已打在 main 合并提交上）。需求池第 1–4 批全部收口（R0–R9，唯余 R10 待核实）；真机反馈 UX 批 `ux-1`–`ux-6` 已装机（浮钮合并、键条组合键、ttyd resize 浮层关闭、通知图标定案白剪影+通道 LOW，Q9 记录 OEM 限制）。仓库已按公开状态整理（GPL-3.0 + NOTICE.md + README 快速开始，2026-10-09）。动手前先读 `docs/archive/open-questions.md` 与 `docs/archive/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
 
 ## Git 纪律（2026-09-27）
 
@@ -28,6 +28,6 @@
 
 ## 协作约定（2026-09-27）
 
-- 用户默认用**无视觉能力**的模型做开发；验收以命令行为主（adb / CDP / 脚本退出码），协议见 `docs/prototype-plan.md` 的"验收方式"。
+- 用户默认用**无视觉能力**的模型做开发；验收以命令行为主（adb / CDP / 脚本退出码），协议见 `docs/archive/prototype-plan.md` 的"验收方式"。
 - 遇到必须看画面才能判断的验证（xterm.js 渲染观感、IME 组合输入、UI 布局），先把截图用 `adb exec-out screencap` 存到 `draft/` 留证，然后**明确提醒用户切换到有视觉能力的模型**复查；观感审查集中分批做，不频繁来回切换。
 - 会话结束前保持 git 工作区干净；临时文件进 `draft/`（已忽略），不删 `docs/` 里的正式文档。
