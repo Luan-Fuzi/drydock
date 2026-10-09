@@ -1,6 +1,7 @@
 package dev.drydock.prototype
 
 import android.content.Context
+import android.os.Build
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,17 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
         ThemeStore.Mode.DARK -> stringResource(R.string.settings_theme_dark)
     }
     val termSummary = stringResource(R.string.settings_term_summary, TermPrefs.fontSize(context), TermPrefs.scrollback(context))
+    // per-app locale 读取在 remember 计算块外取 tag，标签映射用 stringResource（remember 内不可调）
+    val langTags = remember {
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.getSystemService(android.app.LocaleManager::class.java)?.applicationLocales?.toLanguageTags().orEmpty()
+        } else ""
+    }
+    val languageLabel = when {
+        langTags.isBlank() -> stringResource(R.string.lang_follow_system)
+        langTags.startsWith("zh") -> stringResource(R.string.lang_chinese)
+        else -> stringResource(R.string.lang_english)
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -75,6 +87,10 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
 
         SettingsGroup(stringResource(R.string.settings_group_app)) {
             SettingsRow(stringResource(R.string.settings_row_appearance), themeLabel, tag = "settings_appearance") { onOpen(SettingsPage.APPEARANCE) }
+            SettingsRow(
+                stringResource(R.string.settings_row_language), languageLabel,
+                tag = "settings_language",
+            ) { onOpen(SettingsPage.LANGUAGE) }
             SettingsRow(stringResource(R.string.settings_row_terminal), termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
         }
 

@@ -54,4 +54,11 @@
     <string name="settings_term_rows_hint">Maximum number of history lines you can scroll back</string>
     <string name="settings_term_saved_hint">Changes are saved immediately and take effect when you return to the terminal.</string>
     <string name="settings_term_summary">Font %1$d · scrollback %2$d lines</string>
+    <string name="settings_row_language">Language</string>
+    <string name="settings_language_title">Language</string>
+    <string name="lang_follow_system">Follow system</string>
+    <string name="lang_chinese">中文</string>
+    <string name="lang_english">English</string>
+    <string name="lang_follow_system_sum">Use the system language</string>
+    <string name="lang_need_33">This Android version doesn\'t support in-app language switching; change it in system settings</string>
 </resources>

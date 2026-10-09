@@ -49,4 +49,11 @@
     <string name="settings_term_rows_hint">可往上翻看的历史行数上限</string>
     <string name="settings_term_saved_hint">改动即保存，回到终端页生效。</string>
     <string name="settings_term_summary">字号 %1$d · 回滚 %2$d 行</string>
+    <string name="settings_row_language">语言</string>
+    <string name="settings_language_title">语言</string>
+    <string name="lang_follow_system">跟随系统</string>
+    <string name="lang_chinese">中文</string>
+    <string name="lang_english">English</string>
+    <string name="lang_follow_system_sum">使用系统语言</string>
+    <string name="lang_need_33">此 Android 版本不支持应用内切换语言，请到系统设置修改</string>
 </resources>

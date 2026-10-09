@@ -49,7 +49,8 @@ def device_identity():
     # 其次全局 settings system_locales（注意：手动 settings put 需系统重启才被
     # 应用，仅写不重启时该值不代表实际配置——批 2 实测）；prop 兜底老系统
     raw_loc = shell("cmd", "locale", "get-app-locales", PKG).strip()
-    app_loc = (re.search(r"\[([^]]+)\]", raw_loc).group(1) if "[" in raw_loc else "")
+    m_loc = re.search(r"\[([^]]+)\]", raw_loc)
+    app_loc = m_loc.group(1) if m_loc else ""  # []（空列表）与 [empty] 都按无 per-app 处理
     locale = (app_loc or shell("settings", "get", "system", "system_locales").strip()
               or prop("persist.sys.locale"))
     return {
