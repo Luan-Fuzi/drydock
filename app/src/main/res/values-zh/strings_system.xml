@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 9 中文侧（与 values/strings_system.xml 一一对应） -->
+<resources>
+    <string name="notif_channel_fg">环境宿主</string>
+    <string name="notif_channel_alert">会话提醒</string>
+    <string name="notif_fg_title">Drydock 环境运行中</string>
+    <string name="notif_fg_text">Linux 会话与终端服务</string>
+    <string name="notif_resumed_title">任务曾被系统暂停约 %1$d 分钟</string>
+    <string name="notif_resumed_text">环境与仪器同时停摆（疑似省电策略冻结），现已自动恢复；若频繁出现请检查省电策略</string>
+    <string name="notif_exit_title">会话 %1$s 已退出</string>
+    <string name="notif_exit_text">环境进程结束；重开终端会重建会话</string>
+    <string name="notif_silent_title">会话 %1$s 静默 %2$d 分钟</string>
+    <string name="notif_silent_text">PTY 无输出（可能任务结束或等待输入）</string>
+    <string name="agent_node_download">下载 %1$s…</string>
+    <string name="agent_node_fail">node 下载失败：%1$s</string>
+    <string name="agent_node_install">node tarball 校验通过，环境内安装…</string>
+    <string name="agent_stash_fail">落袋失败: %1$s</string>
+    <string name="bench_ensure_tools">确保 hyperfine/make/tcc…</string>
+    <string name="bench_tools_fail">工具安装失败：%1$s</string>
+    <string name="bench_running">运行基准电池（约 2–3 分钟）…</string>
+    <string name="bench_hf_fail">hyperfine 失败：%1$s</string>
+    <string name="bench_done">✓ 结果已落 Downloads/Drydock</string>
+    <string name="bench_stash_fail">落袋失败: %1$s</string>
+    <string name="rescue_title">救援通道</string>
+    <string name="rescue_desc">不经过终端层（ttyd/dtach）直接在环境内执行命令。终端打不开、环境疑似损坏时在这里诊断：ls、dpkg --audit、cat 日志等。</string>
+    <string name="rescue_cmd_label">命令</string>
+    <string name="rescue_running">执行中…</string>
+    <string name="rescue_run">执行</string>
+    <string name="dev_channels_title">验收通道</string>
+    <string name="dev_channels_desc">debug 验收通道随本 Activity（am start --es：drydock_endpoint/recipe/exec64/export/provider_test/rescue）。救援通道见桌面入口；原型验收仪器（部署/AV1/AV2/AV3 手动页）随 MainActivity 一并移除。</string>
+    <string name="dev_storage_title">存储</string>
+    <string name="dev_clean_parse_fail">✗ 结果解析失败：%1$s</string>
+    <string name="dev_clean_ok">✓ 清理完成：%1$s KB → %2$s KB</string>
+    <string name="dev_clean_fail">✗ 清理失败：%1$s</string>
+    <string name="dev_clean_btn">立即清理 apt 缓存</string>
+    <string name="dev_clean_busy">环境内 apt-get clean 与索引清理中…</string>
+    <string name="dev_clean_desc">清 /var/lib/apt/lists 与 /var/cache/apt（实测 438MB→121MB），另跑 npm cache clean；清后首次 apt 操作需 update 重拉索引。</string>
+    <string name="dev_diag_title">诊断</string>
+    <string name="dev_scan_fail">✗ 扫描失败：%1$s</string>
+    <string name="dev_scan_btn">BinDoctor 立即扫描</string>
+    <string name="dev_scan_busy">扫描断链中…（环境内 find；有断链时宿主拉包修复）</string>
+    <string name="dev_sessions_title">会话诊断</string>
+    <string name="dev_sessions_refresh">刷新会话诊断</string>
+    <string name="dev_reading">读取中…</string>
+    <string name="dev_no_sessions">无会话（注册表 terminal-sessions.json 为空）</string>
+    <string name="dev_registry_count">注册表 %1$d 个会话：</string>
+    <string name="dev_session_row">%1$s :%2$d %3$s ttyd=%4$s holder=%5$s</string>
+    <string name="dev_port_alive">端口✓</string>
+    <string name="dev_port_dead">端口✗</string>
+    <string name="dev_not_running">不在</string>
+    <string name="dev_tl_title">时间线</string>
+    <string name="dev_tl_export_fail">✗ 导出失败：%1$s</string>
+    <string name="dev_tl_export_btn">导出时间线（timeline.jsonl → Downloads/Drydock）</string>
+    <string name="dev_tl_export_busy">导出中…</string>
+    <string name="dev_tl_view_btn">时间线页内视图（最近 100 条）</string>
+    <string name="dev_tl_view_busy">读取时间线…</string>
+    <string name="dev_tl_count">显示 %1$d 条 / 共 %2$d 条</string>
+    <string name="dev_ver_title">版本</string>
+    <string name="dev_ver_body">Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu %1$s · 配方 %2$s</string>
+    <string name="dev_ver_not_deployed">未部署</string>
+    <string name="dev_ver_no_recipes">未安装</string>
+    <string name="dev_wl_none">无记录</string>
+    <string name="dev_wl_held">已持有</string>
+    <string name="dev_wl_not_held">未持有</string>
+    <string name="dev_env_alive">WakeLock %1$s · :env 进程在</string>
+    <string name="dev_env_dead">WakeLock %1$s · :env 进程不在</string>
+</resources>

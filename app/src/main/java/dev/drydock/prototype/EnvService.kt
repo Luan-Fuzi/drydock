@@ -52,15 +52,15 @@ class EnvService : Service() {
         // importance 建后不可改：删旧通道重建（原型期无用户自定义可丢）
         nm.deleteNotificationChannel(CHANNEL_FG)
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_FG, "环境宿主", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_FG, getString(R.string.notif_channel_fg), NotificationManager.IMPORTANCE_LOW),
         )
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ALERT, "会话提醒", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CHANNEL_ALERT, getString(R.string.notif_channel_alert), NotificationManager.IMPORTANCE_DEFAULT),
         )
         val notification: Notification =
             Notification.Builder(this, CHANNEL_FG)
-                .setContentTitle("Drydock 环境运行中")
-                .setContentText("Linux 会话与终端服务")
+                .setContentTitle(getString(R.string.notif_fg_title))
+                .setContentText(getString(R.string.notif_fg_text))
                 // 通知小图标按平台规范给白色剪影（Q9：HyperOS 强制单色化，彩色小图标
                 // 三种形态——vector/彩色 PNG/运行时位图——均被同一管线剥成 alpha 剪影，
                 // 不为 OEM 做专用适配；24dp 加粗锚保证状态栏与卡片小尺寸下可辨）
@@ -208,8 +208,8 @@ class EnvService : Service() {
         }
         alert(
             getSystemService(NotificationManager::class.java),
-            "任务曾被系统暂停约 $min 分钟",
-            "环境与仪器同时停摆（疑似省电策略冻结），现已自动恢复；若频繁出现请检查省电策略",
+            getString(R.string.notif_resumed_title, min),
+            getString(R.string.notif_resumed_text),
         )
     }
 
@@ -222,13 +222,13 @@ class EnvService : Service() {
                 if (b.name !in notifiedDead) {
                     notifiedDead.add(b.name)
                     notifiedSilent.remove(b.name)
-                    alert(nm, "会话 $shown 已退出", "环境进程结束；重开终端会重建会话")
+                    alert(nm, getString(R.string.notif_exit_title, shown), getString(R.string.notif_exit_text))
                 }
             } else {
                 notifiedDead.remove(b.name)
                 if (b.silentMin >= SILENT_ALERT_MIN && b.name !in notifiedSilent) {
                     notifiedSilent.add(b.name)
-                    alert(nm, "会话 $shown 静默 ${b.silentMin} 分钟", "PTY 无输出（可能任务结束或等待输入）")
+                    alert(nm, getString(R.string.notif_silent_title, shown, b.silentMin), getString(R.string.notif_silent_text))
                 } else if (b.silentMin == 0L) {
                     notifiedSilent.remove(b.name)
                 }

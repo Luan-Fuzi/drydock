@@ -70,7 +70,7 @@ object AgentManager {
             var lastErr = ""
             for (mirror in NODE_MIRRORS) {
                 try {
-                    onLog("下载 ${mirror.substringAfter("//").substringBefore("/")}…")
+                    onLog(context.getString(R.string.agent_node_download, mirror.substringAfter("//").substringBefore("/")))
                     RootfsManager.download(URL(mirror + NODE_TARBALL), tarball) { }
                     if (RootfsManager.sha256(tarball) == NODE_SHA256) {
                         ok = true
@@ -82,9 +82,9 @@ object AgentManager {
                     Log.w(TAG, "下载失败换下一镜像：$lastErr")
                 }
             }
-            if (!ok) return RootfsManager.ExecResult(1, "node 下载失败：$lastErr")
+            if (!ok) return RootfsManager.ExecResult(1, context.getString(R.string.agent_node_fail, lastErr))
         }
-        onLog("node tarball 校验通过，环境内安装…")
+        onLog(context.getString(R.string.agent_node_install))
         val nodeDir = NODE_TARBALL.removeSuffix(".tar.gz")
         val cmd = """
             . /root/.drydock/mirrors 2>/dev/null || true
@@ -161,7 +161,7 @@ object AgentManager {
                 Landing.toDownloads(context, report).toString()
             } catch (e: Exception) {
                 Log.e(TAG, "落袋失败", e)
-                "落袋失败: $e"
+                context.getString(R.string.agent_stash_fail, e.toString())
             }
         } else null
         return Av3Result(
