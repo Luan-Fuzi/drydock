@@ -25,6 +25,11 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug --console=plain --stacktrace
 
+      # i18n 批 2 起：翻译完整性门禁——values/ 与 values-zh/ 键集失配即红
+      # （MissingTranslation / ExtraTranslation 双向，build.gradle.kts lint block）
+      - name: Lint（翻译完整性门禁）
+        run: ./gradlew :app:lintDebug --console=plain --stacktrace
+
       - name: 断言 jniLibs 引擎产物
         run: |
           ls -la app/src/main/jniLibs/arm64-v8a/

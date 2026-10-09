@@ -27,6 +27,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontFamily
@@ -148,7 +149,7 @@ internal fun FilePane() {
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { menuTarget = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { menuTarget = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 
@@ -182,9 +183,9 @@ internal fun FilePane() {
                     } else {
                         Toast.makeText(context, "重命名失败", Toast.LENGTH_SHORT).show()
                     }
-                }, modifier = Modifier.testTag("dlg_rename_ok")) { Text("确定") }
+                }, modifier = Modifier.testTag("dlg_rename_ok")) { Text(stringResource(R.string.common_ok)) }
             },
-            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 
@@ -201,7 +202,7 @@ internal fun FilePane() {
                     if (ok) tick++ else Toast.makeText(context, "删除失败", Toast.LENGTH_SHORT).show()
                 }, modifier = Modifier.testTag("dlg_delete_ok")) { Text("删除") }
             },
-            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 }

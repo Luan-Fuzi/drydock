@@ -1,0 +1,506 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
+
+    <issue
+        id="ScopedStorage"
+        message="The Google Play store has a policy that limits usage of MANAGE_EXTERNAL_STORAGE"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.MANAGE_EXTERNAL_STORAGE&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="11"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 30 (current min is 29): `android.provider.Settings#ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`"
+        errorLine1="                                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,"
+        errorLine2="                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/BindSettingsPage.kt"
+            line="50"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 33 (current min is 29): `android.content.Context#RECEIVER_NOT_EXPORTED`"
+        errorLine1="        registerReceiver(screenReceiver, sf, Context.RECEIVER_NOT_EXPORTED)"
+        errorLine2="                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/EnvService.kt"
+            line="147"
+            column="46"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 33 (current min is 29): `android.content.Context#RECEIVER_NOT_EXPORTED`"
+        errorLine1="        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), Context.RECEIVER_NOT_EXPORTED)"
+        errorLine2="                                                                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/EnvService.kt"
+            line="167"
+            column="88"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 30 (current min is 29): `android.os.Environment#isExternalStorageManager`"
+        errorLine1="        val permOk = remember(tick) { android.os.Environment.isExternalStorageManager() }"
+        errorLine2="                                                             ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/BindSettingsPage.kt"
+            line="36"
+            column="62"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 30 (current min is 29): `android.os.Environment#isExternalStorageManager`"
+        errorLine1="        if (enabled(context) &amp;&amp; android.os.Environment.isExternalStorageManager()) {"
+        errorLine2="                                                       ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/BindStore.kt"
+            line="26"
+            column="56"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 30 (current min is 29): `android.view.WindowInsets#CONSUMED`"
+        errorLine1="                WindowInsets.CONSUMED"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
+            line="308"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 30 (current min is 29): `android.view.WindowInsets#CONSUMED`"
+        errorLine1="                android.view.WindowInsets.CONSUMED"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
+            line="770"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="SimpleDateFormat"
+        message="To get local formatting use `getDateInstance()`, `getDateTimeInstance()`, or `getTimeInstance()`, or use `new SimpleDateFormat(String template, Locale locale)` with for example `Locale.US` for ASCII dates."
+        errorLine1="        val stamp = java.text.SimpleDateFormat(&quot;yyyyMMdd-HHmmss&quot;).format(java.util.Date())"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/Bench.kt"
+            line="120"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="SimpleDateFormat"
+        message="To get local formatting use `getDateInstance()`, `getDateTimeInstance()`, or `getTimeInstance()`, or use `new SimpleDateFormat(String template, Locale locale)` with for example `Locale.US` for ASCII dates."
+        errorLine1="        val stamp = java.text.SimpleDateFormat(&quot;yyyyMMdd-HHmmss&quot;).format(java.util.Date())"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/FileBridge.kt"
+            line="43"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="BatteryLife"
+        message="Use of `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` violates the Play Store Content Policy regarding acceptable use cases, as described in https://developer.android.com/training/monitoring-device-state/doze-standby.html"
+        errorLine1="                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,"
+        errorLine2="                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/WizardActivity.kt"
+            line="371"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="AndroidGradlePluginVersion"
+        message="A newer version of com.android.application than 8.13.2 is available: 9.4.1"
+        errorLine1="agp = &quot;8.13.2&quot;"
+        errorLine2="      ~~~~~~~~">
+        <location
+            file="$HOME/work/drydock/.worktrees/i18n-b2/gradle/libs.versions.toml"
+            line="2"
+            column="7"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.activity:activity-compose than 1.11.0 is available: 1.13.0"
+        errorLine1="activityCompose = &quot;1.11.0&quot;"
+        errorLine2="                  ~~~~~~~~">
+        <location
+            file="$HOME/work/drydock/.worktrees/i18n-b2/gradle/libs.versions.toml"
+            line="5"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.compose:compose-bom than 2025.09.00 is available: 2026.09.00"
+        errorLine1="composeBom = &quot;2025.09.00&quot;"
+        errorLine2="             ~~~~~~~~~~~~">
+        <location
+            file="$HOME/work/drydock/.worktrees/i18n-b2/gradle/libs.versions.toml"
+            line="6"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="NewerVersionAvailable"
+        message="A newer version of org.jetbrains.kotlin.android than 2.2.21 is available: 2.4.21"
+        errorLine1="kotlin = &quot;2.2.21&quot;"
+        errorLine2="         ~~~~~~~~">
+        <location
+            file="$HOME/work/drydock/.worktrees/i18n-b2/gradle/libs.versions.toml"
+            line="3"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="NewerVersionAvailable"
+        message="A newer version of org.jetbrains.kotlin.plugin.compose than 2.2.21 is available: 2.4.21"
+        errorLine1="kotlin = &quot;2.2.21&quot;"
+        errorLine2="         ~~~~~~~~">
+        <location
+            file="$HOME/work/drydock/.worktrees/i18n-b2/gradle/libs.versions.toml"
+            line="3"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="ChromeOsAbiSupport"
+        message="Missing x86_64 ABI support for ChromeOS"
+        errorLine1="            abiFilters += listOf(&quot;arm64-v8a&quot;)"
+        errorLine2="                          ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="18"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="ExportedReceiver"
+        message="Exported receiver does not require permission"
+        errorLine1="        &lt;receiver"
+        errorLine2="         ~~~~~~~~">
+        <location
+            file="src/debug/AndroidManifest.xml"
+            line="6"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="DataExtractionRules"
+        message="The attribute `android:allowBackup` is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute `android:dataExtractionRules` specifying an `@xml` resource which configures cloud backups and device transfers on Android 12 and higher."
+        errorLine1="        android:allowBackup=&quot;false&quot;>"
+        errorLine2="                             ~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="19"
+            column="30"/>
+    </issue>
+
+    <issue
+        id="WakelockTimeout"
+        message="Provide a timeout when requesting a wakelock with `PowerManager.Wakelock.acquire(long timeout)`. This will ensure the OS will cleanup any wakelocks that last longer than you intend, and will save your user&apos;s battery."
+        errorLine1="                acquire()"
+        errorLine2="                ~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/EnvService.kt"
+            line="77"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; `SDK_INT` is never &lt; 29"
+        errorLine1="            if (android.os.Build.VERSION.SDK_INT &lt; 29) return"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
+            line="626"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 29. Merge all the resources in this folder into `mipmap-anydpi`.">
+        <location
+            file="src/main/res/mipmap-anydpi-v26"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var tick by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/BindSettingsPage.kt"
+            line="25"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var tick by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/EndpointSettingsPage.kt"
+            line="36"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var tick by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/FilePane.kt"
+            line="54"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }"
+        errorLine2="                                                                    ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/HomeActivity.kt"
+            line="168"
+            column="69"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var tick by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/MirrorSettingsPage.kt"
+            line="32"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var tick by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/SessionPane.kt"
+            line="72"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="        var termFont by remember { mutableStateOf(TermPrefs.fontSize(context)) }"
+        errorLine2="                                   ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalSettingsPage.kt"
+            line="20"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="        var termRows by remember { mutableStateOf(TermPrefs.scrollback(context)) }"
+        errorLine2="                                   ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalSettingsPage.kt"
+            line="21"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var step by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/WizardActivity.kt"
+            line="133"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var tick by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/WizardActivity.kt"
+            line="349"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var mode by remember { mutableStateOf(0) }"
+        errorLine2="                           ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/WizardActivity.kt"
+            line="457"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UsableSpace"
+        message="Consider also using `StorageManager#getAllocatableBytes` and `allocateBytes` which will consider clearable cached data"
+        errorLine1="            add(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES, root.usableSpace)"
+        errorLine2="                                                                    ~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/WorkspaceProvider.kt"
+            line="82"
+            column="69"/>
+    </issue>
+
+    <issue
+        id="ViewConstructor"
+        message="Custom view `TerminalTouchLayout` is missing constructor used by tools: `(Context)` or `(Context,AttributeSet)` or `(Context,AttributeSet,int)`"
+        errorLine1="private class TerminalTouchLayout("
+        errorLine2="              ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
+            line="38"
+            column="15"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                                    android.net.Uri.parse(&quot;package:dev.drydock.prototype&quot;),"
+        errorLine2="                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/BindSettingsPage.kt"
+            line="51"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        context.getSharedPreferences(&quot;drydock&quot;, Context.MODE_PRIVATE).edit()"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/BindStore.kt"
+            line="20"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs(context).edit().putString(&quot;endpoints&quot;, arr.toString()).apply()"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/EndpointStore.kt"
+            line="67"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        prefs(context).edit().putBoolean(&quot;wizard_done&quot;, true).apply()"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/EndpointStore.kt"
+            line="129"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        context.getSharedPreferences(&quot;drydock&quot;, Context.MODE_PRIVATE)"
+        errorLine2="        ^">
+        <location
+            file="src/main/java/dev/drydock/prototype/RecipeManager.kt"
+            line="66"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        p(context).edit()"
+        errorLine2="        ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TermPrefs.kt"
+            line="22"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        uiPrefs.edit().putBoolean(&quot;keybar_collapsed&quot;, !show).apply()"
+        errorLine2="        ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
+            line="438"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `SharedPreferences.edit` instead?"
+        errorLine1="        context.getSharedPreferences(&quot;drydock&quot;, Context.MODE_PRIVATE)"
+        errorLine2="        ^">
+        <location
+            file="src/main/java/dev/drydock/prototype/ThemeStore.kt"
+            line="26"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                    android.net.Uri.parse(&quot;package:dev.drydock.prototype&quot;),"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/WizardActivity.kt"
+            line="372"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="UseKtx"
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="                            android.net.Uri.parse(&quot;package:dev.drydock.prototype&quot;),"
+        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/dev/drydock/prototype/WizardActivity.kt"
+            line="380"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="ClickableViewAccessibility"
+        message="`onTouch` lambda should call `View#performClick` when a click is detected"
+        errorLine1="        v.setOnTouchListener { view, e ->"
+        errorLine2="                             ^">
+        <location
+            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
+            line="632"
+            column="30"/>
+    </issue>
+
+</issues>

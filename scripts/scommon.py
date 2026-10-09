@@ -44,9 +44,12 @@ def shell(*args, timeout=30):
 def device_identity():
     def prop(k):
         return shell("getprop", k).strip()
-    # Android 13+ 系统 locale 真实在 settings 层（persist prop 只读且可能为空），
-    # 先读 system_locales；prop 兜底真机老系统
-    locale = shell("settings", "get", "system", "system_locales").strip() or prop("persist.sys.locale")
+    # app 生效 locale 优先 per-app（cmd locale，Android 13+ 官方通道，即时生效）；
+    # 其次全局 settings system_locales（注意：手动 settings put 需系统重启才被
+    # 应用，仅写不重启时该值不代表实际配置——批 2 实测）；prop 兜底老系统
+    app_loc = shell("cmd", "locale", "get-app-locales", PKG).strip()
+    locale = (app_loc or shell("settings", "get", "system", "system_locales").strip()
+              or prop("persist.sys.locale"))
     return {
         "serial": resolved_serial(),
         "model": prop("ro.product.model"),
@@ -54,7 +57,7 @@ def device_identity():
         "android": prop("ro.build.version.release"),
         "incremental": prop("ro.build.version.incremental"),
         "hyperos": prop("ro.mi.os.version.name") or prop("ro.miui.ui.version.name"),
-        # i18n 批 1：脚本语言无关，verdict 记录当轮系统 locale 作证据
+        # i18n 批 1：脚本语言无关，verdict 记录当轮 app 生效 locale 作证据
         "locale": locale or "unknown",
     }
 

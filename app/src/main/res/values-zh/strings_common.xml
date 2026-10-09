@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 中文资源（系统 locale 为 zh* 时生效，简繁均回落到本文件——原文案即简体）。
+     键集必须与 values/strings_common.xml 一一对应（CI MissingTranslation 门禁）。 -->
+<resources>
+    <string name="common_cancel">取消</string>
+    <string name="common_ok">确定</string>
+</resources>
