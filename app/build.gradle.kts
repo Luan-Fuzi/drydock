@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.drydock.prototype"
-        minSdk = 29
+        minSdk = 30
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
@@ -52,9 +52,8 @@ android {
         // 缺（AAPT2 还会剥掉无默认值的资源，getString 运行时崩）。两方向均已
         // 阴性对照实证拦截（见批 2 提交信息）。
         fatal += listOf("MissingTranslation", "ExtraTranslation")
-        // 既有问题固定进基线（4 处 Error 级 NewApi：isExternalStorageManager /
-        // WindowInsets.CONSUMED 需 API 30 而 minSdk 29——批 2 前就存在，是否修
-        // 另行决定）；基线外的增量问题照常红。
+        // 既有问题固定进基线（余 2 处 Error 级 NewApi：setApplicationLocales 运行时
+        // 已按 LocaleManager 非空守卫，lint 识别不了）；基线外的增量问题照常红。
         baseline = file("lint-baseline.xml")
     }
 }

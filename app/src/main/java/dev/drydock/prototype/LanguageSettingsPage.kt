@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 /** 语言二级页（i18n 后续）：三选一——跟随系统 / 中文 / English。写入平台 per-app
  *  locale（LocaleManager，API 33+），与系统设置的「应用语言」同存储互相同步，
  *  系统广播配置变化、界面即时重建；选「跟随系统」= 清空 per-app 回落系统语言。
- *  minSdk 29 < 33 的设备不支持本 API：点选时如实提示走系统设置。 */
+ *  API 33 以下的设备不支持本 API：点选时如实提示走系统设置。 */
 @Composable
 internal fun LanguageSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current

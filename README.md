@@ -8,7 +8,7 @@
 
 ### 安装
 
-从 [Releases](https://github.com/Luan-Fuzi/drydock/releases) 下载最新 APK 安装。要求 arm64 设备、Android 10+，安装时允许未知来源。
+从 [Releases](https://github.com/Luan-Fuzi/drydock/releases) 下载最新 APK 安装。要求 arm64 设备、Android 11+，安装时允许未知来源。
 
 自行构建：JDK 17 + Android SDK，执行 `./gradlew assembleDebug`，产物在 `app/build/outputs/apk/debug/`。CI 在每次 push 到 main/dev 时构建 APK 并上传 artifact，也可从 Actions 页取包。
 

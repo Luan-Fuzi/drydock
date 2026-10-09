@@ -3,7 +3,6 @@ package dev.drydock.prototype
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Insets
-import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -277,34 +276,28 @@ class TerminalActivity : ComponentActivity() {
         val root = FrameLayout(this).apply {
             setBackgroundColor(TERM_BG)
             setOnApplyWindowInsetsListener { v, insets ->
-                if (Build.VERSION.SDK_INT >= 30) {
-                    val sys = insets.getInsets(
-                        WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                    val ime = insets.getInsets(WindowInsets.Type.ime())
-                    val imeNow = ime.bottom
-                    val pad = when {
-                        imeNow == appliedImePad ->
-                            if (appliedImePad > 0) Insets.max(sys, ime) else sys
-                        imeNow < appliedImePad -> {
-                            appliedImePad = imeNow
-                            nudgeHideIme() // 收起时补一记 hide：WeType 自带折叠键可能留幻影窗口
-                            sys
-                        }
-                        SystemClock.uptimeMillis() - lastTerminalTouchAt < IME_INTENT_GRACE_MS -> {
-                            appliedImePad = imeNow
-                            Insets.max(sys, ime)
-                        }
-                        else -> {
-                            nudgeHideIme()
-                            sys
-                        }
+                val sys = insets.getInsets(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                val ime = insets.getInsets(WindowInsets.Type.ime())
+                val imeNow = ime.bottom
+                val pad = when {
+                    imeNow == appliedImePad ->
+                        if (appliedImePad > 0) Insets.max(sys, ime) else sys
+                    imeNow < appliedImePad -> {
+                        appliedImePad = imeNow
+                        nudgeHideIme() // 收起时补一记 hide：WeType 自带折叠键可能留幻影窗口
+                        sys
                     }
-                    v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
-                } else {
-                    @Suppress("DEPRECATION")
-                    val pad = insets.systemWindowInsets
-                    v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
+                    SystemClock.uptimeMillis() - lastTerminalTouchAt < IME_INTENT_GRACE_MS -> {
+                        appliedImePad = imeNow
+                        Insets.max(sys, ime)
+                    }
+                    else -> {
+                        nudgeHideIme()
+                        sys
+                    }
                 }
+                v.setPadding(pad.left, pad.top, pad.right, pad.bottom)
                 WindowInsets.CONSUMED
             }
         }
@@ -602,7 +595,7 @@ class TerminalActivity : ComponentActivity() {
      *  不走 setOnClickListener。ACTION_CANCEL 只按拖动收尾处理、绝不补点按——
      *  2026-10-08 实锤：浮钮贴右缘，系统返回手势抢走触摸流时最后送来的是 CANCEL，
      *  当点按处理会弹错菜单。配套把浮钮矩形加进 systemGestureExclusionRects
-     *  （minSdk 29），从浮钮起手的拖动不再被抢。
+     *  ，从浮钮起手的拖动不再被抢。
      *  半区按压反馈：isPressed 驱动前景 ripple + 缩放 0.92（真机反馈「点击无反馈」
      *  的正主），拖动判定成立即还原；UP 点按补一记 VIRTUAL_KEY 触感。 */
     private fun makeFabDraggable(
@@ -623,7 +616,6 @@ class TerminalActivity : ComponentActivity() {
             pressedHalf = null
         }
         fun excludeFromGestures() {
-            if (android.os.Build.VERSION.SDK_INT < 29) return
             v.setSystemGestureExclusionRects(
                 listOf(android.graphics.Rect(0, 0, v.width, v.height)),
             )
@@ -714,7 +706,7 @@ class TerminalActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus || Build.VERSION.SDK_INT < 30) return
+        if (!hasFocus) return
         val ime = window.decorView.rootWindowInsets?.getInsets(WindowInsets.Type.ime()) ?: return
         // 回前台时 ime 仍悬着且无点按背书：与 insets 监听同一幻影判据，探钉清场
         if (ime.bottom > appliedImePad &&
@@ -756,17 +748,11 @@ class TerminalActivity : ComponentActivity() {
             setPadding(4.dp(), 10.dp(), 4.dp(), 8.dp())
             // 面板自身避让系统栏：底部加导航条/手势条高度，顶部防挖孔
             setOnApplyWindowInsetsListener { v, ins ->
-                if (android.os.Build.VERSION.SDK_INT >= 30) {
-                    val sys = ins.getInsets(
-                        android.view.WindowInsets.Type.systemBars() or
-                            android.view.WindowInsets.Type.displayCutout(),
-                    )
-                    v.setPadding(4.dp(), 10.dp() + sys.top, 4.dp(), 8.dp() + sys.bottom)
-                } else {
-                    @Suppress("DEPRECATION")
-                    val p = ins.systemWindowInsets
-                    v.setPadding(4.dp(), 10.dp() + p.top, 4.dp(), 8.dp() + p.bottom)
-                }
+                val sys = ins.getInsets(
+                    android.view.WindowInsets.Type.systemBars() or
+                        android.view.WindowInsets.Type.displayCutout(),
+                )
+                v.setPadding(4.dp(), 10.dp() + sys.top, 4.dp(), 8.dp() + sys.bottom)
                 android.view.WindowInsets.CONSUMED
             }
         }

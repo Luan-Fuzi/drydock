@@ -14,18 +14,7 @@
 
     <issue
         id="InlinedApi"
-        message="Field requires API level 30 (current min is 29): `android.provider.Settings#ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`"
-        errorLine1="                                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,"
-        errorLine2="                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/dev/drydock/prototype/BindSettingsPage.kt"
-            line="49"
-            column="37"/>
-    </issue>
-
-    <issue
-        id="InlinedApi"
-        message="Field requires API level 33 (current min is 29): `android.content.Context#RECEIVER_NOT_EXPORTED`"
+        message="Field requires API level 33 (current min is 30): `android.content.Context#RECEIVER_NOT_EXPORTED`"
         errorLine1="        registerReceiver(screenReceiver, sf, Context.RECEIVER_NOT_EXPORTED)"
         errorLine2="                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -36,7 +25,7 @@
 
     <issue
         id="InlinedApi"
-        message="Field requires API level 33 (current min is 29): `android.content.Context#RECEIVER_NOT_EXPORTED`"
+        message="Field requires API level 33 (current min is 30): `android.content.Context#RECEIVER_NOT_EXPORTED`"
         errorLine1="        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), Context.RECEIVER_NOT_EXPORTED)"
         errorLine2="                                                                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -47,68 +36,24 @@
 
     <issue
         id="NewApi"
-        message="Call requires API level 30 (current min is 29): `android.os.Environment#isExternalStorageManager`"
-        errorLine1="        val permOk = remember(tick) { android.os.Environment.isExternalStorageManager() }"
-        errorLine2="                                                             ~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/dev/drydock/prototype/BindSettingsPage.kt"
-            line="35"
-            column="62"/>
-    </issue>
-
-    <issue
-        id="NewApi"
-        message="Call requires API level 30 (current min is 29): `android.os.Environment#isExternalStorageManager`"
-        errorLine1="        if (enabled(context) &amp;&amp; android.os.Environment.isExternalStorageManager()) {"
-        errorLine2="                                                       ~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/dev/drydock/prototype/BindStore.kt"
-            line="26"
-            column="56"/>
-    </issue>
-
-    <issue
-        id="NewApi"
-        message="Call requires API level 33 (current min is 29): `android.app.LocaleManager#setApplicationLocales`"
+        message="Call requires API level 33 (current min is 30): `android.app.LocaleManager#setApplicationLocales`"
         errorLine1="        lm.applicationLocales = if (tag == &quot;system&quot;) LocaleList.getEmptyLocaleList()"
         errorLine2="           ~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/dev/drydock/prototype/LanguageSettingsPage.kt"
-            line="43"
+            line="55"
             column="12"/>
     </issue>
 
     <issue
         id="NewApi"
-        message="Call requires API level 33 (current min is 29): `android.app.LocaleManager#setApplicationLocales`"
+        message="Call requires API level 33 (current min is 30): `android.app.LocaleManager#setApplicationLocales`"
         errorLine1="        lm.applicationLocales = if (tag == &quot;system&quot;) LocaleList.getEmptyLocaleList()"
         errorLine2="                              ~">
         <location
             file="src/main/java/dev/drydock/prototype/LanguageSettingsPage.kt"
-            line="43"
+            line="55"
             column="31"/>
-    </issue>
-
-    <issue
-        id="NewApi"
-        message="Field requires API level 30 (current min is 29): `android.view.WindowInsets#CONSUMED`"
-        errorLine1="                WindowInsets.CONSUMED"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
-            line="308"
-            column="17"/>
-    </issue>
-
-    <issue
-        id="NewApi"
-        message="Field requires API level 30 (current min is 29): `android.view.WindowInsets#CONSUMED`"
-        errorLine1="                android.view.WindowInsets.CONSUMED"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
-            line="770"
-            column="17"/>
     </issue>
 
     <issue
@@ -135,7 +80,7 @@
 
     <issue
         id="UnusedAttribute"
-        message="Attribute `localeConfig` is only used in API level 33 and higher (current min is 29)"
+        message="Attribute `localeConfig` is only used in API level 33 and higher (current min is 30)"
         errorLine1="        android:localeConfig=&quot;@xml/locales_config&quot;"
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
@@ -161,7 +106,7 @@
         errorLine1="agp = &quot;8.13.2&quot;"
         errorLine2="      ~~~~~~~~">
         <location
-            file="$HOME/work/drydock/.worktrees/lang-sw/gradle/libs.versions.toml"
+            file="$HOME/work/drydock/gradle/libs.versions.toml"
             line="2"
             column="7"/>
     </issue>
@@ -172,7 +117,7 @@
         errorLine1="activityCompose = &quot;1.11.0&quot;"
         errorLine2="                  ~~~~~~~~">
         <location
-            file="$HOME/work/drydock/.worktrees/lang-sw/gradle/libs.versions.toml"
+            file="$HOME/work/drydock/gradle/libs.versions.toml"
             line="5"
             column="19"/>
     </issue>
@@ -183,7 +128,7 @@
         errorLine1="composeBom = &quot;2025.09.00&quot;"
         errorLine2="             ~~~~~~~~~~~~">
         <location
-            file="$HOME/work/drydock/.worktrees/lang-sw/gradle/libs.versions.toml"
+            file="$HOME/work/drydock/gradle/libs.versions.toml"
             line="6"
             column="14"/>
     </issue>
@@ -194,7 +139,7 @@
         errorLine1="kotlin = &quot;2.2.21&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/work/drydock/.worktrees/lang-sw/gradle/libs.versions.toml"
+            file="$HOME/work/drydock/gradle/libs.versions.toml"
             line="3"
             column="10"/>
     </issue>
@@ -205,7 +150,7 @@
         errorLine1="kotlin = &quot;2.2.21&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/work/drydock/.worktrees/lang-sw/gradle/libs.versions.toml"
+            file="$HOME/work/drydock/gradle/libs.versions.toml"
             line="3"
             column="10"/>
     </issue>
@@ -366,18 +311,7 @@
 
     <issue
         id="ObsoleteSdkInt"
-        message="Unnecessary; `SDK_INT` is never &lt; 29"
-        errorLine1="            if (android.os.Build.VERSION.SDK_INT &lt; 29) return"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
-            line="626"
-            column="17"/>
-    </issue>
-
-    <issue
-        id="ObsoleteSdkInt"
-        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 29. Merge all the resources in this folder into `mipmap-anydpi`.">
+        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 30. Merge all the resources in this folder into `mipmap-anydpi`.">
         <location
             file="src/main/res/mipmap-anydpi-v26"/>
     </issue>
@@ -587,7 +521,7 @@
         errorLine2="              ~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
-            line="38"
+            line="37"
             column="15"/>
     </issue>
 
@@ -664,7 +598,7 @@
         errorLine2="        ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
-            line="438"
+            line="431"
             column="9"/>
     </issue>
 
@@ -708,7 +642,7 @@
         errorLine2="                             ^">
         <location
             file="src/main/java/dev/drydock/prototype/TerminalActivity.kt"
-            line="632"
+            line="624"
             column="30"/>
     </issue>
 
