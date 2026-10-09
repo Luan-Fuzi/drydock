@@ -1,6 +1,6 @@
 # Drydock
 
-运行在安卓系统上的 coding agent 宿主（host）：免 root 的本地 Linux 环境 + agent 任务调度
+在安卓手机上开箱即用的 coding agent 环境：免 root 的本地 Linux（Ubuntu）+ 原生终端，锁屏后任务继续运行
 
 ## 使用说明
 
