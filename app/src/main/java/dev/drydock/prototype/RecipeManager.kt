@@ -81,9 +81,9 @@ object RecipeManager {
     fun ensure(context: Context, recipe: Recipe, onLog: (String) -> Unit = {}): RootfsManager.ExecResult {
         val node = AgentManager.ensureNodeLayer(context, onLog)
         if (!node.output.contains("NODE_RC=0")) {
-            return RootfsManager.ExecResult(1, "Node 层失败：${node.output.takeLast(300)}")
+            return RootfsManager.ExecResult(1, context.getString(R.string.recipe_node_fail, node.output.takeLast(300)))
         }
-        onLog("安装 ${recipe.title}（npm 最新版）…")
+        onLog(context.getString(R.string.recipe_installing, recipe.title))
         val toolsSh = if (recipe.aptTools.isEmpty()) "" else """
             TOOLS_RC=0
             command -v rg >/dev/null 2>&1 && command -v fd >/dev/null 2>&1 || {

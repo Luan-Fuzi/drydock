@@ -32,6 +32,7 @@ SAMPLES = {
         "DLG": {"dlg_create": "Create"},
         "SETTINGS": {"settings_appearance": "Appearance", "theme_light": "Light",
                      "theme_system": "Follow system"},
+        "WIZARD": {"wizard_step_welcome": "Welcome to Drydock", "wizard_start": "Start setup"},
     },
     "zh": {
         "HOME": {"nav_sessions": "会话", "nav_files": "文件", "nav_settings": "设置",
@@ -39,6 +40,7 @@ SAMPLES = {
         "DLG": {"dlg_create": "创建"},
         "SETTINGS": {"settings_appearance": "外观", "theme_light": "浅色",
                      "theme_system": "跟随系统"},
+        "WIZARD": {"wizard_step_welcome": "欢迎使用 Drydock", "wizard_start": "开始配置"},
     },
 }
 
@@ -81,6 +83,16 @@ def main():
                 if tag != "settings_appearance":
                     check(tag, "SETTINGS")
             sc.shell("input", "keyevent", "KEYCODE_BACK")
+            time.sleep(1)
+
+    # 向导层（设置页入口 → 欢迎页 → 左上返回退出）
+    if "WIZARD" in expect:
+        if not sc.res_hit("settings_wizard") and sc.tap_res("nav_settings", 10):
+            sc.wait_res("settings_wizard", 15)
+        if sc.tap_res("settings_wizard", 15) and sc.wait_res("wizard_step_welcome", 20):
+            for tag in expect["WIZARD"]:
+                check(tag, "WIZARD")
+            sc.tap_res("wizard_back", 10)
             time.sleep(1)
 
     r["pass"] = all(c["got"] == c["expect"] for c in r["checks"].values())
