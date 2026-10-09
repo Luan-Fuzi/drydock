@@ -47,7 +47,7 @@ def bring_up_terminal():
     """app 冷启后的 UI 路径：主页 → 会话卡片接回（空表走新建对话框）。
     （「安装终端层」手动页随 MainActivity 移除——终端层由新建会话自动安装。）"""
     sc.shell("am", "start", "-n", sc.MAIN_ACTIVITY)
-    if not sc.wait_text("新建会话", 60):
+    if not sc.wait_res("home_new_session", 60):
         sys.exit("主页未出现（锁屏？请解锁后重试）")
     if not sc.open_terminal_session():
         sys.exit("打不开终端（卡片与新建对话框都不可用）")
@@ -76,7 +76,7 @@ def main():
     print("\n== tier1：am kill（前台核对 → HOME 切后台 → am kill）")
     if not sc.foreground_is_drydock():
         sc.shell("am", "start", "-n", sc.MAIN_ACTIVITY)
-        sc.wait_text("Drydock 原型", 30)
+        sc.wait_res("home_new_session", 30)
     if not sc.foreground_is_drydock():
         sys.exit("前台不是 drydock，拒绝发 HOME（真机纪律：输入限界）")
     sc.shell("input", "keyevent", "KEYCODE_HOME")

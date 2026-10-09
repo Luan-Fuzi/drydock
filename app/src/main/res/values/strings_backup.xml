@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 7：备份与升级族键（Backup/Update 二级页、RootfsManager 回流 UI 的
+     错误与进度模板、BinDoctor 扫描报告）。环境内脚本 echo 不在此列。 -->
+<resources>
+    <!-- 备份与导出页 -->
+    <string name="backup_export_btn">Export workspace &amp; config (tar.gz)</string>
+    <string name="backup_exporting">Exporting… (about 1 minute)</string>
+    <string name="backup_export_ok">✓ Exported to Downloads/Drydock (%1$s)</string>
+    <string name="backup_export_fail">✗ Export failed: %1$s</string>
+    <string name="backup_restore_btn">Restore from tar.gz…</string>
+    <string name="backup_desc">Exports the /root workspace and drydock config (system layers are replayed per recipe version and not included); the file lands in Downloads/Drydock/drydock-env-export.tar.gz; it contains ~/.drydock/env.sh — environment variables you stored (including keys) go into the export.\nRestore merges into the current environment: new files are written directly, same-name files with different content are asked one by one (overwrite all / skip all); if the environment is not deployed it is deployed first.</string>
+    <string name="backup_dlg1_title">Restore from tar.gz</string>
+    <string name="backup_dlg1_text">Selected %1$s (%2$s).\n\nThe backup will be merged into the current environment; existing files with the same name will ask to overwrite or skip.\n⚠ ~/.drydock/env.sh from the backup enters the environment — keys stored in it come along.</string>
+    <string name="backup_dlg1_continue">Continue</string>
+    <string name="backup_dlg2_title">Start restore?</string>
+    <string name="backup_dlg2_text">Restore rewrites files inside the environment and cannot be undone; consider closing running sessions first. If the Linux environment is not deployed it will be deployed automatically first (about 1 minute).</string>
+    <string name="backup_dlg2_confirm">I understand, start restore</string>
+    <string name="backup_conflict_title">Name conflict</string>
+    <string name="backup_conflict_desc">Both the import package and the current environment have this file, with different content:</string>
+    <string name="backup_conflict_more">%1$d more name conflicts after this one</string>
+    <string name="backup_conflict_all_overwrite">Overwrite all</string>
+    <string name="backup_conflict_all_skip">Skip all</string>
+    <string name="backup_conflict_overwrite">Overwrite</string>
+    <string name="backup_conflict_skip">Skip</string>
+    <string name="backup_busy_read">Reading selected file…</string>
+    <string name="backup_import_scanning">Verifying &amp; unpacking… (%1$d entries so far)</string>
+    <string name="backup_import_merging">Merging into environment… (%1$d/%2$d)</string>
+    <string name="backup_import_ok">✓ Restore finished: %1$d imported · %2$d skipped · %3$d failed</string>
+    <string name="backup_import_ok_sample"> (e.g. %1$s)</string>
+    <string name="backup_import_reject">✗ Rejected as a whole, environment untouched: %1$s</string>
+    <string name="backup_import_fail">✗ Restore failed: %1$s</string>
+    <string name="backup_deploy_fail">✗ Deploy failed, restore aborted (network/storage issue; retry)</string>
+    <string name="backup_size_unknown">unknown size</string>
+
+    <!-- 系统更新页 -->
+    <string name="update_busy_check_pkg">Checking package…</string>
+    <string name="update_busy_download">Downloading new version… (%1$d%%)</string>
+    <string name="update_busy_verify">Verifying sha256…</string>
+    <string name="update_busy_extract">Side-deploying new version… (about 1–3 minutes)</string>
+    <string name="update_busy_migrate">Migrating user files… (%1$d/%2$d)</string>
+    <string name="update_busy_migrate_back">Migrating user files back… (%1$d/%2$d)</string>
+    <string name="update_busy_switch">Atomic switch…</string>
+    <string name="update_busy_node">Restoring Node runtime… (about 1 minute)</string>
+    <string name="update_busy_restart">Rebuilding sessions…</string>
+    <string name="update_busy_rollback">Preparing rollback…</string>
+    <string name="update_busy_checking">Checking for updates…</string>
+    <string name="update_ok">✓ Upgrade finished: %1$s → %2$s</string>
+    <string name="update_rollback_ok">✓ Rolled back: %1$s → %2$s (changes made after the upgrade were carried back by the reverse migration)</string>
+    <string name="update_current_line">Current version: Ubuntu %1$s</string>
+    <string name="update_not_deployed">not deployed</string>
+    <string name="update_rollback_suffix">" · rollback to %1$s available"</string>
+    <string name="update_found">New version %1$s found (about %2$s MB)</string>
+    <string name="update_uptodate">Up to date (%1$s): %2$s</string>
+    <string name="update_check_fail">✗ Check failed: %1$s</string>
+    <string name="update_check_btn">Check for updates</string>
+    <string name="update_upgrade_btn">Upgrade to %1$s</string>
+    <string name="update_rollback_btn">Roll back to previous (%1$s)</string>
+    <string name="update_report_title">Upgrade report</string>
+    <string name="update_report_body">User files migrated: %1$d · excluded: %2$d (caches/sockets etc.) · user copy kept on conflicts: %3$d\nManual apt packages: %4$s\nManual npm packages: %5$s</string>
+    <string name="update_report_none">none</string>
+    <string name="update_reinstall_title">One-click reinstall (manual packages are not reinstalled by upgrade, D33):</string>
+    <string name="update_desc">Upgrade side-deploys: download and unpack into a side directory → verify sha256 (mismatch aborts the switch) → atomic directory-rename switch; the old version is kept for rollback (peak disk usage about 2× rootfs).\n/root user files are migrated per blacklist (excluding .l2s*/.npm/.cache/AndroidDownload/*.sock); on conflicts with the new template the user copy always wins; manual apt/npm packages are not reinstalled automatically — the report gives the reinstall command.\nUpgrade and rollback stop all sessions and rebuild them from the registry afterwards (running commands and shell contents are not kept).\nUpdate sources: built-in version pin + local update index (files/rootfs-updates.json).</string>
+    <string name="update_confirm_title">Upgrade rootfs?</string>
+    <string name="update_confirm_text">This will upgrade to %1$s. All sessions will be stopped (rebuilt automatically afterwards; running commands are not kept); /root user files and the workspace migrate to the new version; manual apt/npm packages need reinstalling per the report.</string>
+    <string name="update_confirm_btn">Start upgrade</string>
+    <string name="update_rollback_title">Roll back to previous version?</string>
+    <string name="update_rollback_text">This will roll back to %1$s. All sessions will be stopped (rebuilt automatically afterwards); /root files created or modified after the upgrade are carried back to the old version by the reverse migration and are not lost.</string>
+    <string name="update_rollback_btn2">Start rollback</string>
+
+    <!-- BinDoctor（手动扫描报告，回流开发者选项页） -->
+    <string name="bin_not_deployed">Environment not deployed</string>
+    <string name="bin_running">A doctor scan is already running, try later</string>
+    <string name="bin_scan_ok">Scan finished: no broken links (/usr/local links all valid, 0 fixed)</string>
+    <string name="bin_scan_fixed">Scan finished: %1$d fixed, %2$d not fixed</string>
+    <string name="bin_scan_err">Scan error: %1$s</string>
+
+    <!-- RootfsManager 回流 UI 的错误/状态模板 -->
+    <string name="rootfs_e_deploy">deploy error: %1$s</string>
+    <string name="rootfs_e_download">Download failed: %1$s</string>
+    <string name="rootfs_e_sha">sha256 mismatch: %1$s (expected %2$s); file deleted, refusing to use</string>
+    <string name="rootfs_e_sha_upgrade">sha256 mismatch: %1$s (expected %2$s); switch refused and download deleted, current environment unaffected</string>
+    <string name="rootfs_s_extract_done">Extraction finished</string>
+    <string name="rootfs_e_tar_exit">tar exit code %1$d: %2$s</string>
+    <string name="rootfs_e_link_exit">in-proot relink exit code %1$d: %2$s</string>
+    <string name="rootfs_e_tar_fail">tar failed: %1$s</string>
+    <string name="rootfs_e_export_missing">export file missing</string>
+    <string name="rootfs_e_not_deployed">Linux environment not deployed</string>
+    <string name="rootfs_upd_no_index">no update index, built-in pin fallback only</string>
+    <string name="rootfs_upd_pinned">neither index nor built-in pin is newer than current</string>
+    <string name="rootfs_e_move_backup">current environment could not be moved to the backup slot (switch aborted, environment untouched)</string>
+    <string name="rootfs_e_activate">side directory activation failed, rolled back to the old environment</string>
+    <string name="rootfs_e_no_rollback">no previous version to roll back to (backup directory missing or incomplete)</string>
+    <string name="rootfs_e_stash">current environment could not be stashed (rollback aborted, environment untouched)</string>
+    <string name="rootfs_e_activate_prev">previous version activation failed, rolled back to current</string>
+    <string name="rootfs_e_migrate">migrating %1$s failed: %2$s (aborted, old environment untouched)</string>
+    <string name="rootfs_e_stop">session processes could not be stopped (pid=%1$s); switch aborted, environment unaffected</string>
+    <string name="rootfs_e_read_uri">cannot read the selected file</string>
+    <string name="rootfs_e_read_uri_fail">failed to read the selected file: %1$s</string>
+    <string name="rootfs_e_empty_file">selected file is empty</string>
+    <string name="rootfs_e_tar_struct">invalid tar.gz structure: %1$s</string>
+    <string name="rootfs_e_no_entries">no restorable entries in the tar (./root and /etc fragments)</string>
+    <string name="rootfs_e_hardlink">%1$s: hard-link source missing</string>
+    <string name="rootfs_e_escape">target escapes the root: %1$s</string>
+    <string name="rootfs_e_not_gzip">not a valid gzip file: %1$s</string>
+    <string name="rootfs_e_tar_head">tar header truncated</string>
+    <string name="rootfs_e_bad_path">invalid path (absolute or contains ..): %1$s</string>
+    <string name="rootfs_e_outside_root">path outside the whitelist (only ./root and /etc fragments): %1$s</string>
+    <string name="rootfs_e_link_target">symlink missing target: %1$s</string>
+    <string name="rootfs_e_hardlink_bad">invalid hard-link reference: %1$s → %2$s</string>
+    <string name="rootfs_e_entry_type">unsupported entry type \'%1$s\': %2$s</string>
+    <string name="rootfs_e_truncated">data truncated (%1$s, read %2$d/%3$d)</string>
+    <string name="rootfs_e_checksum">entry header checksum mismatch (corrupt file or not a tar.gz)</string>
+    <string name="rootfs_e_octal">invalid numeric field: %1$s</string>
+    <string name="rootfs_what_pax">long-name/pax payload</string>
+    <string name="rootfs_e_data_trunc">file data truncated</string>
+    <string name="rootfs_what_padding">entry padding</string>
+</resources>

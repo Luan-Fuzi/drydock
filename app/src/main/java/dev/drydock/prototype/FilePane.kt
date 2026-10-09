@@ -26,6 +26,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,26 +65,25 @@ internal fun FilePane() {
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("文件", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.file_page_title), style = MaterialTheme.typography.titleLarge)
         Text(
-            "环境内路径 ${if (relPath.isBlank()) "/" else relPath}",
+            stringResource(R.string.file_cwd_line, if (relPath.isBlank()) "/" else relPath),
             fontFamily = FontFamily.Monospace, fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            "这些文件同时出现在手机自带文件管理器（Drydock workspace）；点文本文件就地编辑，" +
-                "点其他文件用系统应用打开；长按文件有更多操作。",
+            stringResource(R.string.file_intro),
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (relPath.isNotBlank()) {
-            TextButton(onClick = { relPath = relPath.substringBeforeLast('/') }) { Text("← 上一级") }
+            TextButton(onClick = { relPath = relPath.substringBeforeLast('/') }) { Text(stringResource(R.string.file_up)) }
         }
         if (exportBusy.isNotBlank()) {
             Text(exportBusy, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
         if (!RootfsManager.isDeployed(context)) {
-            Text("环境未部署——先在「设置 → 初始设置」完成配置。", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.file_not_deployed), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             LazyColumn {
                 items(entries) { f ->
@@ -116,6 +119,7 @@ internal fun FilePane() {
     // R2 长按菜单（纵向四项；目录不支持长按）
     menuTarget?.let { f ->
         AlertDialog(
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
             onDismissRequest = { menuTarget = null },
             title = { Text(f.name, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleMedium) },
             text = {
@@ -123,28 +127,28 @@ internal fun FilePane() {
                     TextButton(onClick = {
                         menuTarget = null
                         openExternalChooser(context, root, f)
-                    }) { Text("用其他应用打开") }
+                    }, modifier = Modifier.testTag("file_open_with")) { Text(stringResource(R.string.file_open_with)) }
                     TextButton(onClick = {
                         menuTarget = null
                         if (exportBusy.isNotBlank()) return@TextButton
-                        exportBusy = "导出 ${f.name} 到 Downloads/Drydock…"
+                        exportBusy = context.getString(R.string.file_export_busy, f.name)
                         scope.launch {
                             val r = withContext(Dispatchers.IO) {
                                 runCatching { Landing.toDownloads(context.applicationContext, f).toString() }
                             }
                             exportBusy = ""
                             r.fold(
-                                { Toast.makeText(context, "✓ 已导出到 Downloads/Drydock", Toast.LENGTH_SHORT).show() },
-                                { Toast.makeText(context, "✗ 导出失败：${it.message}", Toast.LENGTH_SHORT).show() },
+                                { Toast.makeText(context, context.getString(R.string.file_export_ok), Toast.LENGTH_SHORT).show() },
+                                { Toast.makeText(context, context.getString(R.string.file_export_fail, it.message ?: ""), Toast.LENGTH_SHORT).show() },
                             )
                         }
-                    }) { Text("导出到 Downloads") }
-                    TextButton(onClick = { menuTarget = null; renameTarget = f }) { Text("重命名") }
-                    TextButton(onClick = { menuTarget = null; deleteTarget = f }) { Text("删除") }
+                    }, modifier = Modifier.testTag("file_export")) { Text(stringResource(R.string.file_export)) }
+                    TextButton(onClick = { menuTarget = null; renameTarget = f }, modifier = Modifier.testTag("file_rename")) { Text(stringResource(R.string.file_rename)) }
+                    TextButton(onClick = { menuTarget = null; deleteTarget = f }, modifier = Modifier.testTag("file_delete")) { Text(stringResource(R.string.file_delete)) }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { menuTarget = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { menuTarget = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 
@@ -152,19 +156,21 @@ internal fun FilePane() {
         var nameInput by remember(f) { mutableStateOf(f.name) }
         val legal = nameInput.isNotBlank() && !nameInput.contains('/') && File(dir, nameInput).let { !it.exists() || it == f }
         AlertDialog(
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
             onDismissRequest = { renameTarget = null },
-            title = { Text("重命名") },
+            title = { Text(stringResource(R.string.file_rename)) },
             text = {
                 Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(
                         value = nameInput,
                         onValueChange = { nameInput = it },
-                        label = { Text("文件名") },
+                        label = { Text(stringResource(R.string.file_dlg_name_label)) },
                         singleLine = true,
                         isError = !legal,
+                        modifier = Modifier.testTag("dlg_rename_name"),
                     )
                     if (!legal && nameInput.isNotBlank()) {
-                        Text("名字为空、含 / 或与现有文件重名", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.file_dlg_name_invalid), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
@@ -174,27 +180,28 @@ internal fun FilePane() {
                         renameTarget = null
                         tick++
                     } else {
-                        Toast.makeText(context, "重命名失败", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.file_rename_fail), Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("确定") }
+                }, modifier = Modifier.testTag("dlg_rename_ok")) { Text(stringResource(R.string.common_ok)) }
             },
-            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 
     deleteTarget?.let { f ->
         AlertDialog(
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
             onDismissRequest = { deleteTarget = null },
-            title = { Text("删除「${f.name}」？") },
-            text = { Text("删除后不可恢复（环境内与系统文件管理器同步消失）。") },
+            title = { Text(stringResource(R.string.file_dlg_delete_title, f.name)) },
+            text = { Text(stringResource(R.string.file_dlg_delete_text)) },
             confirmButton = {
                 TextButton(onClick = {
                     val ok = if (f.isDirectory) f.deleteRecursively() else f.delete()
                     deleteTarget = null
-                    if (ok) tick++ else Toast.makeText(context, "删除失败", Toast.LENGTH_SHORT).show()
-                }) { Text("删除") }
+                    if (ok) tick++ else Toast.makeText(context, context.getString(R.string.file_delete_fail), Toast.LENGTH_SHORT).show()
+                }, modifier = Modifier.testTag("dlg_delete_ok")) { Text(stringResource(R.string.file_delete)) }
             },
-            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 }
@@ -231,16 +238,16 @@ private fun openExternal(context: Context, root: File, f: File) {
     try {
         context.startActivity(viewIntent(root, f))
     } catch (_: Exception) {
-        Toast.makeText(context, "没有应用能打开 ${f.name}（可先在系统文件管理器里试）", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.file_no_app, f.name), Toast.LENGTH_SHORT).show()
     }
 }
 
 /** R2 菜单项：chooser 显式列出候选应用（满足「调用其他编辑器」的可选择性）。 */
 private fun openExternalChooser(context: Context, root: File, f: File) {
     try {
-        context.startActivity(Intent.createChooser(viewIntent(root, f), "用哪个应用打开 ${f.name}？"))
+        context.startActivity(Intent.createChooser(viewIntent(root, f), context.getString(R.string.file_chooser_title, f.name)))
     } catch (_: Exception) {
-        Toast.makeText(context, "没有应用能打开 ${f.name}（可先在系统文件管理器里试）", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.file_no_app, f.name), Toast.LENGTH_SHORT).show()
     }
 }
 

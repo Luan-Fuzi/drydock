@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 8：文件页键（FilePane、TextEditActivity）。 -->
+<resources>
+    <string name="file_page_title">Files</string>
+    <string name="file_cwd_line">In-environment path %1$s</string>
+    <string name="file_intro">These files also appear in the phone\'s built-in file manager (Drydock workspace); tap a text file to edit in place, tap other files to open with a system app; long-press a file for more actions.</string>
+    <string name="file_up">← Up one level</string>
+    <string name="file_not_deployed">Environment not deployed — finish setup under Settings → Setup wizard first.</string>
+    <string name="file_open_with">Open with other app</string>
+    <string name="file_export">Export to Downloads</string>
+    <string name="file_rename">Rename</string>
+    <string name="file_delete">Delete</string>
+    <string name="file_export_busy">Exporting %1$s to Downloads/Drydock…</string>
+    <string name="file_export_ok">✓ Exported to Downloads/Drydock</string>
+    <string name="file_export_fail">✗ Export failed: %1$s</string>
+    <string name="file_dlg_rename_title">Rename</string>
+    <string name="file_dlg_name_label">File name</string>
+    <string name="file_dlg_name_invalid">Name is empty, contains /, or already exists</string>
+    <string name="file_rename_fail">Rename failed</string>
+    <string name="file_dlg_delete_title">Delete \"%1$s\"?</string>
+    <string name="file_dlg_delete_text">Deleted files cannot be recovered (they disappear from both the environment and the system file manager).</string>
+    <string name="file_delete_fail">Delete failed</string>
+    <string name="file_no_app">No app can open %1$s (try the system file manager)</string>
+    <string name="file_chooser_title">Open %1$s with…</string>
+    <string name="editor_missing">File not found</string>
+    <string name="editor_not_text">Not an editable UTF-8 text file</string>
+    <string name="editor_saved">✓ Saved</string>
+    <string name="editor_save_fail">✗ Save failed: %1$s</string>
+    <string name="editor_cancel">‹ Cancel</string>
+    <string name="editor_overwrite_title">File changed on disk</string>
+    <string name="editor_overwrite_text">\"%1$s\" was modified while you were editing (possibly by the agent or an external app). Saving now overwrites those changes with what is on your screen.</string>
+    <string name="editor_overwrite_save">Overwrite and save</string>
+</resources>

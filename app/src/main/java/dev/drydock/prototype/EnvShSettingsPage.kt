@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,10 +30,9 @@ internal fun EnvShSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    SettingsSubPage("环境变量（~/.drydock/env.sh）", onBack) {
+    SettingsSubPage(stringResource(R.string.envsh_title), onBack) {
         Text(
-            "每个新会话生效。key 写成 export DRYDOCK_API_KEY=…（opencode/pi 的配置已引用它），" +
-                "其他工具要的变量（代理、各家 key）也放这里；复杂改动也可以直接让 agent 帮你改。",
+            stringResource(R.string.envsh_intro),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -48,7 +48,7 @@ internal fun EnvShSettingsPage(onBack: () -> Unit) {
             OutlinedTextField(
                 value = envText,
                 onValueChange = { envText = it },
-                label = { Text("env.sh（bash 语法，逐行 export）") },
+                label = { Text(stringResource(R.string.envsh_field_label)) },
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontFamily = FontFamily.Monospace, fontSize = 12.sp,
                 ),
@@ -64,22 +64,22 @@ internal fun EnvShSettingsPage(onBack: () -> Unit) {
                                 runCatching { RootfsManager.envShFile(context).writeText(envText) }
                             }
                             envSaving = false
-                            envMsg = r.fold({ "✓ 已保存" }, { "✗ 保存失败：${it.message}" })
+                            envMsg = r.fold({ context.getString(R.string.envsh_saved) }, { context.getString(R.string.envsh_save_fail, it.message ?: "") })
                         }
                     },
-                ) { Text(if (envSaving) "保存中…" else "保存") }
+                ) { Text(if (envSaving) stringResource(R.string.ep_saving) else stringResource(R.string.session_dlg_save)) }
                 if (envMsg.isNotBlank()) {
                     Text(envMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Text(
-                "保存后新会话生效；已开着的终端输入 . ~/.drydock/env.sh 立即生效。",
+                stringResource(R.string.envsh_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
             Text(
-                "（部署 Linux 环境后可编辑）",
+                stringResource(R.string.envsh_not_deployed),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

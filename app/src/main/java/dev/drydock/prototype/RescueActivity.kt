@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -68,16 +69,16 @@ private fun RescueScreen(initialCmd: String? = null) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("救援通道", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.rescue_title), style = MaterialTheme.typography.titleLarge)
         Text(
-            "不经过终端层（ttyd/dtach）直接在环境内执行命令。终端打不开、环境疑似损坏时在这里诊断：ls、dpkg --audit、cat 日志等。",
+            stringResource(R.string.rescue_desc),
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
             value = cmd,
             onValueChange = { cmd = it },
-            label = { Text("命令") },
+            label = { Text(stringResource(R.string.rescue_cmd_label)) },
             modifier = Modifier.fillMaxWidth(),
         )
         Button(
@@ -94,7 +95,7 @@ private fun RescueScreen(initialCmd: String? = null) {
                     busy = false
                 }
             },
-        ) { Text(if (busy) "执行中…" else "执行") }
+        ) { Text(if (busy) stringResource(R.string.rescue_running) else stringResource(R.string.rescue_run)) }
         Text(out, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
     }
 }

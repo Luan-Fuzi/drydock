@@ -77,7 +77,7 @@ object RootfsManager {
             deployInner(context, onState)
         } catch (e: Throwable) {
             Log.e(TAG, "deploy 异常", e)
-            onState(DeployState.Failed("deploy 异常：$e"))
+            onState(DeployState.Failed(context.getString(R.string.rootfs_e_deploy, e.toString())))
         }
     }
 
@@ -104,7 +104,7 @@ object RootfsManager {
                 }
             }
             if (!ok) {
-                onState(DeployState.Failed("下载失败：$lastErr"))
+                onState(DeployState.Failed(context.getString(R.string.rootfs_e_download, lastErr)))
                 return
             }
         }
@@ -114,7 +114,7 @@ object RootfsManager {
         val actual = sha256(tarball)
         if (actual != RootfsManifest.SHA256) {
             tarball.delete()
-            onState(DeployState.Failed("sha256 不符：$actual（期望 ${RootfsManifest.SHA256}），已删除拒绝使用"))
+            onState(DeployState.Failed(context.getString(R.string.rootfs_e_sha, actual, RootfsManifest.SHA256)))
             return
         }
         Log.i(TAG, "sha256 校验通过")
@@ -127,7 +127,7 @@ object RootfsManager {
             onState(DeployState.Failed(err))
             return
         }
-        onState(DeployState.Extracting("解压完成"))
+        onState(DeployState.Extracting(context.getString(R.string.rootfs_s_extract_done)))
 
         // 4. 配置：DNS + apt 国内源
         onState(DeployState.Configuring)
@@ -172,7 +172,7 @@ object RootfsManager {
             .filter { it.startsWith("tar:") && !it.contains("can't link") && it != "tar: had errors" }
             .toList()
         if (tarExit != 0 && (otherErrors.isNotEmpty() || !File(rootfs, "usr/bin/tar").exists())) {
-            return "tar 退出码 $tarExit：${tarOut.takeLast(2000)}"
+            return context.getString(R.string.rootfs_e_tar_exit, tarExit, tarOut.takeLast(2000))
         }
         Log.i(TAG, "pass1 完成，link 缺失 ${linkMisses.size} 项：$linkMisses")
 
@@ -207,7 +207,7 @@ object RootfsManager {
             val p2Exit = p2.waitFor()
             Log.i(TAG, "pass2 exit=$p2Exit")
             if (p2Exit != 0) {
-                return "proot 内补链退出码 $p2Exit：${p2Out.takeLast(2000)}"
+                return context.getString(R.string.rootfs_e_link_exit, p2Exit, p2Out.takeLast(2000))
             }
             Log.i(TAG, "pass2 补链完成")
         }
@@ -249,9 +249,9 @@ object RootfsManager {
             stat -c %s /tmp/drydock-env-export.tar.gz 2>/dev/null | sed 's/^/EXPORT_BYTES=/'
         """.trimIndent()
         val r = runInEnv(context, cmd)
-        if (!r.output.contains("TAR_RC=0")) throw IllegalStateException("tar 失败：${r.output.takeLast(300)}")
+        if (!r.output.contains("TAR_RC=0")) throw IllegalStateException(context.getString(R.string.rootfs_e_tar_fail, r.output.takeLast(300)))
         val f = File(rootfsDir(context), "tmp/drydock-env-export.tar.gz")
-        if (!f.exists() || f.length() == 0L) throw IllegalStateException("导出文件缺失")
+        if (!f.exists() || f.length() == 0L) throw IllegalStateException(context.getString(R.string.rootfs_e_export_missing))
         val bytes = f.length()
         val uri = Landing.toDownloads(context, f)
         f.delete()
@@ -305,7 +305,7 @@ object RootfsManager {
      *  版本新的最高版。远端清单渠道随 D26 分发定稿再接，不臆造 URL。 */
     fun checkForUpdate(context: Context): UpdateCheck {
         val cur = deployedVersion(context)
-        if (cur.isEmpty()) return UpdateCheck.Failed("Linux 环境未部署")
+        if (cur.isEmpty()) return UpdateCheck.Failed(context.getString(R.string.rootfs_e_not_deployed))
         val indexTxt = File(context.filesDir, RootfsManifest.UPDATE_INDEX_FILE)
             .takeIf { it.exists() }?.readText()
         val releases = (indexTxt?.let(RootfsManifest::parseIndex) ?: emptyList()) +
@@ -314,7 +314,7 @@ object RootfsManager {
             .filter { RootfsManifest.isNewer(it.version, cur) }
             .maxWithOrNull { a, b -> RootfsManifest.compareVersions(a.version, b.version) }
         return if (newer != null) UpdateCheck.Available(newer, cur)
-        else UpdateCheck.UpToDate(cur, if (indexTxt == null) "无更新索引，仅内置 pin 兜底" else "索引与内置 pin 均不高于当前版本")
+        else UpdateCheck.UpToDate(cur, context.getString(if (indexTxt == null) R.string.rootfs_upd_no_index else R.string.rootfs_upd_pinned))
     }
 
     /**
@@ -329,7 +329,7 @@ object RootfsManager {
         onState: (UpgradeState) -> Unit,
     ): UpgradeReport {
         val appCtx = context.applicationContext
-        check(isDeployed(appCtx)) { "Linux 环境未部署" }
+        check(isDeployed(appCtx)) { context.getString(R.string.rootfs_e_not_deployed) }
         val current = rootfsDir(appCtx)
         val from = deployedVersion(appCtx)
 
@@ -355,7 +355,7 @@ object RootfsManager {
             }
             if (!ok) {
                 tarball.delete()
-                throw UpgradeFailed("下载失败：$lastErr")
+                throw UpgradeFailed(context.getString(R.string.rootfs_e_download, lastErr))
             }
         }
 
@@ -365,7 +365,7 @@ object RootfsManager {
         if (actual != release.sha256) {
             tarball.delete()
             Timeline.log(appCtx, "rootfs_upgrade_reject", mapOf("version" to release.version, "sha256" to actual))
-            throw UpgradeFailed("sha256 不符：$actual（期望 ${release.sha256}），已拒绝切换并删除下载包，当前环境不受影响")
+            throw UpgradeFailed(context.getString(R.string.rootfs_e_sha_upgrade, actual, release.sha256))
         }
 
         // 3. 停会话（进程树清剿；注册表保留，切换后按表重建）
@@ -382,13 +382,13 @@ object RootfsManager {
             onState(UpgradeState.Extracting)
             staging.deleteRecursively()
             staging.mkdirs()
-            extractTwoPass(appCtx, tarball, staging)?.let { throw UpgradeFailed("解压失败：$it") }
+            extractTwoPass(appCtx, tarball, staging)?.let { throw UpgradeFailed(context.getString(R.string.rootfs_e_tar_fail, it)) }
             retargetL2sLinks(staging, current)
             configure(staging)
             writeManifest(staging, release.version, release.sha256)
 
             // 5. /root 迁移（D33 四条细则，与回滚共用）
-            val stats = migrateRootFiles(File(current, "root"), File(staging, "root")) { d, t ->
+            val stats = migrateRootFiles(context, File(current, "root"), File(staging, "root")) { d, t ->
                 onState(UpgradeState.Migrating(d, t))
             }
 
@@ -404,11 +404,11 @@ object RootfsManager {
             val prev = prevRootfsDir(appCtx)
             prev.deleteRecursively()
             if (!current.renameTo(prev)) {
-                throw UpgradeFailed("当前环境无法移入备份位（切换中止，环境未改动）")
+                throw UpgradeFailed(context.getString(R.string.rootfs_e_move_backup))
             }
             if (!staging.renameTo(current)) {
                 prev.renameTo(current) // 激活失败：旧环境即时回位
-                throw UpgradeFailed("旁路目录激活失败，已切回旧环境")
+                throw UpgradeFailed(context.getString(R.string.rootfs_e_activate))
             }
             tarball.delete()
             val report = UpgradeReport(from, release.version, stats, aptSelf, npmSelf)
@@ -447,7 +447,7 @@ object RootfsManager {
         val current = rootfsDir(appCtx)
         val prev = prevRootfsDir(appCtx)
         if (!File(prev, "bin/bash").exists() || !File(prev, ".drydock-manifest").exists()) {
-            throw UpgradeFailed("无可回滚的上一版（备份目录缺失或不完整）")
+            throw UpgradeFailed(context.getString(R.string.rootfs_e_no_rollback))
         }
         val from = deployedVersion(appCtx)
         val to = Regex("version=(\\S+)")
@@ -455,17 +455,17 @@ object RootfsManager {
         stopEnvProcesses(appCtx)
         val swap = File(appCtx.filesDir, "ubuntu-rootfs-swap")
         try {
-            val stats = migrateRootFiles(File(current, "root"), File(prev, "root")) { d, t ->
+            val stats = migrateRootFiles(context, File(current, "root"), File(prev, "root")) { d, t ->
                 onState(UpgradeState.Migrating(d, t))
             }
             onState(UpgradeState.Switching)
             swap.deleteRecursively()
             if (!current.renameTo(swap)) {
-                throw UpgradeFailed("当前环境无法暂存（回滚中止，环境未改动）")
+                throw UpgradeFailed(context.getString(R.string.rootfs_e_stash))
             }
             if (!prev.renameTo(current)) {
                 swap.renameTo(current)
-                throw UpgradeFailed("上一版激活失败，已切回当前环境")
+                throw UpgradeFailed(context.getString(R.string.rootfs_e_activate_prev))
             }
             swap.renameTo(prev)
             Timeline.log(
@@ -494,7 +494,7 @@ object RootfsManager {
      * 保留。拷贝失败抛异常中止整个升级（旧环境未动，可重试），不静默丢用户文件。
      * 非常规文件（fifo 等 Files.copy 会阻塞的形态）计入排除。
      */
-    fun migrateRootFiles(src: File, dst: File, onProgress: (Int, Int) -> Unit): MigrationStats {
+    fun migrateRootFiles(context: Context, src: File, dst: File, onProgress: (Int, Int) -> Unit): MigrationStats {
         var migrated = 0
         var excluded = 0
         var userWins = 0
@@ -538,7 +538,7 @@ object RootfsManager {
                         if (k.canExecute()) target.setExecutable(true, false)
                     }
                 } catch (e: Exception) {
-                    throw UpgradeFailed("迁移 $childRel 失败：$e（已中止，旧环境未改动）")
+                    throw UpgradeFailed(context.getString(R.string.rootfs_e_migrate, childRel, e.toString()))
                 }
                 migrated++
                 done++
@@ -622,7 +622,7 @@ object RootfsManager {
                 }.toList()
             if (victims.isEmpty()) return
             if (System.currentTimeMillis() > deadline) {
-                throw UpgradeFailed("会话进程未能停止（pid=${victims.take(5)}），已中止切换，环境不受影响")
+                throw UpgradeFailed(context.getString(R.string.rootfs_e_stop, victims.take(5).toString()))
             }
             victims.forEach { runCatching { android.os.Process.killProcess(it) } }
             Thread.sleep(400)
@@ -744,13 +744,13 @@ object RootfsManager {
             try {
                 appCtx.contentResolver.openInputStream(uri)?.use { input ->
                     cacheTar.outputStream().use { input.copyTo(it, 1 shl 16) }
-                } ?: throw ImportReject("无法读取所选文件")
+                } ?: throw ImportReject(context.getString(R.string.rootfs_e_read_uri))
             } catch (e: ImportReject) {
                 throw e
             } catch (e: Exception) {
-                throw ImportReject("读取所选文件失败：$e")
+                throw ImportReject(context.getString(R.string.rootfs_e_read_uri_fail, e.toString()))
             }
-            if (cacheTar.length() == 0L) throw ImportReject("所选文件为空")
+            if (cacheTar.length() == 0L) throw ImportReject(context.getString(R.string.rootfs_e_empty_file))
 
             // 2) 校验 + 解包到暂存（违规即抛 ImportReject，整体拒绝）
             stage.deleteRecursively()
@@ -763,9 +763,9 @@ object RootfsManager {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                throw ImportReject("tar.gz 结构非法：$e")
+                throw ImportReject(context.getString(R.string.rootfs_e_tar_struct, e.toString()))
             }
-            if (entries.isEmpty()) throw ImportReject("tar 内没有可恢复的条目（./root 与 /etc 片段）")
+            if (entries.isEmpty()) throw ImportReject(context.getString(R.string.rootfs_e_no_entries))
 
             // 3) 合并（此时校验已全过）。冲突 = 目标已存在且内容不同，先数一遍供
             //    「还剩 N 个」提示；同名同内容不问（覆盖/跳过都无效果）
@@ -783,10 +783,10 @@ object RootfsManager {
                     val stagedSrc = e.staged
                     if (stagedSrc == null) {
                         failed++
-                        if (failedSample.size < 3) failedSample.add("${e.name}：硬链接源缺失")
+                        if (failedSample.size < 3) failedSample.add(context.getString(R.string.rootfs_e_hardlink, e.name))
                         continue
                     }
-                    ensureUnderRoot(rootfs, e.target)
+                    ensureUnderRoot(context, rootfs, e.target)
                     when {
                         e.isDir -> {
                             if (existsNoFollow(e.target) &&
@@ -907,10 +907,10 @@ object RootfsManager {
     }
 
     /** 写入目标必须物理落在 rootfs 内：目标链上有符号链接借道出界（如指向宿主路径）即拒。 */
-    private fun ensureUnderRoot(rootfs: File, target: File) {
+    private fun ensureUnderRoot(context: Context, rootfs: File, target: File) {
         val root = rootfs.canonicalFile.absolutePath + File.separator
         val canon = target.canonicalFile.absolutePath
-        check(canon.startsWith(root)) { "目标越界：$target" }
+        check(canon.startsWith(root)) { context.getString(R.string.rootfs_e_escape, target) }
     }
 
     /**
@@ -930,7 +930,7 @@ object RootfsManager {
         val input = try {
             java.util.zip.GZIPInputStream(cacheTar.inputStream(), 1 shl 16)
         } catch (e: Exception) {
-            throw ImportReject("不是有效的 gzip 文件：$e")
+            throw ImportReject(context.getString(R.string.rootfs_e_not_gzip, e.toString()))
         }
         val header = ByteArray(512)
         var longName: String? = null
@@ -942,20 +942,20 @@ object RootfsManager {
         var count = 0
         input.use { ins ->
             while (true) {
-                val h = readFullOrThrow(ins, header, "tar 头截断")
+                val h = readFullOrThrow(context, ins, header, context.getString(R.string.rootfs_e_tar_head))
                 if (header.all { it == 0.toByte() }) break // 结束块
-                verifyChecksum(header)
+                verifyChecksum(context, header)
                 val rawName = fieldStr(header, 0, 100)
-                var size = fieldOctal(header, 124, 12)
+                var size = fieldOctal(context, header, 124, 12)
                 val typeflag = header[156].toInt().toChar()
                 val linkField = fieldStr(header, 157, 257)
                 // GNU 长名/长链接与 pax 覆盖作用于紧随的条目
                 when (typeflag) {
-                    'L' -> { longName = payloadStr(ins, size); skipPad(ins, size); continue }
-                    'K' -> { longLink = payloadStr(ins, size); skipPad(ins, size); continue }
+                    'L' -> { longName = payloadStr(context, ins, size); skipPad(context, ins, size); continue }
+                    'K' -> { longLink = payloadStr(context, ins, size); skipPad(context, ins, size); continue }
                     'x', 'g' -> {
-                        val recs = payloadStr(ins, size)
-                        skipPad(ins, size)
+                        val recs = payloadStr(context, ins, size)
+                        skipPad(context, ins, size)
                         if (typeflag == 'x') {
                             Regex("(?:^|\\n)\\d+ (path|linkpath|size)=(.*)").findAll(recs)
                                 .associate { it.groupValues[1] to it.groupValues[2].trim() }
@@ -976,15 +976,15 @@ object RootfsManager {
                 longName = null; longLink = null; paxPath = null; paxLink = null; paxSize = null
 
                 val norm = normalizeTarPath(name)
-                    ?: throw ImportReject("路径非法（绝对路径或含 ..）：$name")
+                    ?: throw ImportReject(context.getString(R.string.rootfs_e_bad_path, name))
                 if (norm.isEmpty()) continue // tar 根目录标记（"./"），无需恢复
                 if (!withinWhitelist(norm)) {
-                    throw ImportReject("路径在白名单外（只收 ./root 与 /etc 片段）：$norm")
+                    throw ImportReject(context.getString(R.string.rootfs_e_outside_root, norm))
                 }
                 if (++count % 200 == 0) onState(ImportState.Scanning(count))
 
                 val staged = File(stage, norm)
-                ensureUnderRoot(stage, staged) // 暂存链上有越界符号链接即拒（防借道写穿）
+                ensureUnderRoot(context, stage, staged) // 暂存链上有越界符号链接即拒（防借道写穿）
                 val target = File(rootfs, norm)
                 when (typeflag) {
                     '5' -> {
@@ -994,23 +994,23 @@ object RootfsManager {
                     '0', '\u0000', '7' -> {
                         staged.parentFile?.mkdirs()
                         staged.outputStream().use { out ->
-                            copyExactly(ins, size, out)
+                            copyExactly(context, ins, size, out)
                         }
-                        skipPad(ins, size)
-                        val mode = fieldOctal(header, 100, 8).toInt()
+                        skipPad(context, ins, size)
+                        val mode = fieldOctal(context, header, 100, 8).toInt()
                         entries.add(StagedEntry(norm, false, mode, null, staged, target))
                     }
                     '2' -> {
-                        val lt = link ?: throw ImportReject("符号链接缺目标：$norm")
+                        val lt = link ?: throw ImportReject(context.getString(R.string.rootfs_e_link_target, norm))
                         staged.parentFile?.mkdirs()
                         Files.createSymbolicLink(staged.toPath(), Paths.get(lt))
                         entries.add(StagedEntry(norm, false, 0, lt, staged, target))
-                        skipPad(ins, size) // 符号链接 size 应为 0，防御性跳过
+                        skipPad(context, ins, size) // 符号链接 size 应为 0，防御性跳过
                     }
                     '1' -> {
                         val ref = normalizeTarPath(link ?: "")
                             ?.takeIf { withinWhitelist(it) }
-                            ?: throw ImportReject("硬链接引用非法：$name → $link")
+                            ?: throw ImportReject(context.getString(R.string.rootfs_e_hardlink_bad, name, link))
                         staged.parentFile?.mkdirs()
                         val e = StagedEntry(norm, false, 0, null, null, target)
                         val src = File(stage, ref)
@@ -1021,9 +1021,9 @@ object RootfsManager {
                             pendingHard.add(e to ref) // 引用可能晚于自身出现，扫描完统一补
                         }
                         entries.add(e)
-                        skipPad(ins, size)
+                        skipPad(context, ins, size)
                     }
-                    else -> throw ImportReject("不支持的条目类型 '$typeflag'：$norm")
+                    else -> throw ImportReject(context.getString(R.string.rootfs_e_entry_type, typeflag, norm))
                 }
             }
         }
@@ -1041,13 +1041,13 @@ object RootfsManager {
 
     // ---------- tar 底层件（R4 导入用；无第三方依赖，512 字节头逐条解析） ----------
 
-    private fun readFullOrThrow(s: InputStream, buf: ByteArray, what: String) {
+    private fun readFullOrThrow(context: Context, s: InputStream, buf: ByteArray, what: String) {
         val n = readFull(s, buf)
-        if (n < buf.size) throw ImportReject("数据截断（$what，读到 $n/${buf.size}）")
+        if (n < buf.size) throw ImportReject(context.getString(R.string.rootfs_e_truncated, what, n, buf.size))
     }
 
-    private fun verifyChecksum(h: ByteArray) {
-        val stored = fieldOctal(h, 148, 8)
+    private fun verifyChecksum(context: Context, h: ByteArray) {
+        val stored = fieldOctal(context, h, 148, 8)
         var unsigned = 0L
         var signed = 0L
         for (i in h.indices) {
@@ -1056,43 +1056,43 @@ object RootfsManager {
             signed += b.toInt()
         }
         if (stored != unsigned && stored != signed) {
-            throw ImportReject("条目头校验和不符（文件损坏或不是 tar.gz）")
+            throw ImportReject(context.getString(R.string.rootfs_e_checksum))
         }
     }
 
     private fun fieldStr(h: ByteArray, from: Int, to: Int): String =
         h.copyOfRange(from, to).takeWhile { it != 0.toByte() }.toByteArray().toString(Charsets.UTF_8)
 
-    private fun fieldOctal(h: ByteArray, from: Int, len: Int): Long {
+    private fun fieldOctal(context: Context, h: ByteArray, from: Int, len: Int): Long {
         val s = h.copyOfRange(from, from + len)
             .takeWhile { it != 0.toByte() && it != ' '.code.toByte() }
             .toByteArray().toString(Charsets.UTF_8).trim()
         if (s.isEmpty()) return 0
-        return s.toLongOrNull(radix = 8) ?: throw ImportReject("数值字段非法：$s")
+        return s.toLongOrNull(radix = 8) ?: throw ImportReject(context.getString(R.string.rootfs_e_octal, s))
     }
 
-    private fun payloadStr(ins: InputStream, size: Long): String {
+    private fun payloadStr(context: Context, ins: InputStream, size: Long): String {
         val bytes = ByteArray(size.toInt())
-        readFullOrThrow(ins, bytes, "长名/pax 载荷")
+        readFullOrThrow(context, ins, bytes, context.getString(R.string.rootfs_what_pax))
         return bytes.takeWhile { it != 0.toByte() }.toByteArray().toString(Charsets.UTF_8)
     }
 
-    private fun copyExactly(ins: InputStream, size: Long, out: java.io.OutputStream) {
+    private fun copyExactly(context: Context, ins: InputStream, size: Long, out: java.io.OutputStream) {
         val buf = ByteArray(64 * 1024)
         var done = 0L
         while (done < size) {
             val n = ins.read(buf, 0, minOf(buf.size.toLong(), size - done).toInt())
-            if (n < 0) throw ImportReject("文件数据截断")
+            if (n < 0) throw ImportReject(context.getString(R.string.rootfs_e_data_trunc))
             out.write(buf, 0, n)
             done += n
         }
     }
 
-    private fun skipPad(ins: InputStream, size: Long) {
+    private fun skipPad(context: Context, ins: InputStream, size: Long) {
         val pad = ((size + 511) / 512 * 512 - size).toInt()
         if (pad > 0) {
             val buf = ByteArray(pad)
-            readFullOrThrow(ins, buf, "条目填充")
+            readFullOrThrow(context, ins, buf, context.getString(R.string.rootfs_what_padding))
         }
     }
 

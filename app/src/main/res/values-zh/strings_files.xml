@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 8 中文侧（与 values/strings_files.xml 一一对应） -->
+<resources>
+    <string name="file_page_title">文件</string>
+    <string name="file_cwd_line">环境内路径 %1$s</string>
+    <string name="file_intro">这些文件同时出现在手机自带文件管理器（Drydock workspace）；点文本文件就地编辑，点其他文件用系统应用打开；长按文件有更多操作。</string>
+    <string name="file_up">← 上一级</string>
+    <string name="file_not_deployed">环境未部署——先在「设置 → 初始设置」完成配置。</string>
+    <string name="file_open_with">用其他应用打开</string>
+    <string name="file_export">导出到 Downloads</string>
+    <string name="file_rename">重命名</string>
+    <string name="file_delete">删除</string>
+    <string name="file_export_busy">导出 %1$s 到 Downloads/Drydock…</string>
+    <string name="file_export_ok">✓ 已导出到 Downloads/Drydock</string>
+    <string name="file_export_fail">✗ 导出失败：%1$s</string>
+    <string name="file_dlg_rename_title">重命名</string>
+    <string name="file_dlg_name_label">文件名</string>
+    <string name="file_dlg_name_invalid">名字为空、含 / 或与现有文件重名</string>
+    <string name="file_rename_fail">重命名失败</string>
+    <string name="file_dlg_delete_title">删除「%1$s」？</string>
+    <string name="file_dlg_delete_text">删除后不可恢复（环境内与系统文件管理器同步消失）。</string>
+    <string name="file_delete_fail">删除失败</string>
+    <string name="file_no_app">没有应用能打开 %1$s（可先在系统文件管理器里试）</string>
+    <string name="file_chooser_title">用哪个应用打开 %1$s？</string>
+    <string name="editor_missing">文件不存在</string>
+    <string name="editor_not_text">不是可编辑的 UTF-8 文本</string>
+    <string name="editor_saved">✓ 已保存</string>
+    <string name="editor_save_fail">✗ 保存失败：%1$s</string>
+    <string name="editor_cancel">‹ 取消</string>
+    <string name="editor_overwrite_title">文件已被修改</string>
+    <string name="editor_overwrite_text">「%1$s」在你编辑期间被改过（可能是 agent 或外部应用）。现在保存会用你屏幕上的内容覆盖那些改动。</string>
+    <string name="editor_overwrite_save">覆盖保存</string>
+</resources>

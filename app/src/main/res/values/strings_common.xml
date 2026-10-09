@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 2：资源骨架（英文 = 默认兜底，任何非 zh 系统 locale 回落到这里）。
+     仅收横切公共键；页面族键随 i18n 批 3+ 进 strings_<页族>.xml（与 values-zh/
+     同构镜像，键集由 CI 的 MissingTranslation fatal 门禁保证不失配）。 -->
+<resources>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_ok">OK</string>
+</resources>

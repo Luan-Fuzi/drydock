@@ -196,3 +196,17 @@ D26 把「/root 用户文件迁移细则」留白随产品期实现定，R8（ro
 | 常驻配置中台 / 环境变量与文件管理 GUI | 与终端原生定调矛盾（D24/D25），配置引导由终端内引导脚本承接 |
 | 任意目录双向实时同步 | 冲突处理工作量与价值不成比例；文件互通按四档分层（D25） |
 | 以赚钱为目标 | 已明确非商业项目 |
+
+### D34 多语言（i18n）：资源限定符回落 + 测试三层解耦（2026-10-09，用户定调，十批落地）
+
+**机制**：`res/values/`（英文=默认兜底）+ `res/values-zh/`（zh* 生效）——系统 locale 为中文显示中文，其余一切语言回落英文，零检测代码；Android 13+ per-app 通道自动可用（AVD 实证 `cmd locale set-app-locales` 即时切换）。资源按页族拆 `strings_<族>.xml` 双侧同构（common/session/settings/wizard/envpages/backup/files/system 共 9 文件、400+ 键），CI 的 `MissingTranslation`/`ExtraTranslation` 双向 fatal 门禁保证键集永不失配（阴性对照实证拦截）。
+
+**不本地化面（口径）**：
+- 默认会话名「主终端」「会话 N」——用户定调固定中文格式（落盘数据跨语言一致，用户可改）；
+- 环境内容物——env.sh/配置文件内注释、agent 冒烟 prompt（「只回复四个字符：OK 了」、AV3 prompt，属 agent 交互协议）、shell echo 的环境欢迎语与 npm 回退提示（night-b t5 `fallback_fired` 断言依赖其字面）；
+- logcat 日志（开发面，测试证据引用口径）。
+- 通知通道名建后语言定格（平台限制，与 importance 同款先例）。
+
+**测试三层（批 1 解耦红利）**：night-b 交互锚点全部 resource-id 化（Compose `testTagsAsResourceId` 语义属性挂根 Surface、对话框独立窗口须各自补挂——沿祖先链查找的坑；View 体系走 ids.xml setId）——改文案零测试改动，历批实证；`i18n-sample.py` 抽样剧本断言渲染文本（zh/en 双绿）；CI lint 保键集。`settings put system system_locales` 手动写入不生效（需重启且被回写），locale 切换走 per-app 通道。
+
+**实现要点**：Compose UI 1.9 的 `testTagsAsResourceId` 已从全局 var 改语义属性；testTag 映射进 dump 的是裸 resource-id（View setId 才带 pkg:id/ 前缀）——脚本双形态兼容（`res_hit`/`res_text`，后者取容器子树首文本）。资源值内单引号/双引号须 `\'`/`\"` 转义；`stringResource` 不可进 `remember{}` 计算块（先取后用）。

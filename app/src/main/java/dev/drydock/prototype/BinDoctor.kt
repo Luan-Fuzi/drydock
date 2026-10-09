@@ -129,15 +129,15 @@ object BinDoctor {
      *  保留本进程 running 去重；与 :env 的异步轮在不同进程，极端并发下 tmp 清单
      *  可能互踩（原型可接受）。调用方放 IO 线程。 */
     fun scanNow(context: Context): String {
-        if (!RootfsManager.isDeployed(context)) return "环境未部署"
-        if (running) return "已有 doctor 扫描在跑，稍后再试"
+        if (!RootfsManager.isDeployed(context)) return context.getString(R.string.bin_not_deployed)
+        if (running) return context.getString(R.string.bin_running)
         running = true
         return try {
             val r = runOnce(context, manual = true)
             val text = if (r.fixed.isEmpty() && r.failed.isEmpty()) {
-                "扫描完成：无断链（/usr/local 链接全部有效，修复 0 项）"
+                context.getString(R.string.bin_scan_ok)
             } else {
-                "扫描完成：修复 ${r.fixed.size} 项、未修复 ${r.failed.size} 项" +
+                context.getString(R.string.bin_scan_fixed, r.fixed.size, r.failed.size) +
                     r.fixed.joinToString("") { "\n✓ $it" } +
                     r.failed.joinToString("") { "\n✗ $it" }
             }
@@ -151,7 +151,7 @@ object BinDoctor {
             )
             text
         } catch (e: Exception) {
-            "扫描异常：$e"
+            context.getString(R.string.bin_scan_err, e.toString())
         } finally {
             running = false
             lastRunAt = System.currentTimeMillis()

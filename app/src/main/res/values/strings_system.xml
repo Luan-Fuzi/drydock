@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 9：通知与后台 + 开发者选项 + 救援页键。AgentManager 的 AV3 冒烟 prompt
+     是 agent 交互协议不本地化（同 RecipeManager smoke prompt 口径）。 -->
+<resources>
+    <string name="notif_channel_fg">Environment host</string>
+    <string name="notif_channel_alert">Session alerts</string>
+    <string name="notif_fg_title">Drydock environment running</string>
+    <string name="notif_fg_text">Linux sessions and terminal services</string>
+    <string name="notif_resumed_title">Tasks were suspended by the system for about %1$d min</string>
+    <string name="notif_resumed_text">The environment and instrumentation stalled together (likely a battery-saver freeze) and have recovered automatically; if this happens often, check the battery-saver policy</string>
+    <string name="notif_exit_title">Session %1$s exited</string>
+    <string name="notif_exit_text">Environment process ended; reopening the terminal rebuilds the session</string>
+    <string name="notif_silent_title">Session %1$s silent for %2$d min</string>
+    <string name="notif_silent_text">No PTY output (task may have finished or be waiting for input)</string>
+    <string name="agent_node_download">Downloading %1$s…</string>
+    <string name="agent_node_fail">node download failed: %1$s</string>
+    <string name="agent_node_install">node tarball verified, installing inside the environment…</string>
+    <string name="agent_stash_fail">staging failed: %1$s</string>
+    <string name="bench_ensure_tools">Ensuring hyperfine/make/tcc…</string>
+    <string name="bench_tools_fail">tool install failed: %1$s</string>
+    <string name="bench_running">Running benchmark battery (about 2–3 minutes)…</string>
+    <string name="bench_hf_fail">hyperfine failed: %1$s</string>
+    <string name="bench_done">✓ Results saved to Downloads/Drydock</string>
+    <string name="bench_stash_fail">staging failed: %1$s</string>
+    <string name="rescue_title">Rescue channel</string>
+    <string name="rescue_desc">Runs commands in the environment directly, bypassing the terminal layer (ttyd/dtach). Use it to diagnose when the terminal won\'t open or the environment seems broken: ls, dpkg --audit, cat logs, etc.</string>
+    <string name="rescue_cmd_label">Command</string>
+    <string name="rescue_running">Running…</string>
+    <string name="rescue_run">Run</string>
+    <string name="dev_channels_title">Acceptance channels</string>
+    <string name="dev_channels_desc">Debug acceptance channels ride this Activity (am start --es: drydock_endpoint/recipe/exec64/export/provider_test/rescue). The rescue channel also has a launcher entry; prototype instruments (deploy/AV1/AV2/AV3 manual pages) were removed with MainActivity.</string>
+    <string name="dev_storage_title">Storage</string>
+    <string name="dev_clean_parse_fail">✗ Failed to parse result: %1$s</string>
+    <string name="dev_clean_ok">✓ Cleanup finished: %1$s KB → %2$s KB</string>
+    <string name="dev_clean_fail">✗ Cleanup failed: %1$s</string>
+    <string name="dev_clean_btn">Clean apt caches now</string>
+    <string name="dev_clean_busy">Running apt-get clean and index cleanup in the environment…</string>
+    <string name="dev_clean_desc">Clears /var/lib/apt/lists and /var/cache/apt (measured 438MB→121MB) and runs npm cache clean; the first apt operation after cleanup needs update to re-fetch indexes.</string>
+    <string name="dev_diag_title">Diagnostics</string>
+    <string name="dev_scan_fail">✗ Scan failed: %1$s</string>
+    <string name="dev_scan_btn">Scan with BinDoctor now</string>
+    <string name="dev_scan_busy">Scanning for broken links… (find inside the environment; host pulls packages to repair)</string>
+    <string name="dev_sessions_title">Session diagnostics</string>
+    <string name="dev_sessions_refresh">Refresh session diagnostics</string>
+    <string name="dev_reading">Reading…</string>
+    <string name="dev_no_sessions">No sessions (registry terminal-sessions.json is empty)</string>
+    <string name="dev_registry_count">%1$d sessions in registry:</string>
+    <string name="dev_session_row">%1$s :%2$d %3$s ttyd=%4$s holder=%5$s</string>
+    <string name="dev_port_alive">port✓</string>
+    <string name="dev_port_dead">port✗</string>
+    <string name="dev_not_running">not running</string>
+    <string name="dev_tl_title">Timeline</string>
+    <string name="dev_tl_export_fail">✗ Export failed: %1$s</string>
+    <string name="dev_tl_export_btn">Export timeline (timeline.jsonl → Downloads/Drydock)</string>
+    <string name="dev_tl_export_busy">Exporting…</string>
+    <string name="dev_tl_view_btn">In-page timeline view (latest 100)</string>
+    <string name="dev_tl_view_busy">Reading timeline…</string>
+    <string name="dev_tl_count">Showing %1$d of %2$d entries</string>
+    <string name="dev_ver_title">Version</string>
+    <string name="dev_ver_body">Drydock prototype · built from a main tag (git discipline)\nEnvironment Ubuntu %1$s · recipes %2$s</string>
+    <string name="dev_ver_not_deployed">not deployed</string>
+    <string name="dev_ver_no_recipes">none installed</string>
+    <string name="dev_wl_none">no record</string>
+    <string name="dev_wl_held">held</string>
+    <string name="dev_wl_not_held">not held</string>
+    <string name="dev_env_alive">WakeLock %1$s · :env process running</string>
+    <string name="dev_env_dead">WakeLock %1$s · :env process not running</string>
+</resources>

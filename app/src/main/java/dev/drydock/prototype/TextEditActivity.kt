@@ -26,6 +26,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -54,14 +56,14 @@ class TextEditActivity : ComponentActivity() {
         val path = intent?.getStringExtra(EXTRA_PATH)
         val file = path?.let { File(it) }
         if (file == null || !file.isFile) {
-            Toast.makeText(this, "文件不存在", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.editor_missing), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
         val loaded = readTextStrict(file)
         if (loaded == null) {
             // FilePane 预检放行后的漏网（并发修改等）：按二进制处理，退回外部应用
-            Toast.makeText(this, "不是可编辑的 UTF-8 文本", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.editor_not_text), Toast.LENGTH_SHORT).show()
             openExternalFallback(this, file)
             finish()
             return
@@ -102,10 +104,10 @@ private fun EditorScreen(file: File, initialText: String) {
             busy = false
             r.fold(
                 {
-                    Toast.makeText(context, "✓ 已保存", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.editor_saved), Toast.LENGTH_SHORT).show()
                     (context as? ComponentActivity)?.finish()
                 },
-                { Toast.makeText(context, "✗ 保存失败：${it.message}", Toast.LENGTH_SHORT).show() },
+                { Toast.makeText(context, context.getString(R.string.editor_save_fail, it.message ?: ""), Toast.LENGTH_SHORT).show() },
             )
         }
     }
@@ -119,7 +121,7 @@ private fun EditorScreen(file: File, initialText: String) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-            TextButton(onClick = { (context as? ComponentActivity)?.finish() }) { Text("‹ 取消") }
+            TextButton(onClick = { (context as? ComponentActivity)?.finish() }) { Text(stringResource(R.string.editor_cancel)) }
             Text(
                 file.name,
                 style = MaterialTheme.typography.titleMedium,
@@ -129,7 +131,7 @@ private fun EditorScreen(file: File, initialText: String) {
             Button(enabled = !busy, onClick = {
                 // 进入后文件被 agent/外部应用改过：先问，避免静默覆盖他人写入
                 if (file.lastModified() != mtimeAtEntry) overwriteAsk = true else doSave()
-            }) { Text(if (busy) "保存中…" else "保存") }
+            }, modifier = Modifier.testTag("editor_save")) { Text(if (busy) stringResource(R.string.ep_saving) else stringResource(R.string.session_dlg_save)) }
         }
         OutlinedTextField(
             value = text,
@@ -142,18 +144,17 @@ private fun EditorScreen(file: File, initialText: String) {
     if (overwriteAsk) {
         AlertDialog(
             onDismissRequest = { overwriteAsk = false },
-            title = { Text("文件已被修改") },
+            title = { Text(stringResource(R.string.editor_overwrite_title)) },
             text = {
                 Text(
-                    "「${file.name}」在你编辑期间被改过（可能是 agent 或外部应用）。" +
-                        "现在保存会用你屏幕上的内容覆盖那些改动。",
+                    stringResource(R.string.editor_overwrite_text, file.name),
                 )
             },
             confirmButton = {
-                TextButton(onClick = { overwriteAsk = false; doSave() }) { Text("覆盖保存") }
+                TextButton(onClick = { overwriteAsk = false; doSave() }) { Text(stringResource(R.string.editor_overwrite_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { overwriteAsk = false }) { Text("取消") }
+                TextButton(onClick = { overwriteAsk = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }

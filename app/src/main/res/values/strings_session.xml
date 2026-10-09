@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 3：会话/终端主链路键（SessionPane、HomeActivity 导航、TerminalActivity
+     菜单与无障碍 desc）。默认会话名「主终端」「会话 N」不本地化（用户 2026-10-09
+     定调：默认名是数据，固定中文格式，跨语言一致）。 -->
+<resources>
+    <!-- 底部导航（app 级） -->
+    <string name="nav_label_sessions">Sessions</string>
+    <string name="nav_label_files">Files</string>
+    <string name="nav_label_settings">Settings</string>
+
+    <!-- 会话页 -->
+    <string name="session_new">New session</string>
+    <string name="session_rename">Rename</string>
+    <string name="session_close">Close</string>
+    <string name="session_card_local_port">Local port :%1$d</string>
+    <string name="session_empty_intro">Drydock lets a coding agent live and work on your phone.\n\nFirst time: complete setup under Settings → Setup wizard (keep-alive, connect a model, install agents), then tap New session to open a terminal — OpenCode or pi will just work.\n\nAPI keys go through environment variables: send your key to the agent in the terminal and it will write it to ~/.drydock/env.sh; sessions survive screen-off, and output files are visible in the phone\'s file manager.</string>
+    <string name="session_dlg_new_desc">Each session is an independent terminal; sessions do not affect each other and can run different tasks at the same time.</string>
+    <string name="session_dlg_name_label">Session name</string>
+    <string name="session_dlg_create">Create</string>
+    <string name="session_dlg_rename_title">Rename session</string>
+    <string name="session_dlg_save">Save</string>
+    <string name="session_dlg_close_title">Close %1$s?</string>
+    <string name="session_dlg_close_desc">A dtach session has no service process: after closing, the contents of this session (including the agent TUI) are lost, and reopening starts a fresh shell.</string>
+    <string name="session_dlg_close_main_note">When all sessions are closed, the main terminal is rebuilt automatically on next open.</string>
+
+    <!-- busy / 错误（协程上下文，context.getString 取值） -->
+    <string name="session_busy_reattach">Reconnecting %1$s…</string>
+    <string name="session_busy_deploy">Deploying Linux environment (about 1 minute on first run)…</string>
+    <string name="session_busy_terminal_layer">Preparing terminal layer…</string>
+    <string name="session_busy_starting">Starting session…</string>
+    <string name="session_busy_closing">Closing %1$s…</string>
+    <string name="session_err_reattach">Failed to reconnect (see logs: Settings → Developer options)</string>
+    <string name="session_err_start">Failed to start session (see logs: Settings → Developer options)</string>
+    <string name="session_err_close">Failed to close (see logs: Settings → Developer options)</string>
+
+    <!-- 终端页（View 体系，getString 取值） -->
+    <string name="terminal_menu_title">Sessions</string>
+    <string name="terminal_menu_home">Back to home</string>
+    <string name="terminal_fab_menu">Menu</string>
+    <string name="terminal_fab_keyboard">Keyboard</string>
+    <string name="terminal_key_left">Left</string>
+    <string name="terminal_key_up">Up</string>
+    <string name="terminal_key_down">Down</string>
+    <string name="terminal_key_right">Right</string>
+    <string name="terminal_key_enter">Enter</string>
+</resources>

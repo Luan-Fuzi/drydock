@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,17 +63,17 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
     }
 
     fun startImport(uri: Uri) {
-        importBusy = "读取所选文件…"
+        importBusy = context.getString(R.string.backup_busy_read)
         importMsg = ""
         applyAll = null
         scope.launch {
             try {
                 val appCtx = context.applicationContext
                 if (!RootfsManager.isDeployed(appCtx)) {
-                    importBusy = "部署 Linux 环境（首次约 1 分钟）…"
+                    importBusy = context.getString(R.string.session_busy_deploy)
                     withContext(Dispatchers.IO) { RootfsManager.deploy(appCtx) { } }
                     if (!RootfsManager.isDeployed(appCtx)) {
-                        importMsg = "✗ 部署失败，恢复中止（网络/存储问题，可重试）"
+                        importMsg = context.getString(R.string.backup_deploy_fail)
                         importBusy = ""
                         return@launch
                     }
@@ -81,9 +82,9 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
                     appCtx, uri,
                     onState = { s ->
                         importBusy = when (s) {
-                            is RootfsManager.ImportState.Copying -> "读取所选文件…"
-                            is RootfsManager.ImportState.Scanning -> "校验与解包导入包…（已 ${s.entries} 项）"
-                            is RootfsManager.ImportState.Merging -> "合并进环境…（${s.done}/${s.total}）"
+                            is RootfsManager.ImportState.Copying -> context.getString(R.string.backup_busy_read)
+                            is RootfsManager.ImportState.Scanning -> context.getString(R.string.backup_import_scanning, s.entries)
+                            is RootfsManager.ImportState.Merging -> context.getString(R.string.backup_import_merging, s.done, s.total)
                         }
                     },
                     onConflict = { path, remaining ->
@@ -92,20 +93,20 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
                         }
                     },
                 )
-                importMsg = "✓ 恢复完成：导入 ${r.imported} · 跳过 ${r.skipped} · 失败 ${r.failed}" +
-                    if (r.failed > 0) "（如 ${r.failedSample.firstOrNull()}）" else ""
+                importMsg = context.getString(R.string.backup_import_ok, r.imported, r.skipped, r.failed) +
+                    if (r.failed > 0) context.getString(R.string.backup_import_ok_sample, r.failedSample.firstOrNull() ?: "") else ""
             } catch (e: RootfsManager.ImportReject) {
-                importMsg = "✗ 已整体拒绝，环境未改动：${e.message}"
+                importMsg = context.getString(R.string.backup_import_reject, e.message ?: "")
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                importMsg = "✗ 恢复失败：${e.message}"
+                importMsg = context.getString(R.string.backup_import_fail, e.message ?: "")
             }
             importBusy = ""
         }
     }
 
-    SettingsSubPage("备份与导出", onBack) {
+    SettingsSubPage(stringResource(R.string.settings_row_backup), onBack) {
         Button(
             enabled = !exporting && importBusy.isBlank() && RootfsManager.isDeployed(context),
             onClick = {
@@ -115,27 +116,23 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
                         runCatching { RootfsManager.exportEnvTar(context.applicationContext) }
                     }
                     exporting = false
-                    exportMsg = r.fold({ "✓ 已导出到 Downloads/Drydock（$it）" }, { "✗ 导出失败：${it.message}" })
+                    exportMsg = r.fold({ context.getString(R.string.backup_export_ok, it) }, { context.getString(R.string.backup_export_fail, it.message ?: "") })
                 }
             },
-        ) { Text("导出工作区与配置（tar.gz）") }
+        ) { Text(stringResource(R.string.backup_export_btn)) }
         // busy 反馈走 BusyBar（R11）：按钮文字保持固定，不塞进度文字
-        if (exporting) BusyBar("导出中…（约 1 分钟）")
+        if (exporting) BusyBar(stringResource(R.string.backup_exporting))
         if (exportMsg.isNotBlank()) Text(exportMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
 
         // ---- 从 tar.gz 恢复（R4）----
         Button(
             enabled = importBusy.isBlank() && !exporting,
             onClick = { picker.launch(arrayOf("*/*")) },
-        ) { Text("从 tar.gz 恢复…") }
+        ) { Text(stringResource(R.string.backup_restore_btn)) }
         if (importBusy.isNotBlank()) BusyBar(importBusy)
         if (importMsg.isNotBlank()) Text(importMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Text(
-            "导出 /root 工作区与 drydock 配置（系统层按配方版本可重放，不进导出）；" +
-                "产物存 Downloads/Drydock/drydock-env-export.tar.gz；" +
-                "含 ~/.drydock/env.sh——你写入的环境变量（含自行存放的 key）会进导出包。\n" +
-                "恢复按导出口径合并进当前环境：新文件直接写入，同名且内容不同会逐个询问" +
-                "（可全部覆盖/全部跳过）；环境未部署时会先自动部署。",
+            stringResource(R.string.backup_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -146,19 +143,17 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
             val size = remember(uri) { docSize(context, uri) }
             AlertDialog(
                 onDismissRequest = { pendingUri = null },
-                title = { Text("从 tar.gz 恢复") },
+                title = { Text(stringResource(R.string.backup_dlg1_title)) },
                 text = {
                     Text(
-                        "已选择 $name（$size）。\n\n" +
-                            "恢复会把这个备份合并进当前环境，已存在的同名文件会询问覆盖或跳过。\n" +
-                            "⚠ 备份里的 ~/.drydock/env.sh 会随之进入环境——存放在其中的密钥一并进入。",
+                        stringResource(R.string.backup_dlg1_text, name, size),
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = { confirmDanger = true }) { Text("继续") }
+                    TextButton(onClick = { confirmDanger = true }) { Text(stringResource(R.string.backup_dlg1_continue)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { pendingUri = null }) { Text("取消") }
+                    TextButton(onClick = { pendingUri = null }) { Text(stringResource(R.string.common_cancel)) }
                 },
             )
         }
@@ -167,11 +162,10 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
         if (confirmDanger) {
             AlertDialog(
                 onDismissRequest = { confirmDanger = false; pendingUri = null },
-                title = { Text("确认开始恢复？") },
+                title = { Text(stringResource(R.string.backup_dlg2_title)) },
                 text = {
                     Text(
-                        "恢复会改写环境内文件且不可撤销；建议先关闭正在运行的会话再继续。" +
-                            "Linux 环境未部署时会先自动部署（约 1 分钟）。",
+                        stringResource(R.string.backup_dlg2_text),
                     )
                 },
                 confirmButton = {
@@ -180,10 +174,10 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
                         confirmDanger = false
                         pendingUri = null
                         if (uri != null) startImport(uri)
-                    }) { Text("我明白，开始恢复") }
+                    }) { Text(stringResource(R.string.backup_dlg2_confirm)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { confirmDanger = false; pendingUri = null }) { Text("取消") }
+                    TextButton(onClick = { confirmDanger = false; pendingUri = null }) { Text(stringResource(R.string.common_cancel)) }
                 },
             )
         }
@@ -192,13 +186,13 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
         ask?.let { a ->
             AlertDialog(
                 onDismissRequest = { answer(RootfsManager.ImportDecision.SKIP) },
-                title = { Text("同名文件") },
+                title = { Text(stringResource(R.string.backup_conflict_title)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("导入包与当前环境都有这个文件，内容不同：")
+                        Text(stringResource(R.string.backup_conflict_desc))
                         Text(a.path, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                         Text(
-                            "后面还有 ${a.remaining} 个同名询问",
+                            stringResource(R.string.backup_conflict_more, a.remaining),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -206,19 +200,19 @@ internal fun BackupSettingsPage(onBack: () -> Unit) {
                             TextButton(onClick = {
                                 applyAll = RootfsManager.ImportDecision.OVERWRITE
                                 answer(RootfsManager.ImportDecision.OVERWRITE)
-                            }) { Text("全部覆盖") }
+                            }) { Text(stringResource(R.string.backup_conflict_all_overwrite)) }
                             TextButton(onClick = {
                                 applyAll = RootfsManager.ImportDecision.SKIP
                                 answer(RootfsManager.ImportDecision.SKIP)
-                            }) { Text("全部跳过") }
+                            }) { Text(stringResource(R.string.backup_conflict_all_skip)) }
                         }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { answer(RootfsManager.ImportDecision.OVERWRITE) }) { Text("覆盖") }
+                    TextButton(onClick = { answer(RootfsManager.ImportDecision.OVERWRITE) }) { Text(stringResource(R.string.backup_conflict_overwrite)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { answer(RootfsManager.ImportDecision.SKIP) }) { Text("跳过") }
+                    TextButton(onClick = { answer(RootfsManager.ImportDecision.SKIP) }) { Text(stringResource(R.string.backup_conflict_skip)) }
                 },
             )
         }
@@ -231,5 +225,5 @@ private fun docSize(context: android.content.Context, uri: Uri): String {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
             ?.use { c -> if (c.moveToFirst()) c.getLong(0) else null }
     }.getOrNull()
-    return size?.let { "${"%.1f".format(it / 1_000_000.0)} MB" } ?: "大小未知"
+    return size?.let { "${"%.1f".format(it / 1_000_000.0)} MB" } ?: context.getString(R.string.backup_size_unknown)
 }

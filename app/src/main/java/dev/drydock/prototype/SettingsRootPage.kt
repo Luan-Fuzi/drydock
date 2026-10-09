@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 
 /** 设置主页面：摘要当前值只在本组合读（when 分支切换销毁重建，返回时自然重读）。 */
 @Composable
@@ -28,58 +29,62 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
     val mirrorSummary = remember { mirrorSummaryOf(context) }
     val bindOn = remember { BindStore.enabled(context) }
     val themeLabel = when (ThemeStore.mode.value) {
-        ThemeStore.Mode.SYSTEM -> "跟随系统"
-        ThemeStore.Mode.LIGHT -> "浅色"
-        ThemeStore.Mode.DARK -> "深色"
+        ThemeStore.Mode.SYSTEM -> stringResource(R.string.settings_theme_system)
+        ThemeStore.Mode.LIGHT -> stringResource(R.string.settings_theme_light)
+        ThemeStore.Mode.DARK -> stringResource(R.string.settings_theme_dark)
     }
-    val termSummary = "字号 ${TermPrefs.fontSize(context)} · 回滚 ${TermPrefs.scrollback(context)} 行"
+    val termSummary = stringResource(R.string.settings_term_summary, TermPrefs.fontSize(context), TermPrefs.scrollback(context))
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("设置", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.settings_page_title), style = MaterialTheme.typography.titleLarge)
 
-        SettingsGroup("模型与端点") {
+        SettingsGroup(stringResource(R.string.settings_group_model)) {
             SettingsRow(
-                "Coding 端点",
-                if (endpoints.isEmpty()) "未添加（内置厂商自动识别）" else "${endpoints.size} 个自定义端点",
+                stringResource(R.string.settings_row_endpoints),
+                if (endpoints.isEmpty()) stringResource(R.string.settings_row_endpoints_empty)
+                else stringResource(R.string.settings_row_endpoints_count, endpoints.size),
             ) { onOpen(SettingsPage.ENDPOINTS) }
             SettingsRow(
-                "初始设置向导",
-                if (wizardDone) "已完成 · 可重新运行" else "保活 / 连接大模型 / 安装 agent",
+                stringResource(R.string.settings_row_wizard),
+                if (wizardDone) stringResource(R.string.settings_row_wizard_done)
+                else stringResource(R.string.settings_row_wizard_todo),
                 divider = false,
+                tag = "settings_wizard",
             ) { context.startActivity(Intent(context, WizardActivity::class.java)) }
         }
 
-        SettingsGroup("环境") {
-            SettingsRow("环境变量", "~/.drydock/env.sh（新会话生效）") { onOpen(SettingsPage.ENV_SH) }
-            SettingsRow("镜像源", mirrorSummary) { onOpen(SettingsPage.MIRRORS) }
-            SettingsRow("备份与导出", "导出 → Downloads/Drydock · 从 tar.gz 恢复") { onOpen(SettingsPage.BACKUP) }
+        SettingsGroup(stringResource(R.string.settings_group_env)) {
+            SettingsRow(stringResource(R.string.settings_row_env_sh), stringResource(R.string.settings_row_env_sh_sum)) { onOpen(SettingsPage.ENV_SH) }
+            SettingsRow(stringResource(R.string.settings_row_mirrors), mirrorSummary) { onOpen(SettingsPage.MIRRORS) }
+            SettingsRow(stringResource(R.string.settings_row_backup), stringResource(R.string.settings_row_backup_sum)) { onOpen(SettingsPage.BACKUP) }
             SettingsRow(
-                "系统更新",
-                "Ubuntu ${RootfsManager.deployedVersion(context).ifBlank { RootfsManifest.UBUNTU_VERSION }} · 检查更新与回滚",
+                stringResource(R.string.settings_row_update),
+                stringResource(R.string.settings_row_update_sum,
+                    RootfsManager.deployedVersion(context).ifBlank { RootfsManifest.UBUNTU_VERSION }),
             ) { onOpen(SettingsPage.UPDATE) }
             SettingsRow(
-                "目录直通绑定",
-                "实验 · " + if (bindOn) "已开启" else "已关闭",
+                stringResource(R.string.settings_row_bind),
+                stringResource(if (bindOn) R.string.settings_row_bind_sum_on else R.string.settings_row_bind_sum_off),
                 divider = false,
+                tag = "settings_bind",
             ) { onOpen(SettingsPage.BIND) }
         }
 
-        SettingsGroup("应用") {
-            SettingsRow("外观", themeLabel) { onOpen(SettingsPage.APPEARANCE) }
-            SettingsRow("终端显示", termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
+        SettingsGroup(stringResource(R.string.settings_group_app)) {
+            SettingsRow(stringResource(R.string.settings_row_appearance), themeLabel, tag = "settings_appearance") { onOpen(SettingsPage.APPEARANCE) }
+            SettingsRow(stringResource(R.string.settings_row_terminal), termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
         }
 
-        SettingsGroup("更多") {
-            SettingsRow("开发者选项", "验收通道、时间线导出与版本详情", divider = false) { onOpen(SettingsPage.DEV) }
+        SettingsGroup(stringResource(R.string.settings_group_more)) {
+            SettingsRow(stringResource(R.string.settings_row_dev), stringResource(R.string.settings_row_dev_sum), divider = false) { onOpen(SettingsPage.DEV) }
         }
 
         Text(
-            "Drydock 原型（从 main tag 构建）· Ubuntu " +
-                "${RootfsManager.deployedVersion(context).ifBlank { RootfsManifest.UBUNTU_VERSION }}\n" +
-                "⚠ 卸载或清除应用数据会连同 Linux 环境一起删除——删除前先用「备份与导出」备份。",
+            stringResource(R.string.settings_footer,
+                RootfsManager.deployedVersion(context).ifBlank { RootfsManifest.UBUNTU_VERSION }),
             fontSize = 11.sp, fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -91,19 +96,19 @@ private fun mirrorSummaryOf(context: Context): String {
     val txt = runCatching {
         File(RootfsManager.rootfsDir(context), "root/.drydock/mirrors").takeIf { it.exists() }?.readText()
     }.getOrNull().orEmpty()
-    val apt = Regex("DRYDOCK_APT_MIRROR=(\\S+)").find(txt)?.groupValues?.get(1)?.let(::mirrorHostOf)
-    val npm = Regex("DRYDOCK_NPM_REGISTRY=(\\S+)").find(txt)?.groupValues?.get(1)?.let(::mirrorHostOf)
-    if (apt == null && npm == null) return "默认（国内镜像 + 官方回退）"
+    val apt = Regex("DRYDOCK_APT_MIRROR=(\\S+)").find(txt)?.groupValues?.get(1)?.let { mirrorHostOf(context, it) }
+    val npm = Regex("DRYDOCK_NPM_REGISTRY=(\\S+)").find(txt)?.groupValues?.get(1)?.let { mirrorHostOf(context, it) }
+    if (apt == null && npm == null) return context.getString(R.string.settings_mirror_default)
     return listOfNotNull(apt?.let { "APT $it" }, npm?.let { "npm $it" }).joinToString(" · ")
 }
 
-private fun mirrorHostOf(url: String): String = when {
-    url.contains("tuna") -> "清华 TUNA"
-    url.contains("ustc") -> "中科大"
-    url.contains("nju") -> "南大"
-    url.contains("aliyun") -> "阿里云"
-    url.contains("ports.ubuntu.com") -> "官方源"
+private fun mirrorHostOf(context: Context, url: String): String = when {
+    url.contains("tuna") -> context.getString(R.string.settings_mirror_tuna)
+    url.contains("ustc") -> context.getString(R.string.settings_mirror_ustc)
+    url.contains("nju") -> context.getString(R.string.settings_mirror_nju)
+    url.contains("aliyun") -> context.getString(R.string.settings_mirror_aliyun)
+    url.contains("ports.ubuntu.com") -> context.getString(R.string.settings_mirror_ubuntu_official)
     url.contains("npmmirror") -> "npmmirror"
-    url.contains("registry.npmjs.org") -> "npm 官方"
-    else -> "自定义"
+    url.contains("registry.npmjs.org") -> context.getString(R.string.settings_mirror_npm_official)
+    else -> context.getString(R.string.settings_mirror_custom)
 }

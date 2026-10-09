@@ -47,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -80,12 +82,12 @@ class WizardActivity : ComponentActivity() {
 
 /** 常见服务 → 环境变量名（D31 口径：GLM 双变量——opencode 认 ZHIPU_API_KEY，
  *  pi 按名精确匹配 ZAI_CODING_CN_API_KEY；其余为 models.dev/业界标准名）。 */
-private enum class Vendor(val label: String, val envVars: List<String>) {
-    GLM("智谱 GLM", listOf("ZHIPU_API_KEY", "ZAI_CODING_CN_API_KEY")),
-    DEEPSEEK("DeepSeek", listOf("DEEPSEEK_API_KEY")),
-    MOONSHOT("Moonshot", listOf("MOONSHOT_API_KEY")),
-    OPENAI("OpenAI", listOf("OPENAI_API_KEY")),
-    ANTHROPIC("Anthropic", listOf("ANTHROPIC_API_KEY")),
+private enum class Vendor(val labelRes: Int, val envVars: List<String>) {
+    GLM(R.string.vendor_glm, listOf("ZHIPU_API_KEY", "ZAI_CODING_CN_API_KEY")),
+    DEEPSEEK(R.string.vendor_deepseek, listOf("DEEPSEEK_API_KEY")),
+    MOONSHOT(R.string.vendor_moonshot, listOf("MOONSHOT_API_KEY")),
+    OPENAI(R.string.vendor_openai, listOf("OPENAI_API_KEY")),
+    ANTHROPIC(R.string.vendor_anthropic, listOf("ANTHROPIC_API_KEY")),
 }
 
 /** 常见服务 key 落 env.sh（GLM 双变量），复用通用 upsert。 */
@@ -157,7 +159,7 @@ private fun WizardScreen() {
                 onClick = {
                     if (step == 0) (context as? Activity)?.finish() else step -= 1
                 },
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier.align(Alignment.CenterStart).testTag("wizard_back"),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
             ) { Text("‹", fontSize = 26.sp) }
             if (step in 1..3) {
@@ -189,7 +191,7 @@ private fun WizardScreen() {
             3 -> RecipeStep(
                 busy = busy,
                 onRun = { picks ->
-                    busy = "准备中…"
+                    busy = context.getString(R.string.wizard_busy_prepare)
                     scope.launch {
                         val appCtx = context.applicationContext
                         val log = { s: String -> busy = s }
@@ -197,7 +199,7 @@ private fun WizardScreen() {
                             var report = ""
                             if (!ensureEnvReady(appCtx)) {
                                 busy = ""
-                                doneMsg = "✗ Linux 环境准备失败（网络或存储问题），可稍后重试\n"
+                                doneMsg = context.getString(R.string.wizard_r_env_fail)
                                 return@launch
                             }
                             val installed = mutableListOf<RecipeManager.Recipe>()
@@ -205,33 +207,33 @@ private fun WizardScreen() {
                                 picks.forEach { r ->
                                     val res = RecipeManager.ensure(appCtx, r, log)
                                     if (res.output.contains("RECIPE_RC=0")) {
-                                        report += "✓ ${r.title} 安装完成\n"
+                                        report += context.getString(R.string.wizard_r_install_ok, r.title)
                                         installed += r
                                     } else {
-                                        report += "✗ ${r.title} 安装失败：${res.output.takeLast(200)}\n"
+                                        report += context.getString(R.string.wizard_r_install_fail, r.title, res.output.takeLast(200))
                                     }
                                 }
                                 if (picks.isNotEmpty()) {
                                     RecipeManager.applyEndpointConfig(appCtx).also { cfg ->
                                         when {
-                                            cfg.output.contains("CFG_SKIPPED") -> report += "未添加自定义端点（常见服务走环境变量，无需此步）\n"
+                                            cfg.output.contains("CFG_SKIPPED") -> report += context.getString(R.string.wizard_r_no_custom)
                                             cfg.output.contains("OPENCODE_CFG_MERGED") ||
-                                                cfg.output.contains("PI_CFG_MERGED") -> report += "✓ 端点配置已合并写入\n"
-                                            else -> report += "✗ 端点配置失败：${cfg.output.takeLast(200)}\n"
+                                                cfg.output.contains("PI_CFG_MERGED") -> report += context.getString(R.string.wizard_r_cfg_merged)
+                                            else -> report += context.getString(R.string.wizard_r_cfg_fail, cfg.output.takeLast(200))
                                         }
                                     }
                                     if (installed.isNotEmpty() && EndpointStore.all(appCtx).isNotEmpty()) {
-                                        log("验证中：让 ${installed.first().title} 出第一句话…")
+                                        log(context.getString(R.string.wizard_r_verify, installed.first().title))
                                         val s = RecipeManager.smoke(appCtx, installed.first())
                                         report += if (s.output.contains("SMOKE_RC=0")) {
-                                            "✓ agent 已出第一句话\n"
+                                            context.getString(R.string.wizard_r_smoke_ok)
                                         } else {
-                                            "✗ 冒烟未过（可稍后在终端里重试）：${s.output.takeLast(200)}\n"
+                                            context.getString(R.string.wizard_r_smoke_fail, s.output.takeLast(200))
                                         }
                                     }
                                 } else {
                                     withContext(Dispatchers.IO) { RecipeManager.applyEndpointConfig(appCtx) }
-                                    report += "暂不安装。可随时在 设置 → 初始设置向导 重新安装，或进终端自行安装。\n"
+                                    report += context.getString(R.string.wizard_r_skipped)
                                 }
                             }
                             EndpointStore.setWizardDone(appCtx)
@@ -239,13 +241,13 @@ private fun WizardScreen() {
                             doneMsg = report
                         } catch (e: Exception) {
                             busy = ""
-                            doneMsg = "异常：$e"
+                            doneMsg = context.getString(R.string.wizard_r_error, e.toString())
                         }
                     }
                 },
                 doneMsg = doneMsg,
                 onFinish = {
-                    busy = "正在准备终端…"
+                    busy = context.getString(R.string.wizard_busy_terminal)
                     scope.launch {
                         val appCtx = context.applicationContext
                         try {
@@ -265,7 +267,7 @@ private fun WizardScreen() {
                         if (found) {
                             context.startActivity(android.content.Intent(context, TerminalActivity::class.java))
                         } else {
-                            doneMsg += "✗ 会话启动失败（看 logcat DrydockEnv/DrydockTerminal）\n"
+                            doneMsg += context.getString(R.string.wizard_r_start_fail)
                         }
                     }
                 },
@@ -274,14 +276,16 @@ private fun WizardScreen() {
     }
 }
 
-/** 步骤头部：图标 + 居中大标题。 */
+/** 步骤头部：图标 + 居中大标题。tag = 步骤锚点（wizard_step_*，i18n 批 1：
+ *  剧本按 resource-id 等步骤页，不依赖标题文案）。 */
 @Composable
-private fun StepHeader(icon: String, title: String) {
+private fun StepHeader(icon: String, title: String, tag: String? = null) {
     Text(icon, fontSize = 44.sp)
     Text(
         title,
         style = MaterialTheme.typography.headlineSmall,
         textAlign = TextAlign.Center,
+        modifier = Modifier.then(if (tag != null) Modifier.testTag(tag) else Modifier),
     )
 }
 
@@ -325,16 +329,15 @@ private fun GuideCard(title: String, body: String) {
 /** 欢迎页（step 0）：应用定位，三件事各一句话。 */
 @Composable
 private fun WelcomeStep(onStart: () -> Unit) {
-    StepHeader("⚓", "欢迎使用 Drydock")
+    StepHeader("⚓", stringResource(R.string.wizard_welcome_title), "wizard_step_welcome")
     StepBody(
-        "Drydock 在你的手机上运行一个完整的 Linux 环境，" +
-            "AI 编程助手（agent）住在这里，随时帮你干活。",
+        stringResource(R.string.wizard_welcome_body),
     )
-    GuideCard("🔒 锁屏继续干活", "配置一次省电白名单，锁屏后任务不中断。")
-    GuideCard("🤖 预制多种 Agent", "OpenCode、pi 等常用 agent，选好即可下载使用。")
-    GuideCard("📁 产物直接可见", "agent 生成的文件在系统文件管理器里就能看到。")
+    GuideCard(stringResource(R.string.wizard_card_keepalive_title), stringResource(R.string.wizard_card_keepalive_body))
+    GuideCard(stringResource(R.string.wizard_card_agents_title), stringResource(R.string.wizard_card_agents_body))
+    GuideCard(stringResource(R.string.wizard_card_files_title), stringResource(R.string.wizard_card_files_body))
     CenterButtons {
-        Button(onClick = onStart) { Text("开始配置") }
+        Button(onClick = onStart, modifier = Modifier.testTag("wizard_start")) { Text(stringResource(R.string.wizard_start)) }
     }
 }
 
@@ -347,19 +350,18 @@ private fun PowerStep(onNext: () -> Unit) {
     val exempt = remember(tick) {
         powerMgr?.isIgnoringBatteryOptimizations("dev.drydock.prototype") ?: false
     }
-    StepHeader("🔋", "保活设置")
+    StepHeader("🔋", stringResource(R.string.wizard_power_title), "wizard_step_power")
     if (exempt) {
         StepBody(
-            "✓ 已允许后台运行\n锁屏后任务可以继续干活",
+            stringResource(R.string.wizard_power_ok),
             color = Color(0xFF4ADE80),
         )
     } else {
         StepBody(
-            "Drydock 需要被允许在锁屏后继续运行——这是「挂机干活」的前提；" +
-                "不放行的话，锁屏后任务会被系统暂停。这一步不能跳过。",
+            stringResource(R.string.wizard_power_body),
         )
         StepBody(
-            "小米 HyperOS：若标准弹窗未生效，请到 系统设置 → 应用信息 → 省电策略 选「无限制」，回来点刷新。",
+            stringResource(R.string.wizard_power_hyperos),
             color = MaterialTheme.colorScheme.outline,
         )
         CenterButtons {
@@ -378,22 +380,22 @@ private fun PowerStep(onNext: () -> Unit) {
                         ),
                     )
                 }
-            }) { Text("允许后台运行") }
+            }) { Text(stringResource(R.string.wizard_power_allow)) }
         }
         CenterButtons {
-            OutlinedButton(onClick = { tick++ }) { Text("我已设置，刷新状态") }
+            OutlinedButton(onClick = { tick++ }) { Text(stringResource(R.string.wizard_power_refresh)) }
         }
     }
     CenterButtons {
-        Button(enabled = exempt, onClick = onNext) { Text("下一步") }
+        Button(enabled = exempt, onClick = onNext, modifier = Modifier.testTag("wizard_next")) { Text(stringResource(R.string.wizard_next)) }
     }
 }
 
-/** 模式选择卡（常见服务 / 自定义服务地址）。 */
+/** 模式选择卡（常见服务 / 自定义服务地址）。tag = 测试锚点（wizard_mode_*）。 */
 @Composable
-private fun ModeCard(title: String, desc: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun ModeCard(title: String, desc: String, selected: Boolean, modifier: Modifier = Modifier, tag: String = "", onClick: () -> Unit) {
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.then(if (tag.isNotEmpty()) Modifier.testTag(tag) else Modifier).clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(
             width = if (selected) 2.dp else 1.dp,
@@ -415,11 +417,12 @@ private fun ModeCard(title: String, desc: String, selected: Boolean, modifier: M
     }
 }
 
-/** 厂商选择 chip。 */
+/** 厂商选择 chip。tag = 测试锚点（wizard_chip_*）。 */
 @Composable
-private fun VendorChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun VendorChip(label: String, selected: Boolean, tag: String = "", onClick: () -> Unit) {
     Box(
         modifier = Modifier
+            .then(if (tag.isNotEmpty()) Modifier.testTag(tag) else Modifier)
             .clip(RoundedCornerShape(20.dp))
             .background(
                 if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -490,47 +493,46 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
             saving = false
             r.fold(
                 onSuccess = { onNext() },
-                onFailure = { err = "保存失败：${it.message}" },
+                onFailure = { err = context.getString(R.string.wizard_save_failed, it.message ?: "") },
             )
         }
     }
 
-    StepHeader("🔑", "连接大模型")
-    StepBody("把 agent 连上大模型：常见服务填一次 key 即可，或填写自定义服务地址；也可以先跳过。")
+    StepHeader("🔑", stringResource(R.string.wizard_endpoint_title), "wizard_step_endpoint")
+    StepBody(stringResource(R.string.wizard_endpoint_body))
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        ModeCard("常见服务", "选服务商，填 key", mode == 0, onClick = { mode = 0 }, modifier = Modifier.weight(1f))
-        ModeCard("自定义服务地址", "协议 / 地址 / 模型", mode == 1, onClick = { mode = 1 }, modifier = Modifier.weight(1f))
+        ModeCard(stringResource(R.string.wizard_mode_common_title), stringResource(R.string.wizard_mode_common_desc), mode == 0, onClick = { mode = 0 }, modifier = Modifier.weight(1f), tag = "wizard_mode_common")
+        ModeCard(stringResource(R.string.wizard_mode_custom_title), stringResource(R.string.wizard_mode_custom_desc), mode == 1, onClick = { mode = 1 }, modifier = Modifier.weight(1f), tag = "wizard_mode_custom")
     }
 
     if (mode == 0) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VendorChip(Vendor.GLM.label, vendor == Vendor.GLM) { vendor = Vendor.GLM }
-            VendorChip(Vendor.DEEPSEEK.label, vendor == Vendor.DEEPSEEK) { vendor = Vendor.DEEPSEEK }
-            VendorChip(Vendor.MOONSHOT.label, vendor == Vendor.MOONSHOT) { vendor = Vendor.MOONSHOT }
+            VendorChip(stringResource(Vendor.GLM.labelRes), vendor == Vendor.GLM, "wizard_chip_glm") { vendor = Vendor.GLM }
+            VendorChip(stringResource(Vendor.DEEPSEEK.labelRes), vendor == Vendor.DEEPSEEK, "wizard_chip_deepseek") { vendor = Vendor.DEEPSEEK }
+            VendorChip(stringResource(Vendor.MOONSHOT.labelRes), vendor == Vendor.MOONSHOT, "wizard_chip_moonshot") { vendor = Vendor.MOONSHOT }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VendorChip(Vendor.OPENAI.label, vendor == Vendor.OPENAI) { vendor = Vendor.OPENAI }
-            VendorChip(Vendor.ANTHROPIC.label, vendor == Vendor.ANTHROPIC) { vendor = Vendor.ANTHROPIC }
+            VendorChip(stringResource(Vendor.OPENAI.labelRes), vendor == Vendor.OPENAI, "wizard_chip_openai") { vendor = Vendor.OPENAI }
+            VendorChip(stringResource(Vendor.ANTHROPIC.labelRes), vendor == Vendor.ANTHROPIC, "wizard_chip_anthropic") { vendor = Vendor.ANTHROPIC }
         }
         OutlinedTextField(
             value = keyText,
             onValueChange = { keyText = it },
-            label = { Text("API key") },
+            label = { Text(stringResource(R.string.wizard_key_label)) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { saveAndAdvance() }),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("wizard_api_key"),
         )
         StepBody(
-            "key 在服务商控制台获取。保存后写入环境变量（~/.drydock/env.sh），" +
-                "新会话生效，agent 自动识别，无需其他配置。",
+            stringResource(R.string.wizard_key_hint),
         )
     } else {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                "① 选协议（对话报文格式，选错连不上）",
+                stringResource(R.string.wizard_form_protocol_title),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -541,53 +543,52 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
                 ) {
                     RadioButton(selected = fProtocol == pr, onClick = { fProtocol = pr })
                     Column {
-                        Text(pr.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(pr.labelRes), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            pr.hint,
+                            stringResource(pr.hintRes),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
-            Text("② 填服务信息", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.wizard_form_info_title), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             OutlinedTextField(value = fBaseUrl, onValueChange = { fBaseUrl = it },
-                label = { Text("Base URL") }, singleLine = true, isError = fBaseUrl.isNotBlank() && !customOk,
-                supportingText = { Text("服务的接口根地址，从服务商文档获取；一般以 /v1、/v4 之类结尾，不含 /chat/completions") },
-                modifier = Modifier.fillMaxWidth())
+                label = { Text(stringResource(R.string.wizard_base_url_label)) }, singleLine = true, isError = fBaseUrl.isNotBlank() && !customOk,
+                supportingText = { Text(stringResource(R.string.wizard_base_url_support)) },
+                modifier = Modifier.fillMaxWidth().testTag("wizard_base_url"))
             OutlinedTextField(value = fModel, onValueChange = { fModel = it },
-                label = { Text("模型 ID") }, singleLine = true,
-                supportingText = { Text("服务实际提供的模型名，照文档填（如 glm-5.3-flash、deepseek-chat）") },
-                modifier = Modifier.fillMaxWidth())
+                label = { Text(stringResource(R.string.wizard_model_label)) }, singleLine = true,
+                supportingText = { Text(stringResource(R.string.wizard_model_support)) },
+                modifier = Modifier.fillMaxWidth().testTag("wizard_model"))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(value = fContext, onValueChange = { fContext = it.filter { c -> c.isDigit() } },
-                    label = { Text("上下文窗口") }, singleLine = true,
-                    supportingText = { Text("可选 · token 数") }, modifier = Modifier.weight(1f))
+                    label = { Text(stringResource(R.string.wizard_context_label)) }, singleLine = true,
+                    supportingText = { Text(stringResource(R.string.wizard_form_optional_tokens)) }, modifier = Modifier.weight(1f))
                 OutlinedTextField(value = fOutput, onValueChange = { fOutput = it.filter { c -> c.isDigit() } },
-                    label = { Text("最大输出长度") }, singleLine = true,
-                    supportingText = { Text("可选 · token 数") }, modifier = Modifier.weight(1f))
+                    label = { Text(stringResource(R.string.wizard_output_label)) }, singleLine = true,
+                    supportingText = { Text(stringResource(R.string.wizard_form_optional_tokens)) }, modifier = Modifier.weight(1f))
             }
             StepBody(
-                "两个长度照服务商文档填：上下文窗口 = 模型一次能读进多少内容；" +
-                    "最大输出长度 = 单次最多生成多少（很多服务需要显式设置，留空用工具默认值）。",
+                stringResource(R.string.wizard_form_lengths_hint),
             )
-            Text("③ key 与标识", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.wizard_form_key_title), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             OutlinedTextField(value = fEnvVar, onValueChange = { fEnvVar = it.filter { c -> c.isLetterOrDigit() || c == '_' }.uppercase() },
-                label = { Text("Key 变量名") }, singleLine = true,
-                supportingText = { Text("留空默认 DRYDOCK_API_KEY") },
+                label = { Text(stringResource(R.string.wizard_envvar_label)) }, singleLine = true,
+                supportingText = { Text(stringResource(R.string.wizard_envvar_support)) },
                 modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = fKeyValue, onValueChange = { fKeyValue = it },
-                label = { Text("API key 值") }, singleLine = true,
+                label = { Text(stringResource(R.string.wizard_keyvalue_label)) }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                supportingText = { Text("保存后以「export 变量名=key值」写进 ~/.drydock/env.sh；留空则只写配置，key 稍后自己补") },
+                supportingText = { Text(stringResource(R.string.wizard_keyvalue_support)) },
                 modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = fProvider, onValueChange = { fProvider = it.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' } },
-                label = { Text("Provider 名") }, singleLine = true,
-                supportingText = { Text("这条端点在配置文件里的标识名：agent 里模型会显示为「provider名/模型名」；不影响连接，留空按域名自动生成，重复添加同名会覆盖更新") },
+                label = { Text(stringResource(R.string.wizard_provider_label)) }, singleLine = true,
+                supportingText = { Text(stringResource(R.string.wizard_provider_support)) },
                 modifier = Modifier.fillMaxWidth())
             StepBody(
-                "之后换 key：改 ~/.drydock/env.sh 即可（设置 → 环境变量），配置文件不用动。",
+                stringResource(R.string.wizard_form_tail_hint),
             )
         }
     }
@@ -599,16 +600,18 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         Button(
             enabled = !saving,
             onClick = { saveAndAdvance() },
+            // 与保活步主按钮复用 wizard_next（两步互斥不同屏）；t7 靠 wizard_step_* 分步
+            modifier = Modifier.testTag("wizard_next"),
         ) {
             Text(when {
-                saving -> "保存中…"
-                hasInput -> "保存并下一步"
-                else -> "下一步"
+                saving -> stringResource(R.string.wizard_saving)
+                hasInput -> stringResource(R.string.wizard_save_next)
+                else -> stringResource(R.string.wizard_next)
             })
         }
     }
     CenterButtons {
-        OutlinedButton(enabled = !saving, onClick = onSkip) { Text("跳过此步") }
+        OutlinedButton(enabled = !saving, onClick = onSkip, modifier = Modifier.testTag("wizard_skip")) { Text(stringResource(R.string.wizard_skip)) }
     }
 }
 
@@ -623,13 +626,13 @@ private fun RecipeStep(
     var picks by remember { mutableStateOf(setOf(RecipeManager.OPENCODE)) }
     val locked = busy.isNotBlank() || doneMsg.isNotBlank()
 
-    StepHeader("🤖", "选择 Coding Agent")
-    StepBody("我们预制了几种可用的 Agent，供你下载安装。可以多选，也可以都不选（暂不安装）。")
+    StepHeader("🤖", stringResource(R.string.wizard_recipe_title), "wizard_step_recipe")
+    StepBody(stringResource(R.string.wizard_recipe_body))
 
     listOf(
-        RecipeManager.OPENCODE to "终端里全功能运行的编程 agent",
-        RecipeManager.PI to "轻量的终端编程 agent",
-        RecipeManager.DSH to "编程 agent，带浏览器网页界面",
+        RecipeManager.OPENCODE to stringResource(R.string.wizard_recipe_opencode_desc),
+        RecipeManager.PI to stringResource(R.string.wizard_recipe_pi_desc),
+        RecipeManager.DSH to stringResource(R.string.wizard_recipe_dsh_desc),
     ).forEach { (r, desc) ->
         val checked = r in picks
         Card(
@@ -659,11 +662,12 @@ private fun RecipeStep(
         Button(
             enabled = !locked,
             onClick = { onRun(picks.toList()) },
+            modifier = Modifier.testTag("wizard_install"),
         ) {
             Text(
                 when {
-                    picks.isEmpty() -> "暂不安装，继续"
-                    else -> "安装所选（${picks.size} 个）"
+                    picks.isEmpty() -> stringResource(R.string.wizard_install_none)
+                    else -> stringResource(R.string.wizard_install_n, picks.size)
                 },
             )
         }
@@ -679,9 +683,9 @@ private fun RecipeStep(
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
         )
-        StepBody("配置完成。进终端即可开始使用；之后的个性化配置（启动项、shell 环境）直接让 agent 帮你改。")
+        StepBody(stringResource(R.string.wizard_done_hint))
         CenterButtons {
-            Button(onClick = onFinish) { Text("进入终端") }
+            Button(onClick = onFinish) { Text(stringResource(R.string.wizard_enter_terminal)) }
         }
     }
 }

@@ -4,6 +4,8 @@
 
 ## 使用说明
 
+界面支持中文与英文：跟随系统语言自动切换（中文系统显示中文，其余显示英文）；Android 13+ 也可在系统设置里单独指定 Drydock 的语言。
+
 ### 安装
 
 从 [Releases](https://github.com/Luan-Fuzi/drydock/releases) 下载最新 APK 安装。要求 arm64 设备、Android 10+，安装时允许未知来源。

@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -68,15 +69,14 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
     var tlViewBusy by remember { mutableStateOf(false) }
     var tlLines by remember { mutableStateOf<Pair<Int, List<String>>?>(null) } // 共 X 条 → 显示 Y 条
 
-    SettingsSubPage("开发者选项", onBack) {
-        Text("验收通道", style = MaterialTheme.typography.titleMedium)
+    SettingsSubPage(stringResource(R.string.settings_row_dev), onBack) {
+        Text(stringResource(R.string.dev_channels_title), style = MaterialTheme.typography.titleMedium)
         Text(
-            "debug 验收通道随本 Activity（am start --es：drydock_endpoint/recipe/exec64/export/provider_test/rescue）。" +
-                "救援通道见桌面入口；原型验收仪器（部署/AV1/AV2/AV3 手动页）随 MainActivity 一并移除。",
+            stringResource(R.string.dev_channels_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text("存储", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.dev_storage_title), style = MaterialTheme.typography.titleMedium)
         Button(
             enabled = !cleanBusy && RootfsManager.isDeployed(context),
             onClick = {
@@ -86,24 +86,23 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
                         runCatching {
                             val out = RootfsManager.cleanCaches(context.applicationContext).output
                             val m = Regex("APT_KB_BEFORE=(\\d+) APT_KB_AFTER=(\\d+)").find(out)
-                                ?: return@runCatching "✗ 结果解析失败：${out.takeLast(200)}"
-                            "✓ 清理完成：${m.groupValues[1]} KB → ${m.groupValues[2]} KB"
+                                ?: return@runCatching context.getString(R.string.dev_clean_parse_fail, out.takeLast(200))
+                            context.getString(R.string.dev_clean_ok, m.groupValues[1], m.groupValues[2])
                         }
                     }
                     cleanBusy = false
-                    cleanMsg = r.fold({ it }, { "✗ 清理失败：${it.message}" })
+                    cleanMsg = r.fold({ it }, { context.getString(R.string.dev_clean_fail, it.message ?: "") })
                 }
             },
-        ) { Text("立即清理 apt 缓存") }
-        if (cleanBusy) BusyBar("环境内 apt-get clean 与索引清理中…")
+        ) { Text(stringResource(R.string.dev_clean_btn)) }
+        if (cleanBusy) BusyBar(stringResource(R.string.dev_clean_busy))
         if (cleanMsg.isNotBlank()) Text(cleanMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Text(
-            "清 /var/lib/apt/lists 与 /var/cache/apt（实测 438MB→121MB），另跑 npm cache clean；" +
-                "清后首次 apt 操作需 update 重拉索引。",
+            stringResource(R.string.dev_clean_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text("诊断", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.dev_diag_title), style = MaterialTheme.typography.titleMedium)
         Button(
             enabled = !docBusy && RootfsManager.isDeployed(context),
             onClick = {
@@ -113,32 +112,34 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
                         runCatching { BinDoctor.scanNow(context.applicationContext) }
                     }
                     docBusy = false
-                    docMsg = r.fold({ it }, { "✗ 扫描失败：${it.message}" })
+                    docMsg = r.fold({ it }, { context.getString(R.string.dev_scan_fail, it.message ?: "") })
                 }
             },
-        ) { Text("BinDoctor 立即扫描") }
-        if (docBusy) BusyBar("扫描断链中…（环境内 find；有断链时宿主拉包修复）")
+        ) { Text(stringResource(R.string.dev_scan_btn)) }
+        if (docBusy) BusyBar(stringResource(R.string.dev_scan_busy))
         if (docMsg.isNotBlank()) Text(docMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-        Text("会话诊断", style = MaterialTheme.typography.titleMedium)
-        Button(onClick = { loadDiag() }) { Text("刷新会话诊断") }
+        Text(stringResource(R.string.dev_sessions_title), style = MaterialTheme.typography.titleMedium)
+        Button(onClick = { loadDiag() }) { Text(stringResource(R.string.dev_sessions_refresh)) }
         val rows = diag
         if (rows == null) {
-            Text("读取中…", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            Text(stringResource(R.string.dev_reading), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         } else if (rows.isEmpty()) {
             Text(
-                "无会话（注册表 terminal-sessions.json 为空）",
+                stringResource(R.string.dev_no_sessions),
                 fontSize = 12.sp, fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
             Text(
-                "注册表 ${rows.size} 个会话：",
+                stringResource(R.string.dev_registry_count, rows.size),
                 fontSize = 12.sp, fontFamily = FontFamily.Monospace,
             )
             rows.forEach { d ->
                 Text(
-                    "${d.name} :${d.port} ${if (d.portAlive) "端口✓" else "端口✗"}" +
-                        " ttyd=${d.ttydPid ?: "不在"} holder=${d.holderPid ?: "不在"}",
+                    stringResource(R.string.dev_session_row, d.name, d.port,
+                        if (d.portAlive) stringResource(R.string.dev_port_alive) else stringResource(R.string.dev_port_dead),
+                        d.ttydPid?.toString() ?: stringResource(R.string.dev_not_running),
+                        d.holderPid?.toString() ?: stringResource(R.string.dev_not_running)),
                     fontSize = 12.sp, fontFamily = FontFamily.Monospace,
                 )
             }
@@ -149,7 +150,7 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text("时间线", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.dev_tl_title), style = MaterialTheme.typography.titleMedium)
         Button(
             enabled = !tlBusy && Timeline.file(context).exists(),
             onClick = {
@@ -163,11 +164,11 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
                         }
                     }
                     tlBusy = false
-                    tlMsg = r.fold({ "✓ $it" }, { "✗ 导出失败：${it.message}" })
+                    tlMsg = r.fold({ "✓ $it" }, { context.getString(R.string.dev_tl_export_fail, it.message ?: "") })
                 }
             },
-        ) { Text("导出时间线（timeline.jsonl → Downloads/Drydock）") }
-        if (tlBusy) BusyBar("导出中…")
+        ) { Text(stringResource(R.string.dev_tl_export_btn)) }
+        if (tlBusy) BusyBar(stringResource(R.string.dev_tl_export_busy))
         if (tlMsg.isNotBlank()) Text(tlMsg, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         Button(
             enabled = !tlViewBusy,
@@ -179,11 +180,11 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
                     tlViewBusy = false
                 }
             },
-        ) { Text("时间线页内视图（最近 100 条）") }
-        if (tlViewBusy) BusyBar("读取时间线…")
+        ) { Text(stringResource(R.string.dev_tl_view_btn)) }
+        if (tlViewBusy) BusyBar(stringResource(R.string.dev_tl_view_busy))
         tlLines?.let { (total, shown) ->
             Text(
-                "显示 ${shown.size} 条 / 共 $total 条",
+                stringResource(R.string.dev_tl_count, shown.size, total),
                 fontSize = 12.sp, fontFamily = FontFamily.Monospace,
             )
             shown.forEach { line ->
@@ -194,9 +195,11 @@ internal fun DevSettingsPage(onBack: () -> Unit) {
                 )
             }
         }
-        Text("版本", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.dev_ver_title), style = MaterialTheme.typography.titleMedium)
         Text(
-            "Drydock 原型 · 从 main tag 构建（git 纪律）\n环境 Ubuntu ${RootfsManager.deployedVersion(context).ifBlank { "未部署" }} · 配方 ${RecipeManager.installedIds(context).joinToString("、").ifBlank { "未安装" }}",
+            stringResource(R.string.dev_ver_body,
+                RootfsManager.deployedVersion(context).ifBlank { stringResource(R.string.dev_ver_not_deployed) },
+                RecipeManager.installedIds(context).joinToString("、").ifBlank { stringResource(R.string.dev_ver_no_recipes) }),
             fontSize = 11.sp, fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -256,19 +259,19 @@ private fun envAndWakelock(context: Context): String {
             runCatching { File(p, "cmdline").readText() }.getOrNull()
                 ?.substringBefore('\u0000') == "${context.packageName}:env"
         } == true
-    var wl = "无记录"
+    var wl = context.getString(R.string.dev_wl_none)
     for (line in Timeline.readAll(context).asReversed()) {
         val t = runCatching { JSONObject(line).optString("type") }.getOrNull() ?: continue
         if (t == "wakelock_acquire") {
-            wl = "已持有"
+            wl = context.getString(R.string.dev_wl_held)
             break
         }
         if (t == "wakelock_release") {
-            wl = "未持有"
+            wl = context.getString(R.string.dev_wl_not_held)
             break
         }
     }
-    return "WakeLock $wl · :env 进程${if (envAlive) "在" else "不在"}"
+    return context.getString(if (envAlive) R.string.dev_env_alive else R.string.dev_env_dead, wl)
 }
 
 /** 时间线行紧凑化：ts → 时间、type、余下 data 键值（ts/type/pid/proc 略）。 */

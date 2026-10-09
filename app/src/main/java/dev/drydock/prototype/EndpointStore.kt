@@ -14,10 +14,10 @@ import org.json.JSONObject
 object EndpointStore {
 
     /** 协议 = agent 与服务对话用的报文格式（选错连不上）；hint 给到新手能对号入座。 */
-    enum class Protocol(val label: String, val hint: String) {
-        CHAT_COMPLETIONS("Chat Completions", "最通用：OpenAI 兼容格式，国内绝大多数服务用它"),
-        RESPONSES("Responses", "OpenAI 的新格式，仅部分服务支持"),
-        ANTHROPIC("Anthropic Messages", "Anthropic/Claude 系格式（部分服务单独提供 anthropic 端点）"),
+    enum class Protocol(val labelRes: Int, val hintRes: Int) {
+        CHAT_COMPLETIONS(R.string.proto_chat_completions, R.string.proto_chat_completions_hint),
+        RESPONSES(R.string.proto_responses, R.string.proto_responses_hint),
+        ANTHROPIC(R.string.proto_anthropic, R.string.proto_anthropic_hint),
     }
 
     data class Endpoint(

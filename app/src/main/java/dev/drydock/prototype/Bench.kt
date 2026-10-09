@@ -23,7 +23,7 @@ object Bench {
      *  后恢复默认。UI 路径恒为 true。） */
     fun run(context: Context, onLog: (String) -> Unit, includeNpm: Boolean = true): Result {
         // 1. 幂等装工具（universe 已启用；hyperfine/make/tcc 均小包）
-        onLog("确保 hyperfine/make/tcc…")
+        onLog(context.getString(R.string.bench_ensure_tools))
         val ins = RootfsManager.runInEnv(
             context,
             "command -v hyperfine >/dev/null && command -v make >/dev/null && command -v tcc >/dev/null " +
@@ -33,7 +33,7 @@ object Bench {
                 "command -v hyperfine make tcc; echo TOOL_RC=\$?",
         )
         if (!ins.output.contains("TOOL_RC=0")) {
-            return Result(false, null, null, "工具安装失败：${ins.output.takeLast(300)}")
+            return Result(false, null, null, context.getString(R.string.bench_tools_fail, ins.output.takeLast(300)))
         }
 
         // 2. 基准电池：bash 内建计时（$EPOCHREALTIME，零 fork）× 每用例 5 轮取中位。
@@ -41,7 +41,7 @@ object Bench {
         //    组合必现无声退码 2（同命令手动全过、裸 tar 直跑 RC=0），多子进程命令
         //    还会整体楔死在 ptrace-stop（D18 族）；真机周可再评估恢复。npm 用例
         //    先探 registry，不通记 SKIPPED（D12）。
-        onLog("运行基准电池（约 2–3 分钟）…")
+        onLog(context.getString(R.string.bench_running))
         val cmd = """
             set -e
             mkdir -p /root/bench && cd /root/bench
@@ -113,7 +113,7 @@ object Bench {
         )
         Log.i(TAG, "bench exit=${r.exitCode}\n${r.output.takeLast(1500)}")
         if (!r.output.contains("BENCH_OK")) {
-            return Result(false, null, null, "hyperfine 失败：${r.output.takeLast(400)}")
+            return Result(false, null, null, context.getString(R.string.bench_hf_fail, r.output.takeLast(400)))
         }
 
         // 3. 落袋 Downloads/Drydock
@@ -123,10 +123,10 @@ object Bench {
         export.writeText(host.readText())
         return try {
             val uri = Landing.toDownloads(context, export).toString()
-            onLog("✓ 结果已落 Downloads/Drydock")
+            onLog(context.getString(R.string.bench_done))
             Result(true, "/root/bench/result.json", uri, r.output.takeLast(400))
         } catch (e: Exception) {
-            Result(true, "/root/bench/result.json", "落袋失败: $e", r.output.takeLast(400))
+            Result(true, "/root/bench/result.json", context.getString(R.string.bench_stash_fail, e.toString()), r.output.takeLast(400))
         }
     }
 

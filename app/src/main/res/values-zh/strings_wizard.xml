@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- i18n 批 5 中文侧（与 values/strings_wizard.xml 一一对应） -->
+<resources>
+    <string name="wizard_welcome_title">欢迎使用 Drydock</string>
+    <string name="wizard_welcome_body">Drydock 在你的手机上运行一个完整的 Linux 环境，AI 编程助手（agent）住在这里，随时帮你干活。</string>
+    <string name="wizard_card_keepalive_title">🔒 锁屏继续干活</string>
+    <string name="wizard_card_keepalive_body">配置一次省电白名单，锁屏后任务不中断。</string>
+    <string name="wizard_card_agents_title">🤖 预制多种 Agent</string>
+    <string name="wizard_card_agents_body">OpenCode、pi 等常用 agent，选好即可下载使用。</string>
+    <string name="wizard_card_files_title">📁 产物直接可见</string>
+    <string name="wizard_card_files_body">agent 生成的文件在系统文件管理器里就能看到。</string>
+    <string name="wizard_start">开始配置</string>
+
+    <string name="wizard_power_title">保活设置</string>
+    <string name="wizard_power_ok">✓ 已允许后台运行\n锁屏后任务可以继续干活</string>
+    <string name="wizard_power_body">Drydock 需要被允许在锁屏后继续运行——这是「挂机干活」的前提；不放行的话，锁屏后任务会被系统暂停。这一步不能跳过。</string>
+    <string name="wizard_power_hyperos">小米 HyperOS：若标准弹窗未生效，请到 系统设置 → 应用信息 → 省电策略 选「无限制」，回来点刷新。</string>
+    <string name="wizard_power_allow">允许后台运行</string>
+    <string name="wizard_power_refresh">我已设置，刷新状态</string>
+    <string name="wizard_next">下一步</string>
+
+    <string name="wizard_endpoint_title">连接大模型</string>
+    <string name="wizard_endpoint_body">把 agent 连上大模型：常见服务填一次 key 即可，或填写自定义服务地址；也可以先跳过。</string>
+    <string name="wizard_mode_common_title">常见服务</string>
+    <string name="wizard_mode_common_desc">选服务商，填 key</string>
+    <string name="wizard_mode_custom_title">自定义服务地址</string>
+    <string name="wizard_mode_custom_desc">协议 / 地址 / 模型</string>
+    <string name="vendor_glm">智谱 GLM</string>
+    <string name="vendor_deepseek">DeepSeek</string>
+    <string name="vendor_moonshot">Moonshot</string>
+    <string name="vendor_openai">OpenAI</string>
+    <string name="vendor_anthropic">Anthropic</string>
+    <string name="wizard_key_label">API key</string>
+    <string name="wizard_key_hint">key 在服务商控制台获取。保存后写入环境变量（~/.drydock/env.sh），新会话生效，agent 自动识别，无需其他配置。</string>
+    <string name="wizard_form_protocol_title">① 选协议（对话报文格式，选错连不上）</string>
+    <string name="wizard_form_info_title">② 填服务信息</string>
+    <string name="wizard_form_key_title">③ key 与标识</string>
+    <string name="wizard_base_url_label">Base URL</string>
+    <string name="wizard_base_url_support">服务的接口根地址，从服务商文档获取；一般以 /v1、/v4 之类结尾，不含 /chat/completions</string>
+    <string name="wizard_model_label">模型 ID</string>
+    <string name="wizard_model_support">服务实际提供的模型名，照文档填（如 glm-5.3-flash、deepseek-chat）</string>
+    <string name="wizard_context_label">上下文窗口</string>
+    <string name="wizard_output_label">最大输出长度</string>
+    <string name="wizard_form_optional_tokens">可选 · token 数</string>
+    <string name="wizard_form_lengths_hint">两个长度照服务商文档填：上下文窗口 = 模型一次能读进多少内容；最大输出长度 = 单次最多生成多少（很多服务需要显式设置，留空用工具默认值）。</string>
+    <string name="wizard_envvar_label">Key 变量名</string>
+    <string name="wizard_envvar_support">留空默认 DRYDOCK_API_KEY</string>
+    <string name="wizard_keyvalue_label">API key 值</string>
+    <string name="wizard_keyvalue_support">保存后以「export 变量名=key值」写进 ~/.drydock/env.sh；留空则只写配置，key 稍后自己补</string>
+    <string name="wizard_provider_label">Provider 名</string>
+    <string name="wizard_provider_support">这条端点在配置文件里的标识名：agent 里模型会显示为「provider名/模型名」；不影响连接，留空按域名自动生成，重复添加同名会覆盖更新</string>
+    <string name="wizard_form_tail_hint">之后换 key：改 ~/.drydock/env.sh 即可（设置 → 环境变量），配置文件不用动。</string>
+    <string name="wizard_save_failed">保存失败：%1$s</string>
+    <string name="wizard_saving">保存中…</string>
+    <string name="wizard_save_next">保存并下一步</string>
+    <string name="wizard_skip">跳过此步</string>
+
+    <string name="wizard_recipe_title">选择 Coding Agent</string>
+    <string name="wizard_recipe_body">我们预制了几种可用的 Agent，供你下载安装。可以多选，也可以都不选（暂不安装）。</string>
+    <string name="wizard_recipe_opencode_desc">终端里全功能运行的编程 agent</string>
+    <string name="wizard_recipe_pi_desc">轻量的终端编程 agent</string>
+    <string name="wizard_recipe_dsh_desc">编程 agent，带浏览器网页界面</string>
+    <string name="wizard_install_none">暂不安装，继续</string>
+    <string name="wizard_install_n">安装所选（%1$d 个）</string>
+    <string name="wizard_done_hint">配置完成。进终端即可开始使用；之后的个性化配置（启动项、shell 环境）直接让 agent 帮你改。</string>
+    <string name="wizard_enter_terminal">进入终端</string>
+
+    <string name="wizard_busy_prepare">准备中…</string>
+    <string name="wizard_busy_terminal">正在准备终端…</string>
+    <string name="wizard_r_env_fail">✗ Linux 环境准备失败（网络或存储问题），可稍后重试\n</string>
+    <string name="wizard_r_install_ok">✓ %1$s 安装完成\n</string>
+    <string name="wizard_r_install_fail">✗ %1$s 安装失败：%2$s\n</string>
+    <string name="wizard_r_no_custom">未添加自定义端点（常见服务走环境变量，无需此步）\n</string>
+    <string name="wizard_r_cfg_merged">✓ 端点配置已合并写入\n</string>
+    <string name="wizard_r_cfg_fail">✗ 端点配置失败：%1$s\n</string>
+    <string name="wizard_r_verify">验证中：让 %1$s 出第一句话…</string>
+    <string name="wizard_r_smoke_ok">✓ agent 已出第一句话\n</string>
+    <string name="wizard_r_smoke_fail">✗ 冒烟未过（可稍后在终端里重试）：%1$s\n</string>
+    <string name="wizard_r_skipped">暂不安装。可随时在 设置 → 初始设置向导 重新安装，或进终端自行安装。\n</string>
+    <string name="wizard_r_error">异常：%1$s</string>
+    <string name="wizard_r_start_fail">✗ 会话启动失败（看 logcat DrydockEnv/DrydockTerminal）\n</string>
+
+    <string name="recipe_node_fail">Node 层失败：%1$s</string>
+    <string name="recipe_installing">安装 %1$s（npm 最新版）…</string>
+</resources>
