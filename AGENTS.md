@@ -2,7 +2,7 @@
 
 ## 项目现状
 
-原型步骤 1–6 判据全绿（步骤 6 真机周 2026-10-01–10-08：S1/S2/S3 全过，Q1 结论=正 → continue，Q7 关闭；dev→main 合并与 `q1-verdict` tag 随 R8 收口执行）。当前工作重心：需求池第 4 批 R8（rootfs 升级路径，`.worktrees/r8`）。动手前先读 `docs/open-questions.md` 与 `docs/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
+原型步骤 1–6 判据全绿（步骤 6 真机周 2026-10-01–10-08：S1/S2/S3 全过，Q1 结论=正 → continue，Q7 关闭；`q1-verdict` tag 已打在 main 合并提交上）。需求池第 1–4 批全部收口（R0–R9，唯余 R10 待核实）；真机反馈 UX 批 `ux-1`–`ux-6` 已装机（浮钮合并、键条组合键、ttyd resize 浮层关闭、通知图标定案白剪影+通道 LOW，Q9 记录 OEM 限制）。仓库已按公开状态整理（GPL-3.0 + NOTICE.md + README 快速开始，2026-10-09）。动手前先读 `docs/open-questions.md` 与 `docs/prototype-plan.md`；已定决策见 `docs/decisions.md`，不要重开已否方案。
 
 ## Git 纪律（2026-09-27）
 

@@ -2,7 +2,6 @@ package dev.drydock.prototype
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Color
 import android.graphics.Insets
 import android.os.Build
 import android.os.Bundle

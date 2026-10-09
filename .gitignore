@@ -26,3 +26,4 @@ third_party/
 out/
 __pycache__/
 .zcode/
+.zcodeignore
