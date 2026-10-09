@@ -11,6 +11,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -27,12 +29,16 @@ internal fun LanguageSettingsPage(onBack: () -> Unit) {
     val lm = if (Build.VERSION.SDK_INT >= 33) {
         context.getSystemService(LocaleManager::class.java)
     } else null
-    // 当前选中：per-app 为空 = 跟随系统；否则取首个 tag（zh* → 中文，en* → English）
-    val currentTags = if (Build.VERSION.SDK_INT >= 33) lm?.applicationLocales?.toLanguageTags().orEmpty() else ""
-    val current = when {
-        currentTags.isBlank() -> "system"
-        currentTags.startsWith("zh") -> "zh"
-        else -> "en"
+    // 选中态本地即时反馈：选语言与系统语言相同时平台不触发配置变化（无 recreate），
+    // 只读平台状态会表现为"点了没反应"（真机实锤）——点击先更新本地，再写平台存储
+    val current = remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT < 33 || lm == null) "system"
+            else when (val t = lm.applicationLocales.toLanguageTags()) {
+                "" -> "system"
+                else -> if (t.startsWith("zh")) "zh" else "en"
+            },
+        )
     }
 
     fun pick(tag: String) {
@@ -40,9 +46,14 @@ internal fun LanguageSettingsPage(onBack: () -> Unit) {
             Toast.makeText(context, context.getString(R.string.lang_need_33), Toast.LENGTH_LONG).show()
             return
         }
+        // 先本地（单选立即可见），再平台（语言不同的场合随后 recreate 换资源）
+        current.value = when (tag) {
+            "system" -> "system"
+            "zh-CN" -> "zh"
+            else -> "en"
+        }
         lm.applicationLocales = if (tag == "system") LocaleList.getEmptyLocaleList()
         else LocaleList.forLanguageTags(tag)
-        // 平台随即广播配置变化，Activity 重建、资源切换——无需手动 recreate
     }
 
     SettingsSubPage(stringResource(R.string.settings_language_title), onBack) {
@@ -56,12 +67,12 @@ internal fun LanguageSettingsPage(onBack: () -> Unit) {
                 "zh-CN" -> "zh"
                 else -> "en"
             }
-            val active = current == key
+            val active = current.value == key
             Row(
                 modifier = Modifier.fillMaxWidth().testTag("lang_${key}").clickable { pick(tag) },
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
-                RadioButton(selected = active, onClick = { pick(tag) })
+                RadioButton(selected = active, onClick = { pick(tag) }, modifier = Modifier.testTag("lang_rb_$key"))
                 Text(
                     stringResource(labelRes),
                     style = MaterialTheme.typography.bodyLarge,

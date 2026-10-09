@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 应用主题：唯一职责是给窗口一个贴近页面底色的 background——语言切换等
+         配置变化触发 Activity recreate 时，闪的是底色帧而非系统默认黑屏。
+         深色系统由 values-night 同名主题接管（深浅自动跟随系统）。 -->
+    <style name="DrydockBase" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:windowBackground">#FEF7FF</item>
+    </style>
     <!-- 终端页会话菜单（贴底深色面板）出入场 -->
     <style name="DrydockBottomSheetAnim">
         <item name="android:windowEnterAnimation">@anim/sheet_slide_up</item>

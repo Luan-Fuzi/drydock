@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色系统的窗口背景（见 values/styles.xml 注释） -->
+    <style name="DrydockBase" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">#141218</item>
+    </style>
+</resources>
