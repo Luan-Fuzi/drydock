@@ -9,6 +9,11 @@
   t4  浅色主题（prefs 断言 + 截图留证；观感留白天视觉批次）
   t5  pi 配方全链 + npm 假源→npmjs 回退（真代码路径；aptTools/符号链接/models.json）
 
+i18n 批 1（2026-10-09）：交互锚点全部 resource-id 化（Compose testTag / View setId，
+见 res/values/ids.xml 与各页面 testTag）——测试定位与显示文案解耦，语言无关；
+文件名/文件内容等数据面保留文本定位。开关/主题等状态优先落状态断言（checked 属性、
+prefs、appops）。
+
 用法：ANDROID_SERIAL=emulator-5554 python3 scripts/night-b.py [t1 t2 ...]（缺省全部）
 输出：draft/night-b-verdict.json（每阶段后落盘，崩溃安全）。
 只动模拟器；真机纪律：run-as 自家目录、/data/local/tmp、logcat、screencap，全为允许面。
@@ -95,22 +100,10 @@ def logcat_clear():
     sc.shell("logcat", "-c")
 
 
-def nav_tap(label):
-    """点底部导航：label 会撞页面正文同词（如教育文案含「新建会话」），只认
-    屏幕底部 15% 区域内含该词的节点（NavigationBar 固定在底部）。"""
-    m = re.search(r"(\d+)x(\d+)", sc.shell("wm", "size"))
-    h = int(m.group(2)) if m else 2400
-    xml = sc.ui_dump()
-    best = None
-    for mm in re.finditer(r'text="([^"]*)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml):
-        if label in mm.group(1):
-            y = (int(mm.group(3)) + int(mm.group(5))) // 2
-            if y > h * 0.85 and (best is None or y > best[1]):
-                best = (((int(mm.group(2)) + int(mm.group(4))) // 2), y)
-    if not best:
-        return False
-    sc.shell("input", "tap", str(best[0]), str(best[1]))
-    return True
+def nav_tap(tag):
+    """点底部导航（i18n 批 1 resource-id 化：nav_sessions/nav_files/nav_settings）。
+    旧版按底部 15% 区域文本约束解决撞词——tag 唯一后不再需要。"""
+    return sc.tap_res(tag)
 
 
 def prefs_xml():
@@ -123,22 +116,24 @@ def prefs_xml():
 def t1(r):
     # 测试卫生：清注册表与显示名，从空状态走新用户路径（2026-10-06 界面：
     # 「新建会话」是唯一入口，对话框默认名可改，卡片即打开）。
+    # i18n 批 1：交互锚点全部 resource-id 化；默认名断言改为读输入框预填值
+    # （数据记录）+ names JSON 键落盘（判据），不再依赖默认名文案。
     # 注意别用 run-as … sh -c "rm ..."——adb 转发剥引号，rm 收不到参数（实测）
     sc.shell("run-as", PKG, "rm", "-f",
              "files/terminal-sessions.json", "files/terminal-session-names.json")
     sc.shell("input", "keyevent", "KEYCODE_WAKEUP")
     sc.shell("am", "start", "-S", "-n", HOME)
-    if not sc.wait_text("新建会话", 60):
-        raise RuntimeError("HomeActivity 未出现「新建会话」按钮")
+    if not sc.wait_res("home_new_session", 60):
+        raise RuntimeError("HomeActivity 未出现「新建会话」按钮（home_new_session）")
     r["home_shown"] = True
 
-    # 空状态 → 新建会话（默认名「主终端」）→ 创建直达终端
-    if not sc.tap_text("新建会话", 30):
+    # 空状态 → 新建会话（默认名预填）→ 创建直达终端
+    if not sc.tap_res("home_new_session", 30):
         raise RuntimeError("点不到「新建会话」")
-    if not sc.wait_text("会话名称", 30):
+    if not sc.wait_res("dlg_session_name", 30):
         raise RuntimeError("新建对话框未出现")
-    r["dialog_default_first"] = "主终端" in sc.ui_dump()
-    if not sc.tap_text("创建", 30):
+    r["dialog_default_first"] = sc.res_attr("dlg_session_name", "text") or ""
+    if not sc.tap_res("dlg_create", 30):
         raise RuntimeError("点不到「创建」")
     # 冷路径预算 420s：干净环境下这里含首启部署（R9 实测 91s）+ 终端层 apt（15 包）
     # + 会话 spawn，120s 装不下（2026-10-08 三次干净全量实锤：链路 4-5min）。更糟的
@@ -153,16 +148,16 @@ def t1(r):
     r["sessions_after_open"] = sorted(sessions)
     assert sessions == {"main"}, f"空表新建应只建 main：{sessions}"
 
-    # 回主页 → 再新建（默认名「会话 2」）→ 第二会话
+    # 回主页 → 再新建（第二个会话）→ 第二会话
     sc.shell("am", "start", "-S", "-n", HOME)
-    if not sc.wait_text("新建会话", 60):
+    if not sc.wait_res("home_new_session", 60):
         raise RuntimeError("回主页后「新建会话」未出现")
-    if not sc.tap_text("新建会话", 30):
+    if not sc.tap_res("home_new_session", 30):
         raise RuntimeError("点不到「新建会话」")
-    if not sc.wait_text("会话名称", 30):
+    if not sc.wait_res("dlg_session_name", 30):
         raise RuntimeError("新建对话框未出现")
-    r["dialog_default_second"] = "会话 2" in sc.ui_dump()
-    if not sc.tap_text("创建", 30):
+    r["dialog_default_second"] = sc.res_attr("dlg_session_name", "text") or ""
+    if not sc.tap_res("dlg_create", 30):
         raise RuntimeError("点不到「创建」")
     f = wait_focus("TerminalActivity", 120)
     r["new_session_focus"] = f or "TIMEOUT"
@@ -173,7 +168,7 @@ def t1(r):
     assert "s1" in sessions, f"第二会话 s1 不在注册表：{sessions}"
     names = sc.run_as_cat("files/terminal-session-names.json")
     r["display_names"] = names.strip()[:120]
-    r["display_name_saved"] = "会话 2" in names
+    r["display_name_saved"] = '"s1"' in names  # 键落盘即显示名已保存（名值本身随语言）
     r["pass"] = r["display_name_saved"]
 
 
@@ -187,9 +182,9 @@ def t2(r):
     assert "WROTE" in out, f"探针文件写入失败：{out[-200:]}"
     # -S：上一阶段可能把 TerminalActivity 留在栈顶，非 -S 只把任务带前台揭不开主页
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("新建会话", 30)
-    if not nav_tap("文件"):
-        raise RuntimeError("进不了文件页（底部导航无「文件」）")
+    sc.wait_res("home_new_session", 30)
+    if not nav_tap("nav_files"):
+        raise RuntimeError("进不了文件页（底部导航 nav_files）")
     if not wait_text_scroll("night-probe.bin", 30):
         raise RuntimeError("文件页列表没有 night-probe.bin")
 
@@ -276,25 +271,25 @@ def t3(r):
 @stage("t4_theme_light")
 def t4(r):
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("新建会话", 30)
-    if not nav_tap("设置"):
-        raise RuntimeError("进不了设置页（底部导航无「设置」）")
+    sc.wait_res("home_new_session", 30)
+    if not nav_tap("nav_settings"):
+        raise RuntimeError("进不了设置页（底部导航 nav_settings）")
     # 2026-10-07 设置页重构：外观收进二级页（主页面 = 分组列表 + 一行一入口）
-    if not sc.tap_text("外观", 15):
-        raise RuntimeError("点不到「外观」入口行")
-    if not sc.wait_text("跟随系统", 15):
-        raise RuntimeError("外观二级页未出现")
-    if not sc.tap_text("浅色", 15):
-        raise RuntimeError("点不到「浅色」")
+    if not sc.tap_res("settings_appearance", 15):
+        raise RuntimeError("点不到「外观」入口行（settings_appearance）")
+    if not sc.wait_res("theme_system", 15):
+        raise RuntimeError("外观二级页未出现（theme_system）")
+    if not sc.tap_res("theme_light", 15):
+        raise RuntimeError("点不到「浅色」（theme_light）")
     time.sleep(1)  # apply() 异步落盘 + 状态重组
     r["pref_light"] = ">LIGHT</string>" in prefs_xml()
     # 主题状态驱动即时重组：停留在设置二级页，不 recreate 跳回会话页
-    r["stays_on_settings"] = "HomeActivity" in focus() and "跟随系统" in sc.ui_dump()
+    r["stays_on_settings"] = "HomeActivity" in focus() and sc.wait_res("theme_dark", 5)
     r["screenshot"] = screencap("night-light-home.png")
-    if not sc.tap_text("跟随系统", 15):
+    if not sc.tap_res("theme_system", 15):
         xml = sc.ui_dump()
-        r["restore_dump_has_label"] = "跟随系统" in xml
-        raise RuntimeError(f"点不到「跟随系统」（dump 含标签：{r['restore_dump_has_label']}）")
+        r["restore_dump_has_theme_rows"] = sc.res_hit("theme_system", xml)
+        raise RuntimeError(f"点不到「跟随系统」（dump 含 theme_system 节点：{r['restore_dump_has_theme_rows']}）")
     time.sleep(1)  # apply() 异步落盘，稍候再读
     r["pref_restored"] = ">SYSTEM</string>" in prefs_xml()
     r["pass"] = r["pref_light"] and r["pref_restored"] and r["stays_on_settings"]
@@ -390,53 +385,54 @@ def t6(r):
 def t7(r):
     """2026-10-07 向导第二轮：欢迎页定位、左上角返回、连接大模型页真实可配——
     GLM key 经向导写入 env.sh（ZHIPU_API_KEY + ZAI_CODING_CN_API_KEY 双变量）、
-    自定义服务地址表单在场。"""
+    自定义服务地址表单在场。i18n 批 1：锚点 resource-id 化（wizard_*）。"""
     sc.shell("dumpsys", "deviceidle", "whitelist", "+dev.drydock.prototype")  # AVD 测试条件：过保活步
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("新建会话", 30)
-    if not nav_tap("设置"):
+    sc.wait_res("home_new_session", 30)
+    if not nav_tap("nav_settings"):
         raise RuntimeError("进不了设置页")
-    if not sc.tap_text("初始设置", 30):
-        raise RuntimeError("找不到初始设置入口")
-    if not sc.wait_text("欢迎使用 Drydock", 30):
+    if not sc.tap_res("settings_wizard", 30):
+        raise RuntimeError("找不到初始设置入口（settings_wizard）")
+    if not sc.wait_res("wizard_step_welcome", 30):
         raise RuntimeError("欢迎页未出现")
-    r["welcome_shown"] = "开始配置" in sc.ui_dump()
+    r["welcome_shown"] = sc.res_hit("wizard_start")
     # 左上角返回按钮：应退出向导回设置页（不依赖系统导航）
-    if not sc.tap_text("‹", 15):
+    if not sc.tap_res("wizard_back", 15):
         raise RuntimeError("欢迎页无左上返回按钮")
     time.sleep(1)
-    r["back_exits_wizard"] = "初始设置" in sc.ui_dump() and "HomeActivity" in focus()
+    r["back_exits_wizard"] = sc.res_hit("settings_wizard") and "HomeActivity" in focus()
     if not r["back_exits_wizard"]:
         raise RuntimeError("左上返回未退出向导")
     # 重新进入，走完到端点步
-    if not sc.tap_text("初始设置", 30):
+    if not sc.tap_res("settings_wizard", 30):
         raise RuntimeError("重进向导失败")
-    if not sc.wait_text("欢迎使用 Drydock", 20):
+    if not sc.wait_res("wizard_step_welcome", 20):
         raise RuntimeError("欢迎页未出现")
-    if not sc.tap_text("开始配置", 15):
+    if not sc.tap_res("wizard_start", 15):
         raise RuntimeError("点不到开始配置")
-    if not sc.wait_text("保活设置", 20):
+    if not sc.wait_res("wizard_step_power", 20):
         raise RuntimeError("保活步未出现")
-    if not sc.tap_text("下一步", 30):
+    if not sc.tap_res("wizard_next", 30):
         raise RuntimeError("保活步过不去（豁免未生效？）")
-    if not sc.wait_text("连接大模型", 20):
+    if not sc.wait_res("wizard_step_endpoint", 20):
         raise RuntimeError("端点步未出现")
     xml = sc.ui_dump()
-    r["vendor_chips"] = all(v in xml for v in ("智谱 GLM", "DeepSeek", "Moonshot", "OpenAI", "Anthropic"))
-    r["mode_cards"] = "常见服务" in xml and "自定义服务地址" in xml
+    r["vendor_chips"] = all(sc.res_hit(f"wizard_chip_{v}", xml) for v in
+                            ("glm", "deepseek", "moonshot", "openai", "anthropic"))
+    r["mode_cards"] = sc.res_hit("wizard_mode_common", xml) and sc.res_hit("wizard_mode_custom", xml)
     # 常见服务真实配置：GLM + key → 保存并下一步 → env.sh 双变量断言
-    if not sc.tap_text("智谱 GLM", 15):
+    if not sc.tap_res("wizard_chip_glm", 15):
         raise RuntimeError("点不到智谱 GLM 厂商 chip")
-    if not sc.tap_text("API key", 15):
+    if not sc.tap_res("wizard_api_key", 15):
         raise RuntimeError("点不到 key 输入框")
     sc.shell("input", "text", "night-t7-glm-key")
     time.sleep(1)
     # 收起软键盘：AVD Gboard 不理 ESC（t7 两轮实锤），BACK 在键盘开着时只收键盘
     sc.shell("input", "keyevent", "KEYCODE_BACK")
     time.sleep(1)
-    if not sc.tap_text("保存并下一步", 20):
+    if not sc.tap_res("wizard_next", 20):
         raise RuntimeError("「保存并下一步」未出现或点不到")
-    if not sc.wait_text("选择 Coding Agent", 30):
+    if not sc.wait_res("wizard_step_recipe", 30):
         raise RuntimeError("保存后未进入 agent 步")
     env_out = sc.env_read(
         "grep -q 'export ZHIPU_API_KEY=night-t7-glm-key' /root/.drydock/env.sh && "
@@ -444,14 +440,14 @@ def t7(r):
         timeout=90)
     r["glm_key_written"] = "GLM_KEYS_OK" in env_out
     # 左上返回回端点步，切自定义模式查表单字段
-    if not sc.tap_text("‹", 15):
+    if not sc.tap_res("wizard_back", 15):
         raise RuntimeError("agent 步无左上返回")
-    if not sc.wait_text("连接大模型", 15):
+    if not sc.wait_res("wizard_step_endpoint", 15):
         raise RuntimeError("返回后端点步未出现")
-    if not sc.tap_text("自定义服务地址", 15):
+    if not sc.tap_res("wizard_mode_custom", 15):
         raise RuntimeError("点不到自定义模式卡")
     xml = sc.ui_dump()
-    r["custom_form"] = "Base URL" in xml and "模型 ID" in xml
+    r["custom_form"] = sc.res_hit("wizard_base_url", xml) and sc.res_hit("wizard_model", xml)
     screencap("night-wizard-endpoint-guide.png")
     sc.shell("input", "keyevent", "KEYCODE_BACK")
     r["pass"] = all([r["welcome_shown"], r["back_exits_wizard"], r["vendor_chips"],
@@ -508,43 +504,21 @@ def t10(r):
     # 预放一个标记文件
     sc.shell("mkdir", "-p", "/sdcard/Download", timeout=15)
     sc.shell("sh", "-c", "echo night-bind-from-host > /sdcard/Download/night-bind.txt", timeout=15)
-    # 打开开关（2026-10-07 设置页重构：直通绑定收进二级页，主页面点入口行进入）
+    # 打开开关（2026-10-07 设置页重构：直通绑定收进二级页，主页面点入口行进入；
+    # i18n 批 1：开关直接按 bind_switch 锚点定位，状态读 checked 属性、授权读 appops）
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("新建会话", 30)
-    if not nav_tap("设置"):
+    sc.wait_res("home_new_session", 30)
+    if not nav_tap("nav_settings"):
         raise RuntimeError("进不了设置页")
-    if not sc.tap_text("目录直通绑定", 30):
-        raise RuntimeError("点不到「目录直通绑定」入口行")
-    if not (sc.wait_text("已关闭", 10) or sc.wait_text("新建会话生效", 10)):
-        raise RuntimeError("绑定二级页未出现（开关状态标签缺失）")
-    # 定位开关：二级页内唯一 checkable 是绑定 Switch，按「已关闭/已开启」标签的
-    # 纵向区间锁定同一行里的 Switch
-    import re as _re
-
-    def find_switch():
-        xml = sc.ui_dump()
-        label = None
-        for m in _re.finditer(r'text="([^"]*)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml):
-            if m.group(1) in ("已关闭", "已开启（新建会话生效）", "已开启"):
-                label = (int(m.group(3)), int(m.group(5)))
-                break
-        if label is None:
-            return None
-        y0, y1 = label
-        for m in _re.finditer(r'checkable="true"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', xml):
-            if int(m.group(2)) < y1 and int(m.group(4)) > y0:
-                return ((int(m.group(1)) + int(m.group(3))) // 2, (int(m.group(2)) + int(m.group(4))) // 2)
-        return None
-
-    sw = find_switch()
-    if not sw:
-        sc.swipe_up()
-        sw = find_switch()
-    assert sw, "找不到绑定 Switch"
-    if "已关闭" in sc.ui_dump():  # 上一轮可能已开启，重复点会切回关
-        sc.shell("input", "tap", str(sw[0]), str(sw[1]))
+    if not sc.tap_res("settings_bind", 30):
+        raise RuntimeError("点不到「目录直通绑定」入口行（settings_bind）")
+    if not sc.wait_res("bind_switch", 10):
+        raise RuntimeError("绑定二级页未出现（bind_switch 缺失）")
+    if sc.res_attr("bind_switch", "checked") != "true":  # 上一轮可能已开启，重复点会切回关
+        assert sc.tap_res("bind_switch", 15), "点不到绑定 Switch"
         time.sleep(2)
-    r["perm_ok"] = "已获" in sc.ui_dump()
+    r["bind_checked"] = sc.res_attr("bind_switch", "checked")
+    r["perm_ok"] = "Allow" in sc.shell("appops", "get", sc.PKG, "MANAGE_EXTERNAL_STORAGE")
     r["pref_bind_on"] = 'name="bind_download" value="true"' in prefs_xml()
 
     # 绑定只在新 spawn 的 holder 上生效（-b 是 proot 启动参数）：清注册表后
@@ -552,8 +526,8 @@ def t10(r):
     sc.shell("run-as", PKG, "rm", "-f",
              "files/terminal-sessions.json", "files/terminal-session-names.json")
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("新建会话", 30)
-    if not (sc.tap_text("新建会话", 30) and sc.tap_text("创建", 30)):
+    sc.wait_res("home_new_session", 30)
+    if not (sc.tap_res("home_new_session", 30) and sc.tap_res("dlg_create", 30)):
         raise RuntimeError("打不开终端（新建对话框流程）")
     assert wait_focus("TerminalActivity", 120), "验证会话未打开"
     # 环境侧探针走 exec64（app 进程口径）：run-as 通道的 FUSE 视角不具代表性
@@ -593,39 +567,37 @@ def t10(r):
 @stage("t11_terminal_menu")
 def t11(r):
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("新建会话", 30)
+    sc.wait_res("home_new_session", 30)
     # 卡片即入口（t10 后注册表非空）；空表回落新建对话框
-    if not sc.tap_text("本地端口", 30):
-        if not (sc.tap_text("新建会话", 30) and sc.tap_text("创建", 30)):
+    if not sc.tap_res("home_session_card", 30):
+        if not (sc.tap_res("home_new_session", 30) and sc.tap_res("dlg_create", 30)):
             raise RuntimeError("打不开终端")
     assert wait_focus("TerminalActivity", 120), "终端未前台"
-    # 2026-10-08 浮钮合并图标化：☰ 文本锚点改为 content-desc「菜单」（uitap 兼容 desc）
-    if not sc.tap_text("菜单", 20):
-        raise RuntimeError("找不到菜单按钮（desc=菜单）")
-    if not sc.wait_text("回主页", 20):
+    if not sc.tap_res("terminal_menu_btn", 20):
+        raise RuntimeError("找不到菜单按钮（terminal_menu_btn）")
+    if not sc.wait_res("terminal_menu_home", 20):
         raise RuntimeError("菜单未弹出")
     xml = sc.ui_dump()
-    # 菜单条目从注册表 + 显示名实时推导，不写死「主终端」——注册表内容依历史，
-    # 且旧会话的后台补建是异步的（force-stop 后的 :env 逐个重建 ~15s/个），
-    # 紧随其后的 force-stop 可合理打断它（2026-10-07 实锤）
+    # 菜单条目从注册表实时推导（旧会话的后台补建是异步的：force-stop 后的 :env
+    # 逐个重建 ~15s/个，紧随其后的 force-stop 可合理打断它，2026-10-07 实锤）。
+    # i18n 批 1：按 terminal_menu_session 节点计数断言，不依赖「显示名 :端口」文案
     import json as _json
     try:
         names = _json.loads(sc.run_as_cat("files/terminal-session-names.json") or "{}")
     except Exception:
         names = {}
 
-    def disp(n):
-        return names.get(n, "主终端" if n == "main" else n)
-
     sessions = sc.registry_sessions()
-    r["menu_expected"] = [f"{disp(s['name'])} :{s['port']}" for s in sessions]
-    r["menu_lists_sessions"] = bool(sessions) and any(m in xml for m in r["menu_expected"])
-    r["menu_has_new_and_home"] = ("新建会话" in xml) and ("回主页" in xml)
+    r["menu_expected"] = [f"{names.get(s['name'], s['name'])} :{s['port']}" for s in sessions]
+    r["menu_session_rows"] = sc.res_count("terminal_menu_session")
+    r["menu_lists_sessions"] = bool(sessions) and r["menu_session_rows"] >= len(sessions)
+    r["menu_has_new_and_home"] = sc.res_hit("terminal_menu_new", xml) and \
+        sc.res_hit("terminal_menu_home", xml)
     screencap("night-terminal-menu.png")
 
     # 切换会话：回主页键路径验证
-    if not sc.tap_text("回主页", 10):
-        raise RuntimeError("点不到回主页")
+    if not sc.tap_res("terminal_menu_home", 10):
+        raise RuntimeError("点不到回主页（terminal_menu_home）")
     time.sleep(2)
     f = focus()
     r["back_home_focus"] = f
@@ -642,8 +614,8 @@ def t12(r):
     assert "WROTE" in out, f"编辑探针写入失败：{out[-200:]}"
 
     sc.shell("am", "start", "-S", "-n", HOME)
-    sc.wait_text("新建会话", 30)
-    if not nav_tap("文件"):
+    sc.wait_res("home_new_session", 30)
+    if not nav_tap("nav_files"):
         raise RuntimeError("进不了文件页")
     if not wait_text_scroll("night-edit.txt", 30):
         raise RuntimeError("文件页列表没有 night-edit.txt")
@@ -677,8 +649,8 @@ def t12(r):
     time.sleep(1)
     sc.shell("input", "keyevent", "KEYCODE_BACK")  # 收 IME（遮挡 tap 的已知坑）
     time.sleep(1)
-    if not sc.tap_text("保存", 15):
-        raise RuntimeError("点不到保存")
+    if not sc.tap_res("editor_save", 15):
+        raise RuntimeError("点不到保存（editor_save）")
     deadline = time.time() + 60
     saved = ""
     while time.time() < deadline:
@@ -694,9 +666,9 @@ def t12(r):
     # 的标题不是 text 节点（dump 只见候选应用名 Chrome/HTML Viewer 等），
     # 打开时焦点为 com.android.intentresolver/.ChooserActivityLauncher
     assert long_press("night-edit.txt"), "长按未定位到文件行(1)"
-    if not sc.wait_text("用其他应用打开", 10):
+    if not sc.wait_res("file_open_with", 10):
         raise RuntimeError("长按菜单未弹出")
-    sc.tap_text("用其他应用打开", 10)
+    sc.tap_res("file_open_with", 10)
     deadline = time.time() + 15
     ch = ""
     while time.time() < deadline:
@@ -712,8 +684,8 @@ def t12(r):
 
     # --- R2 ②：导出到 Downloads（MediaStore 行 + 只读拉回抽查）
     assert long_press("night-edit.txt"), "长按未定位到文件行(2)"
-    if not sc.tap_text("导出到 Downloads", 10):
-        raise RuntimeError("点不到导出")
+    if not sc.tap_res("file_export", 10):
+        raise RuntimeError("点不到导出（file_export）")
     time.sleep(5)
     q = sc.shell("content", "query", "--uri", "content://media/external/downloads",
                  "--projection", "_display_name", "--where",
@@ -726,18 +698,18 @@ def t12(r):
 
     # --- R2 ③：重命名（尾追加数字成新名 → 列表与环境侧双断言）
     assert long_press("night-edit.txt"), "长按未定位到文件行(3)"
-    if not sc.tap_text("重命名", 10):
-        raise RuntimeError("点不到重命名")
-    if not sc.wait_text("文件名", 10):
+    if not sc.tap_res("file_rename", 10):
+        raise RuntimeError("点不到重命名（file_rename）")
+    if not sc.wait_res("dlg_rename_name", 10):
         raise RuntimeError("重命名对话框未出现")
-    sc.tap_text("night-edit.txt", 10)  # 预填值即文件名，点击聚焦输入区
+    sc.tap_res("dlg_rename_name", 10)  # 预填值即文件名，点输入框聚焦
     time.sleep(1)
     sc.shell("input", "keyevent", "KEYCODE_MOVE_END")
     sc.shell("input", "text", "2")
     sc.shell("input", "keyevent", "KEYCODE_BACK")
     time.sleep(1)
-    if not sc.tap_text("确定", 10):
-        raise RuntimeError("点不到确定")
+    if not sc.tap_res("dlg_rename_ok", 10):
+        raise RuntimeError("点不到确定（dlg_rename_ok）")
     r["renamed_listed"] = wait_text_scroll("night-edit.txt2", 15)
     assert r["renamed_listed"], "改名后列表未见新名"
     gone = sc.env_read("ls /root/night-edit.txt 2>&1\n", timeout=60)
@@ -746,12 +718,12 @@ def t12(r):
 
     # --- R2 ④：删除（确认 → 列表与环境侧都消失）
     assert long_press("night-edit.txt2"), "长按未定位到文件行(4)"
-    if not sc.tap_text("删除", 10):
-        raise RuntimeError("点不到删除（菜单项）")
-    if not sc.wait_text("删除后不可恢复", 10):
-        raise RuntimeError("删除确认框未出现")
-    if not sc.tap_text("删除", 10):  # uitap 精确匹配优先：按钮 text=删除，标题是长句不会误中
-        raise RuntimeError("点不到删除（确认）")
+    if not sc.tap_res("file_delete", 10):
+        raise RuntimeError("点不到删除（菜单项 file_delete）")
+    if not sc.wait_res("dlg_delete_ok", 10):
+        raise RuntimeError("删除确认框未出现（dlg_delete_ok）")
+    if not sc.tap_res("dlg_delete_ok", 10):
+        raise RuntimeError("点不到删除（确认 dlg_delete_ok）")
     time.sleep(2)
     gone2 = sc.env_read("ls /root/night-edit.txt2 2>&1\n", timeout=60)
     r["deleted_env_gone"] = "No such file" in gone2

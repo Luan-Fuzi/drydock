@@ -44,6 +44,9 @@ def shell(*args, timeout=30):
 def device_identity():
     def prop(k):
         return shell("getprop", k).strip()
+    # Android 13+ 系统 locale 真实在 settings 层（persist prop 只读且可能为空），
+    # 先读 system_locales；prop 兜底真机老系统
+    locale = shell("settings", "get", "system", "system_locales").strip() or prop("persist.sys.locale")
     return {
         "serial": resolved_serial(),
         "model": prop("ro.product.model"),
@@ -51,6 +54,8 @@ def device_identity():
         "android": prop("ro.build.version.release"),
         "incremental": prop("ro.build.version.incremental"),
         "hyperos": prop("ro.mi.os.version.name") or prop("ro.miui.ui.version.name"),
+        # i18n 批 1：脚本语言无关，verdict 记录当轮系统 locale 作证据
+        "locale": locale or "unknown",
     }
 
 
@@ -142,6 +147,65 @@ def wait_text(text, timeout_s, poll=3):
     return False
 
 
+def _res_forms(tag):
+    """锚点在 dump 里的两种 resource-id 形态：Compose testTag 映射为裸 tag
+    （accessibility delegate 只 setViewIdResourceName(tag) 不加前缀，1.9.1 实测），
+    View setId(R.id.*) 为全限定 pkg:id/。"""
+    return (f'resource-id="{tag}"', f'resource-id="{PKG}:id/{tag}"')
+
+
+def res_hit(tag, xml=None):
+    """dump 是否含该锚点节点（两种形态都认）。"""
+    if xml is None:
+        xml = ui_dump()
+    return any(f in xml for f in _res_forms(tag))
+
+
+def wait_res(tag, timeout_s, poll=3):
+    """等 resource-id 锚点出现（i18n 批 1：Compose testTag / View setId 映射，
+    语言无关）。UI 文案类断言用本族；文件名/文件内容等数据面仍走 wait_text。"""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        xml = ui_dump()
+        if xml and res_hit(tag, xml):
+            return True
+        time.sleep(poll)
+    return False
+
+
+def tap_res(tag, timeout_s=180):
+    """等 resource-id 锚点出现并点击；同 tag 多节点点首个（如会话卡片）。"""
+    for scroll_round in range(3):
+        if wait_res(tag, timeout_s if scroll_round == 0 else 15):
+            for _ in range(3):  # dump 抖动重试
+                r = run([sys.executable, repo("uitap.py"), "--res", tag], timeout=120)
+                if r.returncode == 0:
+                    return True
+                time.sleep(3)
+        swipe_up()
+    return False
+
+
+def res_attr(tag, attr):
+    """读 resource-id 锚点节点的属性值（checked/text/bounds…）；节点不在返回 None。
+    node 属性序不保证，先锁整节点再抽属性。"""
+    import re as _re
+    forms = _res_forms(tag)
+    for m in _re.finditer(r"<node\b[^>]*?/?>", ui_dump()):
+        node = m.group(0)
+        if any(f in node for f in forms):
+            a = _re.search(attr + r'="([^"]*)"', node)
+            if a:
+                return a.group(1)
+    return None
+
+
+def res_count(tag):
+    """dump 中该锚点节点数（t11 会话菜单条目计数等；同一 tag 不会混合形态）。"""
+    xml = ui_dump()
+    return sum(xml.count(f) for f in _res_forms(tag))
+
+
 def swipe_up():
     """页内向下滚动一屏（Compose 列表按钮常被挤到可视区外，uiautomator 只见可视节点）。"""
     shell("input", "swipe", "540", "1600", "540", "500", "300")
@@ -160,11 +224,11 @@ def wait_focus_activity(name, timeout_s=180, poll=2):
 
 
 def open_terminal_session(timeout_s=180):
-    """主页 → 终端页（2026-10-06 界面：会话卡片即入口，副标题一律含「本地端口」）。
-    空列表走「新建会话」对话框（默认名直接「创建」）。返回 TerminalActivity 是否前台。"""
-    if tap_text("本地端口", 30):
+    """主页 → 终端页（会话卡片即入口）。空列表走「新建会话」对话框（默认名直接
+    「创建」）。i18n 批 1 起 resource-id 定位，语言无关。返回 TerminalActivity 是否前台。"""
+    if tap_res("home_session_card", 30):
         return wait_focus_activity("TerminalActivity", timeout_s)
-    if tap_text("新建会话", 30) and tap_text("创建", 30):
+    if tap_res("home_new_session", 30) and tap_res("dlg_create", 30):
         return wait_focus_activity("TerminalActivity", timeout_s)
     return False
 

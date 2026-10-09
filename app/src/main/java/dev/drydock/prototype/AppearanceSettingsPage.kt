@@ -8,6 +8,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 
@@ -31,7 +32,9 @@ internal fun AppearanceSettingsPage(onBack: () -> Unit) {
             // 旧实现重建 Activity 重置底栏 tab，点外观直接跳回会话页
             val active = ThemeStore.mode.value == m
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { ThemeStore.save(context, m) },
+                // tag=theme_system/theme_light/theme_dark（i18n 批 1 测试锚点）
+                modifier = Modifier.fillMaxWidth().testTag("theme_" + m.name.lowercase())
+                    .clickable { ThemeStore.save(context, m) },
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             ) {
                 RadioButton(selected = active, onClick = { ThemeStore.save(context, m) })

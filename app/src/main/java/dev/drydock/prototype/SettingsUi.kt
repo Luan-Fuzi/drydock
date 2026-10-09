@@ -16,16 +16,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Modifier
 
-/** 设置行：标题 + 当前值摘要 + chevron；divider = 组内非末行画分隔线。 */
+/** 设置行：标题 + 当前值摘要 + chevron；divider = 组内非末行画分隔线。
+ *  tag = uiautomator 锚点（i18n 批 1：测试定位走 resource-id，不依赖显示文案）。 */
 @Composable
-internal fun SettingsRow(title: String, summary: String, divider: Boolean = true, onClick: () -> Unit) {
+internal fun SettingsRow(title: String, summary: String, divider: Boolean = true, tag: String? = null, onClick: () -> Unit) {
     Column {
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+            modifier = Modifier.fillMaxWidth()
+                .then(if (tag != null) Modifier.testTag(tag) else Modifier)
+                .clickable(onClick = onClick)
                 .padding(horizontal = 16.dp, vertical = 13.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {

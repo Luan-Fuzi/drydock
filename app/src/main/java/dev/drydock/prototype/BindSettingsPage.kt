@@ -12,12 +12,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 目录直通绑定二级页（D28-3 最小版）。「已关闭/已开启（…）」与「已获…」文案是
- *  night-b t10 的开关定位锚点，改动须同步剧本。 */
+/** 目录直通绑定二级页（D28-3 最小版）。开关定位锚点是 bind_switch（i18n 批 1
+ *  resource-id 化），状态/授权文案不再是测试锚点。 */
 @Composable
 internal fun BindSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -55,6 +56,7 @@ internal fun BindSettingsPage(onBack: () -> Unit) {
                         BindStore.setEnabled(context, on); tick++
                     }
                 },
+                modifier = Modifier.testTag("bind_switch"),
             )
             Text(
                 if (bindOn) "已开启（新建会话生效）" else "已关闭",

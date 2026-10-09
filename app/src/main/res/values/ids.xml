@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- i18n 批 1：uiautomator 语言无关锚点。TerminalActivity 是经典 View 体系
+         （不走 Compose testTag），经 setId 映射进 dump 的 resource-id；
+         Compose 侧锚点见各页面 Modifier.testTag。 -->
+    <item name="terminal_menu_btn" type="id" />
+    <item name="terminal_key_btn" type="id" />
+    <item name="terminal_menu_panel" type="id" />
+    <item name="terminal_menu_session" type="id" />
+    <item name="terminal_menu_new" type="id" />
+    <item name="terminal_menu_home" type="id" />
+</resources>

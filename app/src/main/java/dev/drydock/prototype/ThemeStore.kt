@@ -7,6 +7,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 
 /** 外观偏好（D27）：跟随系统 / 浅色 / 深色。组合状态驱动——切换写 mode 即时
  *  重组全树（原 recreate() 实现会重建 Activity，底栏 tab 随 remember 丢失，
@@ -37,6 +39,9 @@ fun DrydockTheme(content: @Composable () -> Unit) {
         ThemeStore.Mode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
     }
     MaterialTheme(colorScheme = if (dark) androidx.compose.material3.darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
-        Surface(modifier = Modifier.fillMaxSize()) { content() }
+        // Modifier.testTag 映射进 uiautomator 的 resource-id（i18n 批 1：测试定位
+        // 语言无关；属性挂在根 Surface 对全树生效。TerminalActivity 是 View 体系，
+        // 走 res/values/ids.xml 的 setId 同目）
+        Surface(modifier = Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) { content() }
     }
 }

@@ -25,6 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -159,10 +162,10 @@ internal fun SessionPane() {
             )
         }
 
-        Button(enabled = busy.isBlank(), onClick = { showNewDialog = true }) { Text("新建会话") }
+        Button(enabled = busy.isBlank(), onClick = { showNewDialog = true }, modifier = Modifier.testTag("home_new_session")) { Text("新建会话") }
 
         sessions.forEach { s ->
-            Card(modifier = Modifier.fillMaxWidth().clickable { openSession(s.name) }) {
+            Card(modifier = Modifier.fillMaxWidth().testTag("home_session_card").clickable { openSession(s.name) }) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -189,6 +192,7 @@ internal fun SessionPane() {
                 mutableStateOf(if (sessions.isEmpty()) "主终端" else "会话 ${sessions.size + 1}")
             }
             AlertDialog(
+                modifier = Modifier.semantics { testTagsAsResourceId = true },
                 onDismissRequest = { showNewDialog = false },
                 title = { Text("新建会话") },
                 text = {
@@ -202,6 +206,7 @@ internal fun SessionPane() {
                             onValueChange = { nameInput = it },
                             label = { Text("会话名称") },
                             singleLine = true,
+                            modifier = Modifier.testTag("dlg_session_name"),
                         )
                     }
                 },
@@ -209,7 +214,7 @@ internal fun SessionPane() {
                     TextButton(enabled = nameInput.isNotBlank() && busy.isBlank(), onClick = {
                         showNewDialog = false
                         createSession(nameInput)
-                    }) { Text("创建") }
+                    }, modifier = Modifier.testTag("dlg_create")) { Text("创建") }
                 },
                 dismissButton = { TextButton(onClick = { showNewDialog = false }) { Text("取消") } },
             )
@@ -218,6 +223,7 @@ internal fun SessionPane() {
         renameTarget?.let { t ->
             var nameInput by remember(t.name) { mutableStateOf(displayName(t.name)) }
             AlertDialog(
+                modifier = Modifier.semantics { testTagsAsResourceId = true },
                 onDismissRequest = { renameTarget = null },
                 title = { Text("重命名会话") },
                 text = {
@@ -241,6 +247,7 @@ internal fun SessionPane() {
 
         closeTarget?.let { t ->
             AlertDialog(
+                modifier = Modifier.semantics { testTagsAsResourceId = true },
                 onDismissRequest = { closeTarget = null },
                 title = { Text("关闭会话「${displayName(t.name)}」？") },
                 text = {

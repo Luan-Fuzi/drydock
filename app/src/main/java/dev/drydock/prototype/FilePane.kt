@@ -26,6 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -116,6 +119,7 @@ internal fun FilePane() {
     // R2 长按菜单（纵向四项；目录不支持长按）
     menuTarget?.let { f ->
         AlertDialog(
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
             onDismissRequest = { menuTarget = null },
             title = { Text(f.name, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleMedium) },
             text = {
@@ -123,7 +127,7 @@ internal fun FilePane() {
                     TextButton(onClick = {
                         menuTarget = null
                         openExternalChooser(context, root, f)
-                    }) { Text("用其他应用打开") }
+                    }, modifier = Modifier.testTag("file_open_with")) { Text("用其他应用打开") }
                     TextButton(onClick = {
                         menuTarget = null
                         if (exportBusy.isNotBlank()) return@TextButton
@@ -138,9 +142,9 @@ internal fun FilePane() {
                                 { Toast.makeText(context, "✗ 导出失败：${it.message}", Toast.LENGTH_SHORT).show() },
                             )
                         }
-                    }) { Text("导出到 Downloads") }
-                    TextButton(onClick = { menuTarget = null; renameTarget = f }) { Text("重命名") }
-                    TextButton(onClick = { menuTarget = null; deleteTarget = f }) { Text("删除") }
+                    }, modifier = Modifier.testTag("file_export")) { Text("导出到 Downloads") }
+                    TextButton(onClick = { menuTarget = null; renameTarget = f }, modifier = Modifier.testTag("file_rename")) { Text("重命名") }
+                    TextButton(onClick = { menuTarget = null; deleteTarget = f }, modifier = Modifier.testTag("file_delete")) { Text("删除") }
                 }
             },
             confirmButton = {},
@@ -152,6 +156,7 @@ internal fun FilePane() {
         var nameInput by remember(f) { mutableStateOf(f.name) }
         val legal = nameInput.isNotBlank() && !nameInput.contains('/') && File(dir, nameInput).let { !it.exists() || it == f }
         AlertDialog(
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
             onDismissRequest = { renameTarget = null },
             title = { Text("重命名") },
             text = {
@@ -162,6 +167,7 @@ internal fun FilePane() {
                         label = { Text("文件名") },
                         singleLine = true,
                         isError = !legal,
+                        modifier = Modifier.testTag("dlg_rename_name"),
                     )
                     if (!legal && nameInput.isNotBlank()) {
                         Text("名字为空、含 / 或与现有文件重名", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
@@ -176,7 +182,7 @@ internal fun FilePane() {
                     } else {
                         Toast.makeText(context, "重命名失败", Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("确定") }
+                }, modifier = Modifier.testTag("dlg_rename_ok")) { Text("确定") }
             },
             dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } },
         )
@@ -184,6 +190,7 @@ internal fun FilePane() {
 
     deleteTarget?.let { f ->
         AlertDialog(
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
             onDismissRequest = { deleteTarget = null },
             title = { Text("删除「${f.name}」？") },
             text = { Text("删除后不可恢复（环境内与系统文件管理器同步消失）。") },
@@ -192,7 +199,7 @@ internal fun FilePane() {
                     val ok = if (f.isDirectory) f.deleteRecursively() else f.delete()
                     deleteTarget = null
                     if (ok) tick++ else Toast.makeText(context, "删除失败", Toast.LENGTH_SHORT).show()
-                }) { Text("删除") }
+                }, modifier = Modifier.testTag("dlg_delete_ok")) { Text("删除") }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } },
         )

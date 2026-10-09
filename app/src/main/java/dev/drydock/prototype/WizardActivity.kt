@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -157,7 +158,7 @@ private fun WizardScreen() {
                 onClick = {
                     if (step == 0) (context as? Activity)?.finish() else step -= 1
                 },
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier.align(Alignment.CenterStart).testTag("wizard_back"),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
             ) { Text("‹", fontSize = 26.sp) }
             if (step in 1..3) {
@@ -274,14 +275,16 @@ private fun WizardScreen() {
     }
 }
 
-/** 步骤头部：图标 + 居中大标题。 */
+/** 步骤头部：图标 + 居中大标题。tag = 步骤锚点（wizard_step_*，i18n 批 1：
+ *  剧本按 resource-id 等步骤页，不依赖标题文案）。 */
 @Composable
-private fun StepHeader(icon: String, title: String) {
+private fun StepHeader(icon: String, title: String, tag: String? = null) {
     Text(icon, fontSize = 44.sp)
     Text(
         title,
         style = MaterialTheme.typography.headlineSmall,
         textAlign = TextAlign.Center,
+        modifier = Modifier.then(if (tag != null) Modifier.testTag(tag) else Modifier),
     )
 }
 
@@ -325,7 +328,7 @@ private fun GuideCard(title: String, body: String) {
 /** 欢迎页（step 0）：应用定位，三件事各一句话。 */
 @Composable
 private fun WelcomeStep(onStart: () -> Unit) {
-    StepHeader("⚓", "欢迎使用 Drydock")
+    StepHeader("⚓", "欢迎使用 Drydock", "wizard_step_welcome")
     StepBody(
         "Drydock 在你的手机上运行一个完整的 Linux 环境，" +
             "AI 编程助手（agent）住在这里，随时帮你干活。",
@@ -334,7 +337,7 @@ private fun WelcomeStep(onStart: () -> Unit) {
     GuideCard("🤖 预制多种 Agent", "OpenCode、pi 等常用 agent，选好即可下载使用。")
     GuideCard("📁 产物直接可见", "agent 生成的文件在系统文件管理器里就能看到。")
     CenterButtons {
-        Button(onClick = onStart) { Text("开始配置") }
+        Button(onClick = onStart, modifier = Modifier.testTag("wizard_start")) { Text("开始配置") }
     }
 }
 
@@ -347,7 +350,7 @@ private fun PowerStep(onNext: () -> Unit) {
     val exempt = remember(tick) {
         powerMgr?.isIgnoringBatteryOptimizations("dev.drydock.prototype") ?: false
     }
-    StepHeader("🔋", "保活设置")
+    StepHeader("🔋", "保活设置", "wizard_step_power")
     if (exempt) {
         StepBody(
             "✓ 已允许后台运行\n锁屏后任务可以继续干活",
@@ -385,15 +388,15 @@ private fun PowerStep(onNext: () -> Unit) {
         }
     }
     CenterButtons {
-        Button(enabled = exempt, onClick = onNext) { Text("下一步") }
+        Button(enabled = exempt, onClick = onNext, modifier = Modifier.testTag("wizard_next")) { Text("下一步") }
     }
 }
 
-/** 模式选择卡（常见服务 / 自定义服务地址）。 */
+/** 模式选择卡（常见服务 / 自定义服务地址）。tag = 测试锚点（wizard_mode_*）。 */
 @Composable
-private fun ModeCard(title: String, desc: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun ModeCard(title: String, desc: String, selected: Boolean, modifier: Modifier = Modifier, tag: String = "", onClick: () -> Unit) {
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier.then(if (tag.isNotEmpty()) Modifier.testTag(tag) else Modifier).clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(
             width = if (selected) 2.dp else 1.dp,
@@ -415,11 +418,12 @@ private fun ModeCard(title: String, desc: String, selected: Boolean, modifier: M
     }
 }
 
-/** 厂商选择 chip。 */
+/** 厂商选择 chip。tag = 测试锚点（wizard_chip_*）。 */
 @Composable
-private fun VendorChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun VendorChip(label: String, selected: Boolean, tag: String = "", onClick: () -> Unit) {
     Box(
         modifier = Modifier
+            .then(if (tag.isNotEmpty()) Modifier.testTag(tag) else Modifier)
             .clip(RoundedCornerShape(20.dp))
             .background(
                 if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -495,23 +499,23 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         }
     }
 
-    StepHeader("🔑", "连接大模型")
+    StepHeader("🔑", "连接大模型", "wizard_step_endpoint")
     StepBody("把 agent 连上大模型：常见服务填一次 key 即可，或填写自定义服务地址；也可以先跳过。")
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        ModeCard("常见服务", "选服务商，填 key", mode == 0, onClick = { mode = 0 }, modifier = Modifier.weight(1f))
-        ModeCard("自定义服务地址", "协议 / 地址 / 模型", mode == 1, onClick = { mode = 1 }, modifier = Modifier.weight(1f))
+        ModeCard("常见服务", "选服务商，填 key", mode == 0, onClick = { mode = 0 }, modifier = Modifier.weight(1f), tag = "wizard_mode_common")
+        ModeCard("自定义服务地址", "协议 / 地址 / 模型", mode == 1, onClick = { mode = 1 }, modifier = Modifier.weight(1f), tag = "wizard_mode_custom")
     }
 
     if (mode == 0) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VendorChip(Vendor.GLM.label, vendor == Vendor.GLM) { vendor = Vendor.GLM }
-            VendorChip(Vendor.DEEPSEEK.label, vendor == Vendor.DEEPSEEK) { vendor = Vendor.DEEPSEEK }
-            VendorChip(Vendor.MOONSHOT.label, vendor == Vendor.MOONSHOT) { vendor = Vendor.MOONSHOT }
+            VendorChip(Vendor.GLM.label, vendor == Vendor.GLM, "wizard_chip_glm") { vendor = Vendor.GLM }
+            VendorChip(Vendor.DEEPSEEK.label, vendor == Vendor.DEEPSEEK, "wizard_chip_deepseek") { vendor = Vendor.DEEPSEEK }
+            VendorChip(Vendor.MOONSHOT.label, vendor == Vendor.MOONSHOT, "wizard_chip_moonshot") { vendor = Vendor.MOONSHOT }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VendorChip(Vendor.OPENAI.label, vendor == Vendor.OPENAI) { vendor = Vendor.OPENAI }
-            VendorChip(Vendor.ANTHROPIC.label, vendor == Vendor.ANTHROPIC) { vendor = Vendor.ANTHROPIC }
+            VendorChip(Vendor.OPENAI.label, vendor == Vendor.OPENAI, "wizard_chip_openai") { vendor = Vendor.OPENAI }
+            VendorChip(Vendor.ANTHROPIC.label, vendor == Vendor.ANTHROPIC, "wizard_chip_anthropic") { vendor = Vendor.ANTHROPIC }
         }
         OutlinedTextField(
             value = keyText,
@@ -521,7 +525,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { saveAndAdvance() }),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("wizard_api_key"),
         )
         StepBody(
             "key 在服务商控制台获取。保存后写入环境变量（~/.drydock/env.sh），" +
@@ -554,11 +558,11 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
             OutlinedTextField(value = fBaseUrl, onValueChange = { fBaseUrl = it },
                 label = { Text("Base URL") }, singleLine = true, isError = fBaseUrl.isNotBlank() && !customOk,
                 supportingText = { Text("服务的接口根地址，从服务商文档获取；一般以 /v1、/v4 之类结尾，不含 /chat/completions") },
-                modifier = Modifier.fillMaxWidth())
+                modifier = Modifier.fillMaxWidth().testTag("wizard_base_url"))
             OutlinedTextField(value = fModel, onValueChange = { fModel = it },
                 label = { Text("模型 ID") }, singleLine = true,
                 supportingText = { Text("服务实际提供的模型名，照文档填（如 glm-5.3-flash、deepseek-chat）") },
-                modifier = Modifier.fillMaxWidth())
+                modifier = Modifier.fillMaxWidth().testTag("wizard_model"))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(value = fContext, onValueChange = { fContext = it.filter { c -> c.isDigit() } },
                     label = { Text("上下文窗口") }, singleLine = true,
@@ -599,6 +603,8 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         Button(
             enabled = !saving,
             onClick = { saveAndAdvance() },
+            // 与保活步主按钮复用 wizard_next（两步互斥不同屏）；t7 靠 wizard_step_* 分步
+            modifier = Modifier.testTag("wizard_next"),
         ) {
             Text(when {
                 saving -> "保存中…"
@@ -608,7 +614,7 @@ private fun EndpointStep(onNext: () -> Unit, onSkip: () -> Unit) {
         }
     }
     CenterButtons {
-        OutlinedButton(enabled = !saving, onClick = onSkip) { Text("跳过此步") }
+        OutlinedButton(enabled = !saving, onClick = onSkip, modifier = Modifier.testTag("wizard_skip")) { Text("跳过此步") }
     }
 }
 
@@ -623,7 +629,7 @@ private fun RecipeStep(
     var picks by remember { mutableStateOf(setOf(RecipeManager.OPENCODE)) }
     val locked = busy.isNotBlank() || doneMsg.isNotBlank()
 
-    StepHeader("🤖", "选择 Coding Agent")
+    StepHeader("🤖", "选择 Coding Agent", "wizard_step_recipe")
     StepBody("我们预制了几种可用的 Agent，供你下载安装。可以多选，也可以都不选（暂不安装）。")
 
     listOf(
@@ -659,6 +665,7 @@ private fun RecipeStep(
         Button(
             enabled = !locked,
             onClick = { onRun(picks.toList()) },
+            modifier = Modifier.testTag("wizard_install"),
         ) {
             Text(
                 when {

@@ -49,6 +49,7 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
                 "初始设置向导",
                 if (wizardDone) "已完成 · 可重新运行" else "保活 / 连接大模型 / 安装 agent",
                 divider = false,
+                tag = "settings_wizard",
             ) { context.startActivity(Intent(context, WizardActivity::class.java)) }
         }
 
@@ -64,11 +65,12 @@ internal fun SettingsRoot(onOpen: (SettingsPage) -> Unit) {
                 "目录直通绑定",
                 "实验 · " + if (bindOn) "已开启" else "已关闭",
                 divider = false,
+                tag = "settings_bind",
             ) { onOpen(SettingsPage.BIND) }
         }
 
         SettingsGroup("应用") {
-            SettingsRow("外观", themeLabel) { onOpen(SettingsPage.APPEARANCE) }
+            SettingsRow("外观", themeLabel, tag = "settings_appearance") { onOpen(SettingsPage.APPEARANCE) }
             SettingsRow("终端显示", termSummary, divider = false) { onOpen(SettingsPage.TERMINAL) }
         }
 
