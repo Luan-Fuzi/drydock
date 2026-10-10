@@ -10,7 +10,7 @@
 
 从 [Releases](https://github.com/Luan-Fuzi/drydock/releases) 下载最新 APK 安装。要求 arm64 设备、Android 11+，安装时允许未知来源。
 
-从 v0.1.0 升级：v0.2.0 起包名改为 `dev.drydock`，与旧版是两个独立应用，不能覆盖升级。在旧版「设置 → 备份与导出」导出，安装新版后在同一页选择导出的 tar.gz 恢复，确认无误再卸载旧版。
+从 v0.1.0 迁移：包名与签名均不同，不能覆盖安装，也不能与 v0.1.0 并存（文件 provider 名冲突）。按顺序执行：在旧版「设置 → 备份与导出」导出环境（tar.gz 落在 Downloads/Drydock）→ 卸载 v0.1.0 → 安装 v0.2.0 → 在新版同一页导入导出的 tar.gz。导出文件在迁移期间保留，导入确认无误后可自行删除。
 
 自行构建：JDK 17 + Android SDK，执行 `./gradlew assembleDebug`，产物在 `app/build/outputs/apk/debug/`（包名 `dev.drydock.debug`，可与正式版并存，仅供开发验收）。CI 在每次 push 到 main/dev 时构建 debug 包并上传 artifact；正式签名包只由 `v*` tag 触发的 release workflow 构建。
 
