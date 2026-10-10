@@ -110,6 +110,8 @@ ubuntu-base 24.04.5 arm64（TUNA 主源、官方备源，sha256 pin 进 `RootfsM
    **2026-10-07 梯度复测降级（draft/wedge-verdict.json）**：用户提议从小到大复测——npm 安装全谱系（is-odd 0 依赖 / lodash / esbuild 平台二进制 / typescript / vite 中树 / next 巨树，共 12 次）+ hyperfine `--setup npm-install -w1 -m3` 原始触发器，全部通过、零楔死、零 stop 态进程（proot 译层正常工作时被跟踪进程仅在 syscall 边界瞬时停，4s 采样不可见；真楔死则持续可见——判据成立）。同 APK 同 proot 下不可复现，最可能诱因是当时的 rootfs 毒化状态（本条同文上方另录）。**楔死从「常态威胁」降级为「特定状态历史现象」**：检测缓解版紧迫性下调，Q1 观测从重点降为留意。附带方法论教训：CDP 驱动的长脚本必须 keyDown/keyUp 成对（漏 keyUp 让 xterm `_keyDownSeen` 永久卡 true、insertText 全被吞）且注入确认走文件标记不走屏幕子串（43 列折行制造假阴性）——本实验三轮假失败全因测试驱动自身。
 另三条环境实测教训：rootfs 磁盘状态可被毒化（环境内全灭而同 uid 非 proot 进程正常的不对称性即铁证），重放即愈=Q8 救援通道的正向验证；tar 全目录会撞 D17 的 .l2s 自指环（ELOOP），**D7 环境导出 tar 功能必须排除/转换 .l2s**；edge-to-edge 下滚动列表必须 navigationBarsPadding（末尾按钮被手势条吃掉）；重装 APK 重置运行时权限（验收用 pm grant 补）。宿主代理 TUN(fake-ip) 劫持 AVD guest 流量属环境干扰，不进产品路径。
 
+**D21 增补（2026-10-10，v0.1.0→v0.2.0 真机迁移实锤）**：上段「导出必须排除 .l2s」在真机兑现为两次整包失败——v0.1.0 的 GNU tar `--exclude='./root/.l2s*'` 只盖 /root 顶层，深层 `.dsh/sessions/*/.l2s*` 悬空链接 ELOOP、link2symlink 宿主符号链接（session.v4.jsonl.zstd 本体）stat EPERM，均使导出中断。v0.2.0 的 Java 遍历导出（任意深度排除 `.l2s*`/`*.sock`、非 Regular 跳过）在同环境真机实证可用。旧包数据抢救手法（宿主侧 run-as，不动系统）：rootfs/root 下宿主符号链接逐个实化（`cp -L` 到临时名替换原链接），悬空链接的数据在 `.l2s.*.0001` 文件里、从它恢复；环境内正常相对链接（指向 /etc/alternatives 等）不要动。
+
 **D31 增补（同日，DSH 真机打通）**：真机补装 dsh 0.2.0-rc.2，实测它**不是多协议工具**——内嵌 @anthropic-ai/sdk 走 Anthropic /messages 协议（OpenAI 兼容端点 404）。用 GLM coding plan 驱动它的完整路径：`DEEPSEEK_API_KEY`+`/root/.dsh/cordis.patch.yml` 覆盖 llm-deepseek 插件（baseURL=https://open.bigmodel.cn/api/anthropic、maxTokens=131072——默认 256000 超 GLM 上限报 1210、apiKeyEnv=ZAI_CODING_CN_API_KEY）+ agent-default-model（model=glm-5.3-flash）→ headless 出话；终端页菜单「DSH Web」真机实测拉起系统浏览器进入 Web UI。三工具现状：env.sh 一把 key 通用（opencode/pi 内置识别、dsh 经 patch 接线），GLM 额度覆盖全部三家。
 
 ### D33 rootfs 升级的 /root 迁移细则（2026-10-08，用户定稿，D26 留白收口）
@@ -189,6 +191,11 @@ D26 把「/root 用户文件迁移细则」留白随产品期实现定，R8（ro
 **决策**：如实收窄定位，主线集中在两件事——①移动端终端体验（输入、键条、渲染、会话启动速度）；②环境维护（部署、升级、备份、自愈）。对外文案去掉「任务调度」。
 **后续架构排期**：WakeLock 按需持有并把测量仪器收进开发者选项 → 去 ttyd 原型（宿主直接持有 PTY + 自带 xterm.js，先测冷启动与输入法丢字，R10 并入）→ 会话状态单一来源（:env 经 Binder 提供）。
 **被否（保留为将来选项）**：B——选一家有无头接口的开源 agent，只为它做「通知批准 → 看 diff → 成果预览」闭环（D10 L2 一家先行）。
+
+### D36 provider authority 冲突：v0.1.0 与 v0.2.0 正式包不能并存，定性不修（2026-10-10，用户定）
+**起因**：v0.2.0 真机装机报 `INSTALL_FAILED_CONFLICTING_PROVIDER`——v0.1.0 的 WorkspaceProvider authority 写死 `dev.drydock.documents`，v0.2.0 改为 `${applicationId}.documents` 后，正式包（applicationId=dev.drydock）展开恰好与之间名，无法并存安装。发版前的 AVD 迁移实测装的是 debug 包（authority=`dev.drydock.debug.documents`），避开了冲突，此组合未覆盖。
+**决策**：不修。依据：v0.1.0 Release 的 APK 下载量为 0（无存量用户）、唯一需迁移的真机当天已迁完（导出→卸旧→装新→导入全链路实证：导入 5932 跳过 4 失败 0、标记回读逐字节一致，draft/migrate-phone-v020-verdict.json）、删 v0.1.0 Release 的 APK 资产后增量入口堵死，受害人为零。README 迁移说明同步改为实证顺序。
+**再修条件**：出现真实 v0.1.0 存量用户撞墙反馈，或对 `.documents` 名被历史占用在意。任何时候修都不晚——authority 改名对已装用户的覆盖升级无感，不存在窗口期。修法：manifest 与 `WorkspaceProvider.authority()` 的后缀改 `.documents.v2`（三种包名展开互不相同），night-b t2 的三处硬编码 URI 同步。
 
 ## 明确不做清单
 
